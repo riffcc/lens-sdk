@@ -5,8 +5,7 @@ import {
   beforeAll,
   afterAll,
   afterEach,
-  vi,
-} from 'vitest';
+} from '@jest/globals';
 import type { ProgramClient } from '@peerbit/program';
 import { TestSession } from '@peerbit/test-utils';
 
@@ -19,6 +18,7 @@ import {
 } from '../src/constants';
 import type { ReleaseData } from '../src/types';
 import { delay } from '@peerbit/time';
+import { waitUntil } from './utils';
 
 describe('Site Replication', () => {
   let session: TestSession;
@@ -77,7 +77,7 @@ describe('Site Replication', () => {
     const releaseId = result.id;
 
     let replicatedRelease: Release | undefined;
-    await vi.waitUntil(
+    await waitUntil(
       async () => {
         replicatedRelease = site2 ? await site2.getRelease(releaseId) : undefined;
         return !!replicatedRelease;
@@ -85,7 +85,7 @@ describe('Site Replication', () => {
       { timeout: 20000, interval: 1000 },
     );
 
-    expect(replicatedRelease, `Release ${releaseId} did not replicate to Peer 2`).toBeDefined();
+    expect(replicatedRelease).toBeDefined();
     if (replicatedRelease) {
       expect(replicatedRelease.name).toEqual(releaseData[RELEASE_NAME_PROPERTY]);
       expect(replicatedRelease.contentCID).toEqual(releaseData[RELEASE_CONTENT_CID_PROPERTY]);
@@ -123,7 +123,7 @@ describe('Site Replication', () => {
     await site2.waitFor(peer1.identity.publicKey);
 
     let replicatedRelease: Release | undefined;
-    await vi.waitUntil(
+    await waitUntil(
       async () => {
         replicatedRelease = site2 ? await site2.getRelease(releaseId) : undefined;
         return !!replicatedRelease;
@@ -131,7 +131,7 @@ describe('Site Replication', () => {
       { timeout: 25000, interval: 1000 },
     );
 
-    expect(replicatedRelease, `Pre-existing release ${releaseId} did not replicate to Peer 2`).toBeDefined();
+    expect(replicatedRelease).toBeDefined();
     if (replicatedRelease) {
       expect(replicatedRelease.name).toEqual(releaseData[RELEASE_NAME_PROPERTY]);
       expect(replicatedRelease.contentCID).toEqual(releaseData[RELEASE_CONTENT_CID_PROPERTY]);

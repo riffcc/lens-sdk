@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll, afterEach } from '@jest/globals';
 import type { ProgramClient } from '@peerbit/program';
 import { TestSession } from '@peerbit/test-utils';
 import { Site } from '../src/schema';

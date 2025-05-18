@@ -1,6 +1,6 @@
 // packages/lib/tests/site.test.ts
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { TestSession } from '@peerbit/test-utils';
 import type { ProgramClient } from '@peerbit/program';
 import { Site } from '../src/schema';
@@ -43,7 +43,7 @@ describe('Site Program', () => {
     };
 
     const result = await site.addRelease(releaseData);
-    expect(result.id).toBeTypeOf('string');
+    expect(result.id).toEqual(expect.any(String));
 
     await delay(200);
 
