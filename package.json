@@ -20,7 +20,8 @@
     "build:js": "esbuild src/index.ts --bundle --outfile=dist/index.mjs --platform=neutral --format=esm --packages=external --sourcemap",
     "build": "pnpm clean && pnpm build:types && pnpm build:js",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit --project tsconfig.json"
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "release": "pnpm build && pnpm publish"
   },
   "keywords": [],
   "author": "benya7",
