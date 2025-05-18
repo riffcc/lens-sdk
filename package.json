@@ -26,6 +26,9 @@
   "keywords": [],
   "author": "benya7",
   "license": "ISC",
+  "publishConfig": {
+    "access": "public"
+  },
   "packageManager": "pnpm@10.6.3",
   "dependencies": {
     "@dao-xyz/borsh": "^5.2.3",
