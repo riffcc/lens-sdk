@@ -1,0 +1,72 @@
+{
+  "name": "@riffcc/lens-sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.js",
+      "require": "./dist/browser/index.cjs"
+    },
+    "./electron": {
+      "types": "./dist/electron/index.d.ts",
+      "import": "./dist/electron/index.js",
+      "require": "./dist/electron/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "lint": "eslint . --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "keywords": [],
+  "author": "benya7",
+  "license": "ISC",
+  "packageManager": "pnpm@10.6.3",
+  "dependencies": {
+    "@dao-xyz/borsh": "^5.2.3",
+    "@peerbit/crypto": "^2.3.8",
+    "@peerbit/document": "^9.6.4",
+    "@peerbit/identity-access-controller": "^5.0.80",
+    "@peerbit/program": "^5.2.11",
+    "@peerbit/shared-log": "^11.2.3",
+    "@peerbit/time": "^2.1.0",
+    "peerbit": "^4.1.36",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.27.0",
+    "@peerbit/test-utils": "^2.1.46",
+    "@types/node": "^22.15.18",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.32.1",
+    "@typescript-eslint/parser": "^8.32.1",
+    "eslint": "^9.27.0",
+    "globals": "^16.1.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.1",
+    "vite": "^6.3.5",
+    "vite-plugin-dts": "^4.5.4",
+    "vitest": "^3.1.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@ipshipyard/node-datachannel",
+      "better-sqlite3",
+      "classic-level",
+      "esbuild"
+    ]
+  }
+}
