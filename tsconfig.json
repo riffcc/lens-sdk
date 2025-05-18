@@ -1,24 +1,33 @@
 {
   "compilerOptions": {
-    "target": "ESNext",
+    "target": "ES2022",
     "module": "ESNext",
-    "lib": ["ESNext", "DOM"],
     "moduleResolution": "bundler",
-    "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
+    "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": {
-      "/@/*": ["./src/*"]
-    },
-    "types": ["vite/client"]
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
   },
-  "include": ["./**/*.ts", "./electron.d.ts"],
-  "exclude": ["node_modules", "dist", "**/*.cjs"]
+  "include": [
+    "src/**/*.ts",
+    "electron.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "eslint.config.js"
+  ]
 }

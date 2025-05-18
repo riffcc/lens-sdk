@@ -1,0 +1,39 @@
+# TypeScript configuration files
+tsconfig.json
+*.tsbuildinfo
+
+# Test files and directories (if you add any)
+test/
+tests/
+__tests__/
+*.test.ts
+*.spec.ts
+*.test.js
+*.spec.js
+
+# Development tooling configurations
+.eslintrc.js
+.eslintrc.cjs
+.eslintignore
+.prettierrc.json
+.prettierignore
+# Add other linter/formatter/dev tool configs here
+
+# Dotfiles not needed in the published package
+.gitignore
+.gitattributes
+.editorconfig
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE specific files (though generally not in source control for npmignore to act on)
+.vscode/
+.idea/
+
+# Coverage reports
+coverage/
+
+# Log files
+*.log

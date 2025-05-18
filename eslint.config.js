@@ -1,68 +1,35 @@
+// eslint.config.js
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
-
 import globals from 'globals';
 
 export default [
   {
-    ignores: ['**/dist/**'],
+    // Global ignores: Applied to all configurations
+    ignores: [
+        '**/dist/**',
+        '**/node_modules/**', // Common practice to ignore node_modules globally
+        '**/coverage/**',
+        // 'vite.config.ts.timestamp-*.mjs', // REMOVE THIS LINE
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
     files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
     languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      parser: tseslint.parser,
       parserOptions: {
-        sourceType: 'module',
-        parser: '@typescript-eslint/parser',
-      },
-    },
-    ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**'],
-    rules: {
-      '@typescript-eslint/no-var-requires': 'off',
-      '@typescript-eslint/consistent-type-imports': 'error',
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-        },
-      ],
-      /**
-       * Having a semicolon helps the optimizer interpret your code correctly.
-       * This avoids rare errors in optimized code.
-       * @see https://twitter.com/alex_kozack/status/1364210394328408066
-       */
-      semi: ['error', 'always'],
-      /**
-       * This will make the history of changes in the hit a little cleaner
-       */
-      'comma-dangle': ['warn', 'always-multiline'],
-      /**
-       * Just for beauty
-       */
-      quotes: [
-        'warn',
-        'single',
-        {
-          avoidEscape: true,
-        },
-      ],
-    },
-  },
-  {
-    files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
-    languageOptions: {
-      parserOptions: {
-        sourceType: 'module',
-        parser: '@typescript-eslint/parser',
+        // project: true, // If you want type-aware linting, uncomment and set path
+        // tsconfigRootDir: import.meta.dirname,
       },
       globals: {
         ...globals.node,
+        ...globals.browser,
       },
     },
-    ignores: ['**/node_modules/**', '**/dist/**', '**/coverage/**'],
     rules: {
       '@typescript-eslint/no-var-requires': 'off',
       '@typescript-eslint/consistent-type-imports': 'error',
@@ -74,19 +41,8 @@ export default [
           caughtErrorsIgnorePattern: '^_',
         },
       ],
-      /**
-       * Having a semicolon helps the optimizer interpret your code correctly.
-       * This avoids rare errors in optimized code.
-       * @see https://twitter.com/alex_kozack/status/1364210394328408066
-       */
       semi: ['error', 'always'],
-      /**
-       * This will make the history of changes in the hit a little cleaner
-       */
       'comma-dangle': ['warn', 'always-multiline'],
-      /**
-       * Just for beauty
-       */
       quotes: [
         'warn',
         'single',
