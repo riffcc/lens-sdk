@@ -18,6 +18,7 @@ import type {
   SUBSCRIPTION_NAME_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
 } from './constants';
+import type { ReplicationOptions } from '@peerbit/shared-log';
 
 export type AnyObject = Record<string, unknown>;
 
@@ -78,4 +79,7 @@ export interface ILensService {
   // updateRelease?: (id: string, releaseData: any) => Promise<any>;
 }
 
+export type SiteArgs = {
+  replicate?: ReplicationOptions
+};
 

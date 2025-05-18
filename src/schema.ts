@@ -2,7 +2,6 @@ import { Documents, SearchRequest, Sort, SortDirection } from '@peerbit/document
 import { field, option, variant } from '@dao-xyz/borsh';
 import { type PublicSignKey } from '@peerbit/crypto';
 import { Program } from '@peerbit/program';
-import type { ReplicationOptions } from '@peerbit/shared-log';
 import {
   IdentityAccessController,
   Access,
@@ -38,6 +37,7 @@ import type {
   SubcriptionData,
   BlockedContentData,
   AddReleaseResponse,
+  SiteArgs,
 } from './types';
 
 
@@ -215,12 +215,8 @@ export class BlockedContent {
   }
 }
 
-type Args = {
-  replicate?: ReplicationOptions
-};
-
 @variant('site')
-export class Site extends Program<Args> {
+export class Site extends Program<SiteArgs> {
 
   @field({ type: Documents })
   releases: Documents<Release, IndexableRelease>;
@@ -253,7 +249,7 @@ export class Site extends Program<Args> {
 
   }
 
-  async open(args: Args): Promise<void> {
+  async open(args?: SiteArgs): Promise<void> {
 
     const defaultReplicationOptions = args?.replicate || { factor: 1 };
     const defaultReplicaSettings = { min: 2, max: undefined };
