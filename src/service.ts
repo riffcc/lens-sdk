@@ -4,34 +4,32 @@ import { Release, Site } from './schema';
 import type { AddReleaseResponse, ILensService, ReleaseData, SiteArgs } from './types';
 
 export class ElectronLensService implements ILensService {
-
   constructor() {}
 
   async getPublicKey() {
-    return window.electronPeerbit.getPublicKey();
+    return window.electronLensService.getPublicKey();
   }
 
   async getPeerId() {
-    return window.electronPeerbit.getPeerId();
+    return window.electronLensService.getPeerId();
   }
 
   async dial(address: string) {
-    return window.electronPeerbit.dial(address);
+    return window.electronLensService.dial(address);
   }
 
   async getLatestReleases(size?: number) {
-    return window.electronPeerbit.getLatestReleases(size);
+    return window.electronLensService.getLatestReleases(size);
   }
 
   async getRelease(id: string) {
-    return window.electronPeerbit.getRelease(id);
+    return window.electronLensService.getRelease(id);
   }
 
   async addRelease(releaseData: ReleaseData) {
-    return window.electronPeerbit.addRelease(releaseData);
+    return window.electronLensService.addRelease(releaseData);
   }
 }
-
 
 export class LensService implements ILensService {
   client: Peerbit | null = null;
