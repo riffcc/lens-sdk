@@ -19,6 +19,7 @@ import type {
   BLOCKED_CONTENT_CID_PROPERTY,
 } from './constants';
 import type { ReplicationOptions } from '@peerbit/shared-log';
+import type { WithContext } from '@peerbit/document';
 
 export type AnyObject = Record<string, unknown>;
 
@@ -72,9 +73,9 @@ export interface ILensService {
   getPublicKey: () => Promise<string>;
   getPeerId: () => Promise<string>;
   dial: (address: string) => Promise<boolean>;
+  getRelease: (id: string) => Promise<WithContext<Release> | undefined>;
+  getLatestReleases: (size?: number) => Promise<WithContext<Release>[]>;
   addRelease: (releaseData: ReleaseData) => Promise<AddReleaseResponse>;
-  getRelease: (id: string) => Promise<Release | undefined>;
-  getLatestReleases: (size?: number) => Promise<Release[]>;
   // updateRelease will also need to be defined here eventually
   // updateRelease?: (id: string, releaseData: any) => Promise<any>;
 }

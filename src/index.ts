@@ -39,4 +39,4 @@ export type {
   ILensService,
 } from './types';
 
-export { ElectronLensService, BrowserLensService } from './service';
+export { ElectronLensService, LensService } from './service';

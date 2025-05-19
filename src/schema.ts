@@ -1,13 +1,8 @@
-import { Documents, SearchRequest, Sort, SortDirection } from '@peerbit/document';
+import { Documents } from '@peerbit/document';
 import { field, option, variant } from '@dao-xyz/borsh';
 import { type PublicSignKey } from '@peerbit/crypto';
 import { Program } from '@peerbit/program';
-import {
-  IdentityAccessController,
-  Access,
-  AccessType,
-  PublicKeyAccessCondition,
-} from '@peerbit/identity-access-controller';
+import { IdentityAccessController } from '@peerbit/identity-access-controller';
 import { v4 as uuid } from 'uuid';
 import {
   ID_PROPERTY,
@@ -36,7 +31,6 @@ import type {
   ContentCategoryData,
   SubcriptionData,
   BlockedContentData,
-  AddReleaseResponse,
   SiteArgs,
 } from './types';
 
@@ -246,7 +240,6 @@ export class Site extends Program<SiteArgs> {
     this.acl = new IdentityAccessController({
       rootTrust: rootTrust,
     });
-
   }
 
   async open(args?: SiteArgs): Promise<void> {
@@ -320,62 +313,4 @@ export class Site extends Program<SiteArgs> {
     });
   }
 
-  async addRelease(releaseData: ReleaseData): Promise<AddReleaseResponse> {
-    const release = new Release(releaseData);
-    const result = await this.releases.put(release);
-    return {
-      id: release.id,
-      hash: result.entry.hash,
-    };
-  }
-
-  async getRelease(id: string): Promise<Release | undefined> {
-    return this.releases.index.get(id);
-  }
-
-  async getLatestReleases(size = 30): Promise<Release[]> {
-    return this.releases.index.search(
-      new SearchRequest({
-        sort: [
-          new Sort({ key: 'created', direction: SortDirection.DESC }),
-        ],
-        fetch: size,
-      }),
-    );
-  }
-  // --- ACL Management Methods ---
-  async grantWriteAccess(identity: PublicSignKey): Promise<void> {
-    const access = new Access({
-      accessCondition: new PublicKeyAccessCondition({ key: identity }),
-      accessTypes: [AccessType.Write, AccessType.Read],
-    });
-    await this.acl.access.put(access.initialize());
-  }
-
-  async grantAdminAccess(identity: PublicSignKey): Promise<void> {
-    const access = new Access({
-      accessCondition: new PublicKeyAccessCondition({ key: identity }),
-      accessTypes: [AccessType.Any],
-    });
-    await this.acl.access.put(access.initialize());
-  }
-
-  async grantReadAccess(identity: PublicSignKey): Promise<void> {
-    const access = new Access({
-      accessCondition: new PublicKeyAccessCondition({ key: identity }),
-      accessTypes: [AccessType.Read],
-    });
-    await this.acl.access.put(access.initialize());
-  }
-
-  async addTrustedIdentity(identity: PublicSignKey): Promise<void> {
-    await this.acl.trustedNetwork.add(identity);
-  }
-
-  async addIdentityRelation(from: PublicSignKey, to: PublicSignKey): Promise<void> {
-    if (!this.node.identity.publicKey.equals(from)) {
-        throw new Error("addIdentityRelation must be called by the 'from' identity's peer, or the ACL for IdentityGraph needs to allow this peer to act on behalf of 'from'.");
-    }
-    await this.acl.identityGraphController.addRelation(to);
-  }
 }

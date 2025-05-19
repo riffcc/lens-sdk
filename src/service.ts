@@ -1,7 +1,7 @@
-import type { Release, Site } from './schema';
-import type{ AddReleaseResponse, ILensService, ReleaseData } from './types';
-import {Peerbit} from 'peerbit';
-
+import { Peerbit } from 'peerbit';
+import { SearchRequest, Sort, SortDirection, type WithContext } from '@peerbit/document';
+import { Release, Site } from './schema';
+import type { AddReleaseResponse, ILensService, ReleaseData, SiteArgs } from './types';
 
 export class ElectronLensService implements ILensService {
 
@@ -33,102 +33,164 @@ export class ElectronLensService implements ILensService {
 }
 
 
-export class BrowserLensService implements ILensService {
-  private static instance: BrowserLensService | null = null;
-  private client: Peerbit | null = null;
-  private siteProgram: Site | null = null;
-  private isInitialized: boolean = false;
-  private siteOpened: boolean = false;
+export class LensService implements ILensService {
+  client: Peerbit | null = null;
+  siteProgram: Site | null = null;
+  extenarlyManaged: boolean = false;
 
-  private constructor() {
-    // Private constructor to prevent direct instantiation
-  }
-
-  public static getInstance(): BrowserLensService {
-    if (!BrowserLensService.instance) {
-      BrowserLensService.instance = new BrowserLensService();
+  constructor(client?: Peerbit) {
+    if (client) {
+      this.client = client;
+      this.extenarlyManaged = true;
     }
-    return BrowserLensService.instance;
   }
 
   async init(directory?: string): Promise<void> {
-    if (this.isInitialized) {
-      console.warn('BrowserLensService is already initialized.');
-      return;
+    if (this.client) {
+      throw new Error(
+        'LensService: Already configured with instances from constructor. Do not call init().',
+      );
     }
+    this.client = await Peerbit.create({
+      directory,
+    });
+    this.extenarlyManaged = false;
+  }
 
-    try {
-      this.client = await Peerbit.create({
-        directory: directory ?? './lens-node',
+  async stop(): Promise<void> {
+    if (!this.extenarlyManaged) {
+      const { client } = this.ensureInitialized();
+      try {
+        await client.stop();
+      } catch (error) {
+        console.error('LensService: Error stopping Peerbit client:', error);
+      }
+    }
+  }
+  private ensureInitialized(): {
+    client: Peerbit;
+  } {
+    if (!this.client) {
+      throw new Error(
+        'LensService is not properly initialized. call init(directory?).',
+      );
+    }
+    return {
+      client: this.client,
+    };
+  }
+
+  async openSite(siteOrAddress: Site | string, openOptions?: SiteArgs): Promise<void> {
+    if (this.siteProgram) {
+      throw new Error(
+        'Site already opened.',
+      );
+    }
+    const { client } = this.ensureInitialized();
+
+    if (siteOrAddress instanceof Site) {
+      this.siteProgram = await client.open(siteOrAddress, {
+        args: openOptions,
       });
-      this.isInitialized = true;
-    } catch (error) {
-      console.error('Failed to initialize BrowserLensService:', error);
-      throw error;
+    } else {
+      this.siteProgram = await client.open<Site>(siteOrAddress, {
+        args: openOptions,
+      });
     }
   }
 
-  async open(siteAddress: string): Promise<void> {
+
+  private ensureSiteOpened(): {
+    siteProgram: Site;
+  } {
     this.ensureInitialized();
-    if (this.siteOpened) {
-      console.warn('Site is already opened.');
-      return;
+    if (!this.siteProgram) {
+      throw new Error(
+        'LensService is not properly initialized. call init(directory?).',
+      );
     }
-
-    try {
-      this.siteProgram = await this.client!.open<Site>(siteAddress);
-      this.siteOpened = true;
-    } catch (error) {
-      console.error('Failed to open Site:', error);
-      throw error;
-    }
+    return {
+      siteProgram: this.siteProgram,
+    };
   }
 
-  private ensureInitialized(): void {
-    if (!this.isInitialized || !this.client) {
-      throw new Error('BrowserLensService is not initialized. Call lazyInit first.');
-    }
-  }
 
-  private ensureSiteOpened(): void {
-    if (!this.siteOpened || !this.siteProgram) {
-      throw new Error('Site program is not opened. Call open first.');
-    }
-  }
-
-  async close() {
-    this.siteProgram?.close();
-    this.client?.stop();
-  }
-  
   async getPublicKey(): Promise<string> {
-    this.ensureInitialized();
-    return this.client!.identity.publicKey.toString();
+    const { client } = this.ensureInitialized();
+    return client.identity.publicKey.toString();
   }
 
   async getPeerId(): Promise<string> {
-    this.ensureInitialized();
-    return this.client!.peerId.toString();
+    const { client } = this.ensureInitialized();
+    return client.peerId.toString();
   }
 
   async dial(address: string): Promise<boolean> {
-    this.ensureInitialized();
-    return this.client!.dial(address);
+    const { client } = this.ensureInitialized();
+    return client.dial(address);
   }
 
-  async getLatestReleases(size?: number): Promise<Release[]> {
-    this.ensureSiteOpened();
-    return this.siteProgram!.getLatestReleases(size);
+  async getLatestReleases(size?: number): Promise<WithContext<Release>[]> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return siteProgram.releases.index.search(
+      new SearchRequest({
+        sort: [
+          new Sort({ key: 'created', direction: SortDirection.DESC }),
+        ],
+        fetch: size,
+      }),
+    );
   }
 
-  async getRelease(id: string): Promise<Release | undefined> {
-    this.ensureSiteOpened();
-    return this.siteProgram!.getRelease(id);
+  async getRelease(id: string): Promise<WithContext<Release> | undefined> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return siteProgram.releases.index.get(id);
   }
 
   async addRelease(releaseData: ReleaseData): Promise<AddReleaseResponse> {
-    this.ensureSiteOpened();
-    return this.siteProgram!.addRelease(releaseData);
+    const { siteProgram } = this.ensureSiteOpened();
+
+    const release = new Release(releaseData);
+    const result = await siteProgram.releases.put(release);
+    return {
+      id: release.id,
+      hash: result.entry.hash,
+    };
   }
+
+  // async grantWriteAccess(publickKey: PublicSignKey): Promise<void> {
+  //   const access = new Access({
+  //     accessCondition: new PublicKeyAccessCondition({ key: identity }),
+  //     accessTypes: [AccessType.Write, AccessType.Read],
+  //   });
+  //   await this.acl.access.put(access.initialize());
+  // }
+
+  // async grantAdminAccess(identity: PublicSignKey): Promise<void> {
+  //   const access = new Access({
+  //     accessCondition: new PublicKeyAccessCondition({ key: identity }),
+  //     accessTypes: [AccessType.Any],
+  //   });
+  //   await this.acl.access.put(access.initialize());
+  // }
+
+  // async grantReadAccess(identity: PublicSignKey): Promise<void> {
+  //   const access = new Access({
+  //     accessCondition: new PublicKeyAccessCondition({ key: identity }),
+  //     accessTypes: [AccessType.Read],
+  //   });
+  //   await this.acl.access.put(access.initialize());
+  // }
+
+  // async addTrustedIdentity(identity: PublicSignKey): Promise<void> {
+  //   await this.acl.trustedNetwork.add(identity);
+  // }
+
+  // async addIdentityRelation(from: PublicSignKey, to: PublicSignKey): Promise<void> {
+  //   if (!this.node.identity.publicKey.equals(from)) {
+  //       throw new Error("addIdentityRelation must be called by the 'from' identity's peer, or the ACL for IdentityGraph needs to allow this peer to act on behalf of 'from'.");
+  //   }
+  //   await this.acl.identityGraphController.addRelation(to);
+  // }
 }
 
