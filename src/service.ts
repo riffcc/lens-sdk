@@ -38,6 +38,7 @@ export class BrowserLensService implements ILensService {
   private client: Peerbit | null = null;
   private siteProgram: Site | null = null;
   private isInitialized: boolean = false;
+  private siteOpened: boolean = false;
 
   private constructor() {
     // Private constructor to prevent direct instantiation
@@ -50,7 +51,7 @@ export class BrowserLensService implements ILensService {
     return BrowserLensService.instance;
   }
 
-  async init(siteAddress: string, directory?: string): Promise<void> {
+  async init(directory?: string): Promise<void> {
     if (this.isInitialized) {
       console.warn('BrowserLensService is already initialized.');
       return;
@@ -58,9 +59,8 @@ export class BrowserLensService implements ILensService {
 
     try {
       this.client = await Peerbit.create({
-        directory: directory ?? `./lens-node/${siteAddress}`,
+        directory: directory ?? './lens-node',
       });
-      this.siteProgram = await this.client.open<Site>(siteAddress);
       this.isInitialized = true;
     } catch (error) {
       console.error('Failed to initialize BrowserLensService:', error);
@@ -68,9 +68,31 @@ export class BrowserLensService implements ILensService {
     }
   }
 
+  async open(siteAddress: string): Promise<void> {
+    this.ensureInitialized();
+    if (this.siteOpened) {
+      console.warn('Site is already opened.');
+      return;
+    }
+
+    try {
+      this.siteProgram = await this.client!.open<Site>(siteAddress);
+      this.siteOpened = true;
+    } catch (error) {
+      console.error('Failed to open Site:', error);
+      throw error;
+    }
+  }
+
   private ensureInitialized(): void {
-    if (!this.isInitialized || !this.client || !this.siteProgram) {
+    if (!this.isInitialized || !this.client) {
       throw new Error('BrowserLensService is not initialized. Call lazyInit first.');
+    }
+  }
+
+  private ensureSiteOpened(): void {
+    if (!this.siteOpened || !this.siteProgram) {
+      throw new Error('Site program is not opened. Call open first.');
     }
   }
 
@@ -95,17 +117,17 @@ export class BrowserLensService implements ILensService {
   }
 
   async getLatestReleases(size?: number): Promise<Release[]> {
-    this.ensureInitialized();
+    this.ensureSiteOpened();
     return this.siteProgram!.getLatestReleases(size);
   }
 
   async getRelease(id: string): Promise<Release | undefined> {
-    this.ensureInitialized();
+    this.ensureSiteOpened();
     return this.siteProgram!.getRelease(id);
   }
 
   async addRelease(releaseData: ReleaseData): Promise<AddReleaseResponse> {
-    this.ensureInitialized();
+    this.ensureSiteOpened();
     return this.siteProgram!.addRelease(releaseData);
   }
 }
