@@ -262,10 +262,10 @@ export class Site extends Program<SiteArgs> {
       replicas: defaultReplicaSettings,
       canPerform: (props) => {
         if (props.type === 'delete') {
-          return memberCanPerform(props);
+          return administratorCanPerform(props);
         } else {
           return (
-            administratorCanPerform(props)
+            memberCanPerform(props)
           );
         }
       },
