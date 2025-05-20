@@ -1,4 +1,4 @@
-import type { Release } from './schema';
+import type { Release, Site } from './schema';
 import type {
   ID_PROPERTY,
   RELEASE_NAME_PROPERTY,
@@ -70,14 +70,15 @@ export interface AddReleaseResponse {
 }
 
 export interface ILensService {
+  init: (directory?: string) => Promise<void>;
+  stop: () => Promise<void>;
+  openSite: (siteOrAddress: Site | string, openOptions?: SiteArgs) => Promise<void>;
   getPublicKey: () => Promise<string>;
   getPeerId: () => Promise<string>;
   dial: (address: string) => Promise<boolean>;
   getRelease: (id: string) => Promise<WithContext<Release> | undefined>;
   getLatestReleases: (size?: number) => Promise<WithContext<Release>[]>;
   addRelease: (releaseData: ReleaseData) => Promise<AddReleaseResponse>;
-  // updateRelease will also need to be defined here eventually
-  // updateRelease?: (id: string, releaseData: any) => Promise<any>;
 }
 
 export type SiteArgs = {

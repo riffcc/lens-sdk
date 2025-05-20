@@ -6,6 +6,18 @@ import type { AddReleaseResponse, ILensService, ReleaseData, SiteArgs } from './
 export class ElectronLensService implements ILensService {
   constructor() {}
 
+  async init(directory?: string): Promise<void> {
+    await window.electronLensService.init(directory);
+  }
+
+  async stop(): Promise<void> {
+    await window.electronLensService.stop();
+  }
+
+  async openSite(siteOrAddress: Site | string, openOptions?: SiteArgs): Promise<void> {
+    await window.electronLensService.openSite(siteOrAddress, openOptions);
+  }
+
   async getPublicKey() {
     return window.electronLensService.getPublicKey();
   }
@@ -32,9 +44,9 @@ export class ElectronLensService implements ILensService {
 }
 
 export class LensService implements ILensService {
-  client: Peerbit | null = null;
-  siteProgram: Site | null = null;
-  extenarlyManaged: boolean = false;
+  private client: Peerbit | null = null;
+  private siteProgram: Site | null = null;
+  private extenarlyManaged: boolean = false;
 
   constructor(client?: Peerbit) {
     if (client) {
@@ -65,6 +77,7 @@ export class LensService implements ILensService {
       }
     }
   }
+
   private ensureInitialized(): {
     client: Peerbit;
   } {
@@ -97,21 +110,21 @@ export class LensService implements ILensService {
     }
   }
 
-
   private ensureSiteOpened(): {
+    client: Peerbit;
     siteProgram: Site;
   } {
-    this.ensureInitialized();
+    const { client } = this.ensureInitialized();
     if (!this.siteProgram) {
       throw new Error(
         'LensService is not properly initialized. call init(directory?).',
       );
     }
     return {
+      client: client,
       siteProgram: this.siteProgram,
     };
   }
-
 
   async getPublicKey(): Promise<string> {
     const { client } = this.ensureInitialized();
