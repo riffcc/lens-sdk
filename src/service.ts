@@ -139,8 +139,8 @@ export class ElectronLensService implements ILensService {
 }
 
 export class LensService implements ILensService {
-  private client: Peerbit | null = null;
-  private siteProgram: Site | null = null;
+  client: Peerbit | null = null;
+  siteProgram: Site | null = null;
   private extenarlyManaged: boolean = false;
 
   constructor(client?: Peerbit) {
