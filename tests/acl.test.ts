@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
 import { Site } from '../src/schema';
 import { RELEASE_NAME_PROPERTY, RELEASE_CATEGORY_ID_PROPERTY, RELEASE_CONTENT_CID_PROPERTY, RELEASE_THUMBNAIL_CID_PROPERTY } from '../src/constants';
-import type { ReleaseData } from '../src/types';
+import { AccountType, type ReleaseData } from '../src/types';
 import { AccessError } from '@peerbit/crypto';
 // import { waitForResolved } from '@peerbit/time';
 // import { SearchRequest } from '@peerbit/document';
@@ -11,33 +11,25 @@ import { AccessError } from '@peerbit/crypto';
 //   type Access,
 // } from '@peerbit/identity-access-controller';
 import { Peerbit } from 'peerbit';
-import { LensService } from '../src/service';
+import { authorise, LensService } from '../src/service';
+import { delay } from '@peerbit/time';
 
 describe('Site ACL', () => {
   let peer1: Peerbit;
-  let peer2: Peerbit;
   let siteProgram: Site;
   let service: LensService;
 
   beforeAll(async () => {
     peer1 = await Peerbit.create();
-    peer2 = await Peerbit.create();
-
     siteProgram = new Site(peer1.identity.publicKey);
     service = new LensService(peer1);
     await service.openSite(siteProgram);
+    
   });
 
   afterAll(async () => {
-    if (peer1) {
       await peer1.stop();
-    }
-    if (peer2) {
-      await peer1.stop();
-    }
-    if (siteProgram) {
       await siteProgram.close();
-    }
   });
 
   const releaseData: ReleaseData = {
@@ -55,51 +47,59 @@ describe('Site ACL', () => {
   }, 15000);
 
   test('untrusted peer cannot add releases', async () => {
-
+    const peer2 = await Peerbit.create();
     await peer2.dial(peer1.getMultiaddrs());
-
     const service2 = new LensService(peer2);
+    await service2.openSite(siteProgram.address);
 
-    await service2.openSite(siteProgram.address, { replicate: false});
-
-    await service.siteProgram?.waitFor(peer2.identity.publicKey);
     await service2.siteProgram?.waitFor(peer1.identity.publicKey);
 
     await expect(service2.addRelease(releaseData)).rejects.toThrow(AccessError);
+    await peer2.stop();
   }, 20000);
 
-  // test('peer granted write access can add releases', async () => {
-  //   site1 = await peer1.open(new Site(peer1.identity.publicKey));
-  //   // Use Site's method to grant access
-  //   await site1.grantWriteAccess(peer2.identity.publicKey);
+  test('member peer can add releases and getAccountStatus return member account type', async () => {
+    const peer3 = await Peerbit.create();
+    await peer3.dial(peer1.getMultiaddrs());
+    const service3 = new LensService(peer3);
+    await service3.openSite(siteProgram.address);
 
-  //   const site1Address = site1.address!;
-  //   const site2 = await peer2.open<Site>(site1Address, { args: { replicate: true } });
+    await service3.siteProgram?.waitFor(peer1.identity.publicKey);
+    
+    await authorise(siteProgram, AccountType.MEMBER, peer3.identity.publicKey.toString());
+    await delay(1000);
+    await expect(
+      service3.addRelease({ 
+        ...releaseData,
+        [RELEASE_NAME_PROPERTY]: 'test-release-2',
+      }),
+    ).resolves.toHaveProperty('id');
 
-  //   await site1.waitFor(peer2.identity.publicKey);
-  //   await site2.waitFor(peer1.identity.publicKey);
+    await expect(service3.getAccountStatus()).resolves.toBe(AccountType.MEMBER);
+    await peer3.stop();
+  }, 30000);
 
-  //   // Verify ACL state by querying the IdentityAccessController's 'access' store directly
-  //   await waitForResolved(async () => {
-  //     const accesses = await site2.acl.access.index.search(new SearchRequest({ query: [] }));
-  //     const pkCondition = accesses.find(a =>
-  //       a.accessCondition instanceof PublicKeyAccessCondition &&
-  //       (a.accessCondition as PublicKeyAccessCondition<Access>).key.equals(peer2.identity.publicKey) &&
-  //       (a.accessTypes.includes(AccessType.Write) || a.accessTypes.includes(AccessType.Any)),
-  //     );
-  //     expect(pkCondition).toBeDefined();
-  //   }, { timeout: 15000, delayInterval: 1000 });
+  test('admin peer can add releases and getAccountStatus return admin account type', async () => {
+    const peer4 = await Peerbit.create();
+    await peer4.dial(peer1.getMultiaddrs());
+    const service4 = new LensService(peer4);
+    await service4.openSite(siteProgram.address);
 
-  //   const releaseByPeer2Data: ReleaseData = { ...releaseData, name: 'Release by Peer2' };
-  //   const result = await site2.addRelease(releaseByPeer2Data);
+    await service4.siteProgram?.waitFor(peer1.identity.publicKey);
+    
+    await authorise(siteProgram, AccountType.ADMIN, peer4.identity.publicKey.toString());
+    await delay(1000);
+    await expect(
+      service4.addRelease({ 
+        ...releaseData,
+        [RELEASE_NAME_PROPERTY]: 'test-release-3',
+      }),
+    ).resolves.toHaveProperty('id');
 
-  //   await waitForResolved(async () => {
-  //     const fetchedOnSite1 = await site1!.getRelease(result.id);
-  //     expect(fetchedOnSite1).toBeDefined();
-  //     expect(fetchedOnSite1?.name).toEqual(releaseByPeer2Data.name);
-  //   }, { timeout: 10000, delayInterval: 1000 });
-  //   await site2.close();
-  // }, 30000);
+    await expect(service4.getAccountStatus()).resolves.toBe(AccountType.ADMIN);
+    await peer4.stop();
+  }, 20000);
+
 
 
 });
