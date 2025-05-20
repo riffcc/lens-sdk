@@ -229,6 +229,11 @@ export class Site extends Program<SiteArgs> {
   blockedContent: Documents<BlockedContent>;
 
   @field({ type: IdentityAccessController })
+  members: IdentityAccessController;
+
+  @field({ type: IdentityAccessController })
+  administrators: IdentityAccessController;
+  
   constructor(rootTrust: PublicSignKey | PeerId) {
     super();
     this.releases = new Documents();
@@ -236,9 +241,8 @@ export class Site extends Program<SiteArgs> {
     this.contentCategories = new Documents();
     this.subscriptions = new Documents();
     this.blockedContent = new Documents();
-    this.acl = new IdentityAccessController({
-      rootTrust: rootTrust,
-    });
+    this.members = new IdentityAccessController({ rootTrust });
+    this.administrators = new IdentityAccessController({ rootTrust });
   }
 
   async open(args?: SiteArgs): Promise<void> {
@@ -246,17 +250,27 @@ export class Site extends Program<SiteArgs> {
     const defaultReplicationOptions = args?.replicate || { factor: 1 };
     const defaultReplicaSettings = { min: 2, max: undefined };
 
-    await this.acl.open({ replicate: args?.replicate || { factor: 1 } });
+    await this.members.open({ replicate: args?.replicate || { factor: 1 } });
+    await this.administrators.open({ replicate: args?.replicate || { factor: 1 } });
 
-    const commonCanPerform = this.acl.canPerform.bind(this.acl);
+    const memberCanPerform = this.members.canPerform.bind(this.members);
+    const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
 
     await this.releases.open({
       type: Release,
       replicate: defaultReplicationOptions,
       replicas: defaultReplicaSettings,
-      canPerform: commonCanPerform,
+      canPerform: (props) => {
+        if (props.type === 'delete') {
+          return memberCanPerform(props);
+        } else {
+          return (
+            administratorCanPerform(props)
+          );
+        }
+      },
       index: {
-        canRead: async () => {
+        canRead: () => {
           return true;
         },
         type: IndexableRelease,
@@ -277,9 +291,9 @@ export class Site extends Program<SiteArgs> {
       type: FeaturedRelease,
       replicate: defaultReplicationOptions,
       replicas: defaultReplicaSettings,
-      canPerform: commonCanPerform,
+      canPerform: administratorCanPerform,
       index: {
-        canRead: async () => {
+        canRead: () => {
           return true;
         },
       },
@@ -289,9 +303,9 @@ export class Site extends Program<SiteArgs> {
       type: ContentCategory,
       replicate: defaultReplicationOptions,
       replicas: defaultReplicaSettings,
-      canPerform: commonCanPerform,
+      canPerform: administratorCanPerform,
       index: {
-        canRead: async () => {
+        canRead: () => {
           return true;
         },
       },
@@ -301,14 +315,20 @@ export class Site extends Program<SiteArgs> {
       type: Subscription,
       replicate: defaultReplicationOptions,
       replicas: defaultReplicaSettings,
-      canPerform: commonCanPerform,
+      canPerform: administratorCanPerform,
+      index: {
+        canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
+      }
     });
 
     await this.blockedContent.open({
       type: BlockedContent,
       replicate: defaultReplicationOptions,
       replicas: defaultReplicaSettings,
-      canPerform: commonCanPerform,
+      canPerform: administratorCanPerform,
+      index: {
+        canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
+      },
     });
   }
 

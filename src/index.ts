@@ -28,6 +28,7 @@ export {
 } from './schema';
 export type {
   AnyObject,
+  AccountType,
   IdData,
   ReleaseData,
   FeaturedReleaseData,
@@ -39,4 +40,6 @@ export type {
   ILensService,
 } from './types';
 
-export { ElectronLensService, LensService } from './service';
+export { ElectronLensService, LensService, authorise } from './service';
+
+export { publicSignKeyFromString } from './utils';

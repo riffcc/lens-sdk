@@ -1,7 +1,98 @@
 import { Peerbit } from 'peerbit';
-import { SearchRequest, Sort, SortDirection, type WithContext } from '@peerbit/document';
+import { 
+  Compare, 
+  IntegerCompare, 
+  Or, 
+  SearchRequest, 
+  Sort,
+  SortDirection, 
+  type WithContext,
+} from '@peerbit/document';
+
+import { 
+  Access, 
+  ACCESS_TYPE_PROPERTY, 
+  AccessType, 
+  PublicKeyAccessCondition, 
+  type IdentityAccessController,
+} from '@peerbit/identity-access-controller';
+import type { PublicSignKey } from '@peerbit/crypto';
 import { Release, Site } from './schema';
-import type { AddReleaseResponse, ILensService, ReleaseData, SiteArgs } from './types';
+import type {
+  AddReleaseResponse,
+  ILensService,
+  ReleaseData,
+  SiteArgs,
+} from './types';
+
+import { AccountType } from './types';
+import { publicSignKeyFromString } from './utils';
+
+export async function authorise(
+  siteProgram: Site,
+  accountType: AccountType,
+  stringPublicKey: string,
+): Promise<void> {
+  const publicSignKey = publicSignKeyFromString(stringPublicKey);
+  const accessCondition = new PublicKeyAccessCondition({ key: publicSignKey });
+  const accessTypes: AccessType[] = [AccessType.Read, AccessType.Write];
+
+  if (accountType === AccountType.MEMBER) {
+    const access = new Access({
+      accessCondition,
+      accessTypes,
+    });
+    await siteProgram.members.access.put(access);
+
+  } else if (accountType === AccountType.ADMIN) {
+    const access = new Access({
+      accessCondition,
+      accessTypes,
+    });
+    await siteProgram.members.access.put(access);
+    await siteProgram.administrators.access.put(access);
+
+  } else {
+    throw new Error('authorization for this account type is not implemented yet.');
+  }
+}
+
+const canPerformCheck = async (accessController: IdentityAccessController, key: PublicSignKey) => {
+  const accessWritedOrAny = await accessController.access.index.search(
+    new SearchRequest({
+      query: [
+        new Or([
+          new IntegerCompare({
+            key: ACCESS_TYPE_PROPERTY,
+            compare: Compare.Equal,
+            value: AccessType.Any,
+          }),
+          new IntegerCompare({
+            key: ACCESS_TYPE_PROPERTY,
+            compare: Compare.Equal,
+            value: AccessType.Write,
+          }),
+        ]),
+      ],
+    }),
+  );
+
+  for (const access of accessWritedOrAny) {
+    if (access instanceof Access) {
+      if (
+        access.accessTypes.find(
+          (x) => x === AccessType.Any || x === AccessType.Write,
+        ) !== undefined
+      ) {
+        // check condition
+        if (await access.accessCondition.allowed(key)) {
+          return true;
+        }
+        continue;
+      }
+    }
+  }
+};
 
 export class ElectronLensService implements ILensService {
   constructor() {}
@@ -24,6 +115,10 @@ export class ElectronLensService implements ILensService {
 
   async getPeerId() {
     return window.electronLensService.getPeerId();
+  }
+
+  async getAccountStatus(): Promise<AccountType> {
+    return window.electronLensService.getAccountStatus();
   }
 
   async dial(address: string) {
@@ -141,6 +236,17 @@ export class LensService implements ILensService {
     return client.dial(address);
   }
 
+  async getAccountStatus(): Promise<AccountType> {
+    const { client, siteProgram } = this.ensureSiteOpened();
+
+    if (await canPerformCheck(siteProgram.administrators, client.identity.publicKey)) {
+      return AccountType.ADMIN;
+    } else if (await canPerformCheck(siteProgram.members, client.identity.publicKey)) {
+      return AccountType.MEMBER;
+    }
+    return AccountType.GUEST;
+  }
+
   async getLatestReleases(size?: number): Promise<WithContext<Release>[]> {
     const { siteProgram } = this.ensureSiteOpened();
     return siteProgram.releases.index.search(
@@ -169,39 +275,5 @@ export class LensService implements ILensService {
     };
   }
 
-  // async grantWriteAccess(publickKey: PublicSignKey): Promise<void> {
-  //   const access = new Access({
-  //     accessCondition: new PublicKeyAccessCondition({ key: identity }),
-  //     accessTypes: [AccessType.Write, AccessType.Read],
-  //   });
-  //   await this.acl.access.put(access.initialize());
-  // }
-
-  // async grantAdminAccess(identity: PublicSignKey): Promise<void> {
-  //   const access = new Access({
-  //     accessCondition: new PublicKeyAccessCondition({ key: identity }),
-  //     accessTypes: [AccessType.Any],
-  //   });
-  //   await this.acl.access.put(access.initialize());
-  // }
-
-  // async grantReadAccess(identity: PublicSignKey): Promise<void> {
-  //   const access = new Access({
-  //     accessCondition: new PublicKeyAccessCondition({ key: identity }),
-  //     accessTypes: [AccessType.Read],
-  //   });
-  //   await this.acl.access.put(access.initialize());
-  // }
-
-  // async addTrustedIdentity(identity: PublicSignKey): Promise<void> {
-  //   await this.acl.trustedNetwork.add(identity);
-  // }
-
-  // async addIdentityRelation(from: PublicSignKey, to: PublicSignKey): Promise<void> {
-  //   if (!this.node.identity.publicKey.equals(from)) {
-  //       throw new Error("addIdentityRelation must be called by the 'from' identity's peer, or the ACL for IdentityGraph needs to allow this peer to act on behalf of 'from'.");
-  //   }
-  //   await this.acl.identityGraphController.addRelation(to);
-  // }
 }
 

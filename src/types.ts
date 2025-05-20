@@ -23,6 +23,11 @@ import type { WithContext } from '@peerbit/document';
 
 export type AnyObject = Record<string, unknown>;
 
+export enum AccountType {
+  GUEST = 0,
+  MEMBER = 1,
+  ADMIN = 2,
+}
 export type IdData = {
   [ID_PROPERTY]: string
 };
@@ -75,6 +80,7 @@ export interface ILensService {
   openSite: (siteOrAddress: Site | string, openOptions?: SiteArgs) => Promise<void>;
   getPublicKey: () => Promise<string>;
   getPeerId: () => Promise<string>;
+  getAccountStatus: () => Promise<AccountType>;
   dial: (address: string) => Promise<boolean>;
   getRelease: (id: string) => Promise<WithContext<Release> | undefined>;
   getLatestReleases: (size?: number) => Promise<WithContext<Release>[]>;
