@@ -4,6 +4,7 @@ import { type PublicSignKey } from '@peerbit/crypto';
 import { Program } from '@peerbit/program';
 import { IdentityAccessController } from '@peerbit/identity-access-controller';
 import { v4 as uuid } from 'uuid';
+import type { PeerId } from '@libp2p/interface';
 import {
   ID_PROPERTY,
   RELEASE_NAME_PROPERTY,
@@ -228,9 +229,7 @@ export class Site extends Program<SiteArgs> {
   blockedContent: Documents<BlockedContent>;
 
   @field({ type: IdentityAccessController })
-  acl: IdentityAccessController;
-
-  constructor(rootTrust: PublicSignKey) {
+  constructor(rootTrust: PublicSignKey | PeerId) {
     super();
     this.releases = new Documents();
     this.featuredReleases = new Documents();
