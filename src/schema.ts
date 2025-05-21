@@ -56,8 +56,8 @@ export class Release {
   @field({ type: option('string') })
   [RELEASE_METADATA_PROPERTY]?: string;
 
-  constructor(props: ReleaseData) {
-    this[ID_PROPERTY] = uuid();
+  constructor(props: Partial<IdData> & ReleaseData) {
+    this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
     this[RELEASE_NAME_PROPERTY] = props[RELEASE_NAME_PROPERTY];
     this[RELEASE_CATEGORY_ID_PROPERTY] = props[RELEASE_CATEGORY_ID_PROPERTY];
     this[RELEASE_CONTENT_CID_PROPERTY] = props[RELEASE_CONTENT_CID_PROPERTY];
@@ -100,7 +100,7 @@ export class IndexableRelease {
 
   constructor(
     release: IdData & ReleaseData,
-    createdAt: bigint,
+    created: bigint,
     modified: bigint,
     author: PublicSignKey,
   ) {
@@ -114,7 +114,7 @@ export class IndexableRelease {
     if (release[RELEASE_METADATA_PROPERTY]) {
       this[RELEASE_METADATA_PROPERTY] = release[RELEASE_METADATA_PROPERTY];
     }
-    this.created = createdAt;
+    this.created = created;
     this.modified = modified;
     this.author = author.bytes;
   }
@@ -137,12 +137,55 @@ export class FeaturedRelease {
   @field({ type: 'bool' })
   [FEATURED_PROMOTED_PROPERTY]: boolean;
 
-  constructor(props: FeaturedReleaseData) {
-    this[ID_PROPERTY] = uuid();
+  constructor(props: Partial<IdData> & FeaturedReleaseData) {
+    this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
     this[FEATURED_RELEASE_ID_PROPERTY] = props[FEATURED_RELEASE_ID_PROPERTY];
     this[FEATURED_START_TIME_PROPERTY] = props[FEATURED_START_TIME_PROPERTY];
     this[FEATURED_END_TIME_PROPERTY] = props[FEATURED_END_TIME_PROPERTY];
     this[FEATURED_PROMOTED_PROPERTY] = props[FEATURED_PROMOTED_PROPERTY];
+  }
+}
+
+export class IndexableFeaturedRelease {
+  @field({ type: 'string' })
+  [ID_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [FEATURED_RELEASE_ID_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [FEATURED_START_TIME_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [FEATURED_END_TIME_PROPERTY]: string;
+
+  @field({ type: 'bool' })
+  [FEATURED_PROMOTED_PROPERTY]: boolean;
+
+  @field({ type: 'u64' })
+  created: bigint;
+
+  @field({ type: 'u64' })
+  modified: bigint;
+
+  @field({ type: Uint8Array })
+  author: Uint8Array;
+
+  constructor(
+    featuredRelease: IdData & FeaturedReleaseData,
+    created: bigint,
+    modified: bigint,
+    author: PublicSignKey,
+  ) {
+    this[ID_PROPERTY] = featuredRelease[ID_PROPERTY];
+    this[FEATURED_RELEASE_ID_PROPERTY] = featuredRelease[FEATURED_RELEASE_ID_PROPERTY];
+    this[FEATURED_START_TIME_PROPERTY] = featuredRelease[FEATURED_START_TIME_PROPERTY];
+    this[FEATURED_END_TIME_PROPERTY] = featuredRelease[FEATURED_END_TIME_PROPERTY];
+    this[FEATURED_PROMOTED_PROPERTY] = featuredRelease[FEATURED_PROMOTED_PROPERTY];
+
+    this.created = created;
+    this.modified = modified;
+    this.author = author.bytes;
   }
 }
 
@@ -217,7 +260,7 @@ export class Site extends Program<SiteArgs> {
   releases: Documents<Release, IndexableRelease>;
 
   @field({ type: Documents })
-  featuredReleases: Documents<FeaturedRelease>;
+  featuredReleases: Documents<FeaturedRelease, IndexableFeaturedRelease>;
 
   @field({ type: Documents })
   contentCategories: Documents<ContentCategory>;
@@ -295,6 +338,17 @@ export class Site extends Program<SiteArgs> {
       index: {
         canRead: () => {
           return true;
+        },
+        type: IndexableFeaturedRelease,
+        transform: async (featuredRelease, ctx) => {
+          return new IndexableFeaturedRelease(
+            featuredRelease,
+            ctx.created,
+            ctx.modified,
+            (await this.featuredReleases.log.log.get(
+              ctx.head,
+            ))!.signatures[0].publicKey,
+          );
         },
       },
     });

@@ -1,32 +1,37 @@
 import { Peerbit } from 'peerbit';
-import { 
-  Compare, 
-  IntegerCompare, 
-  Or, 
-  SearchRequest, 
+import {
+  Compare,
+  IntegerCompare,
+  Or,
+  SearchRequest,
   Sort,
-  SortDirection, 
+  SortDirection,
   type WithContext,
 } from '@peerbit/document';
 
-import { 
-  Access, 
-  ACCESS_TYPE_PROPERTY, 
-  AccessType, 
-  PublicKeyAccessCondition, 
+import {
+  Access,
+  ACCESS_TYPE_PROPERTY,
+  AccessType,
+  PublicKeyAccessCondition,
   type IdentityAccessController,
 } from '@peerbit/identity-access-controller';
 import type { PublicSignKey } from '@peerbit/crypto';
-import { Release, Site } from './schema';
+import { FeaturedRelease, Release, Site } from './schema';
 import type {
-  AddReleaseResponse,
+  FeaturedReleaseData,
+  HashResponse,
+  IdData,
+  IdResponse,
   ILensService,
   ReleaseData,
+  SearchOptions,
   SiteArgs,
 } from './types';
 
 import { AccountType } from './types';
 import { publicSignKeyFromString } from './utils';
+import { FEATURED_RELEASE_ID_PROPERTY } from './constants';
 
 export async function authorise(
   siteProgram: Site,
@@ -95,7 +100,7 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
 };
 
 export class ElectronLensService implements ILensService {
-  constructor() {}
+  constructor() { }
 
   async init(directory?: string): Promise<void> {
     await window.electronLensService.init(directory);
@@ -121,20 +126,48 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.getAccountStatus();
   }
 
-  async dial(address: string) {
+  async dial(address: string): Promise<boolean> {
     return window.electronLensService.dial(address);
   }
 
-  async getLatestReleases(size?: number) {
-    return window.electronLensService.getLatestReleases(size);
+  async getRelease(data: IdData): Promise<WithContext<Release> | undefined> {
+    return window.electronLensService.getRelease(data);
   }
 
-  async getRelease(id: string) {
-    return window.electronLensService.getRelease(id);
+  async getReleases(options?: SearchOptions): Promise<WithContext<Release>[]> {
+    return window.electronLensService.getReleases(options);
   }
 
-  async addRelease(releaseData: ReleaseData) {
-    return window.electronLensService.addRelease(releaseData);
+  async getFeaturedRelease(data: IdData): Promise<WithContext<FeaturedRelease> | undefined> {
+    return window.electronLensService.getFeaturedRelease(data);
+  }
+
+  async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
+    return window.electronLensService.getFeaturedReleases(options);
+  }
+
+  async addRelease(data: ReleaseData): Promise<HashResponse> {
+    return window.electronLensService.addRelease(data);
+  }
+  // Admin methods
+  async editRelease(data: IdData & ReleaseData): Promise<HashResponse> {
+    return window.electronLensService.editRelease(data);
+  }
+
+  async deleteRelease(data: IdData): Promise<IdResponse> {
+    return window.electronLensService.deleteRelease(data);
+  }
+
+  async addFeaturedRelease(data: FeaturedReleaseData): Promise<HashResponse> {
+    return window.electronLensService.addFeaturedRelease(data);
+  }
+
+  async editFeaturedRelease(data: IdData & FeaturedReleaseData): Promise<HashResponse> {
+    return window.electronLensService.editFeaturedRelease(data);
+  }
+
+  async deleteFeaturedRelease(data: IdData): Promise<IdResponse> {
+    return window.electronLensService.deleteFeaturedRelease(data);
   }
 }
 
@@ -247,33 +280,164 @@ export class LensService implements ILensService {
     return AccountType.GUEST;
   }
 
-  async getLatestReleases(size?: number): Promise<WithContext<Release>[]> {
-    const { siteProgram } = this.ensureSiteOpened();
-    return siteProgram.releases.index.search(
-      new SearchRequest({
-        sort: [
-          new Sort({ key: 'created', direction: SortDirection.DESC }),
-        ],
-        fetch: size,
-      }),
-    );
-  }
-
-  async getRelease(id: string): Promise<WithContext<Release> | undefined> {
+  async getRelease({ id }: IdData): Promise<WithContext<Release> | undefined> {
     const { siteProgram } = this.ensureSiteOpened();
     return siteProgram.releases.index.get(id);
   }
 
-  async addRelease(releaseData: ReleaseData): Promise<AddReleaseResponse> {
+  async getReleases(options?: SearchOptions): Promise<WithContext<Release>[]> {
     const { siteProgram } = this.ensureSiteOpened();
+    return siteProgram.releases.index.search(
+      options?.request ?? new SearchRequest({
+        sort: options?.sort ?? [
+          new Sort({ key: 'created', direction: SortDirection.DESC }),
+        ],
+        fetch: options?.fetch ?? 50,
+      }),
+    );
+  }
 
-    const release = new Release(releaseData);
-    const result = await siteProgram.releases.put(release);
-    return {
-      id: release.id,
-      hash: result.entry.hash,
-    };
+  async getFeaturedRelease({ id }: IdData): Promise<WithContext<FeaturedRelease> | undefined> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return siteProgram.featuredReleases.index.get(id);
+  }
+
+  async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return siteProgram.featuredReleases.index.search(
+      options?.request ?? new SearchRequest({
+        sort: options?.sort ?? [
+          new Sort({ key: 'created', direction: SortDirection.DESC }),
+        ],
+        fetch: options?.fetch ?? 50,
+      }),
+    );
+  }
+
+  async addRelease(data: ReleaseData): Promise<HashResponse> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+
+      const release = new Release(data);
+      const result = await siteProgram.releases.put(release);
+
+      return {
+        success: true,
+        id: release.id,
+        hash: result.entry.hash,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to add release',
+      };
+    }
+  }
+
+  // Admin methods
+  async editRelease(data: IdData & ReleaseData): Promise<HashResponse> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+
+      const release = new Release(data);
+      const result = await siteProgram.releases.put(release);
+
+      return {
+        success: true,
+        id: release.id,
+        hash: result.entry.hash,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        id: data.id,
+        error: error instanceof Error ? error.message : 'Failed to edit release',
+      };
+    }
+  }
+
+  async deleteRelease({ id }: IdData): Promise<IdResponse> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+
+      await siteProgram.releases.del(id);
+      return {
+        success: true,
+        id,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        id,
+        error: error instanceof Error ? error.message : 'Failed to delete release',
+      };
+    }
+  }
+
+  async addFeaturedRelease(data: FeaturedReleaseData): Promise<HashResponse> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+
+      const targetRelease = await this.getRelease({ id: data[FEATURED_RELEASE_ID_PROPERTY] });
+
+      if (!targetRelease) {
+        throw new Error(
+          `Cannot add featured release: The specified release ID ${data[FEATURED_RELEASE_ID_PROPERTY]} does not exist.`,
+        );
+      }
+      const featuredRelease = new FeaturedRelease(data);
+      const result = await siteProgram.featuredReleases.put(featuredRelease);
+
+      return {
+        success: true,
+        id: featuredRelease.id,
+        hash: result.entry.hash,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to add featured release',
+      };
+    }
+  }
+
+  async editFeaturedRelease(data: IdData & FeaturedReleaseData): Promise<HashResponse> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+
+      const featuredRelease = new FeaturedRelease(data);
+      const result = await siteProgram.featuredReleases.put(featuredRelease);
+
+      return {
+        success: true,
+        id: featuredRelease.id,
+        hash: result.entry.hash,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        id: data.id,
+        error: error instanceof Error ? error.message : 'Failed to edit featured release',
+      };
+    }
+  }
+
+  async deleteFeaturedRelease({ id }: IdData): Promise<IdResponse> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+
+      await siteProgram.featuredReleases.del(id);
+      return {
+        success: true,
+        id,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        id,
+        error: error instanceof Error ? error.message : 'Failed to delete featured release',
+      };
+    }
   }
 
 }
-

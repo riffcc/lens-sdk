@@ -1,4 +1,4 @@
-import type { Release, Site } from './schema';
+import type { FeaturedRelease, Release, Site } from './schema';
 import type {
   ID_PROPERTY,
   RELEASE_NAME_PROPERTY,
@@ -19,7 +19,7 @@ import type {
   BLOCKED_CONTENT_CID_PROPERTY,
 } from './constants';
 import type { ReplicationOptions } from '@peerbit/shared-log';
-import type { WithContext } from '@peerbit/document';
+import type { Query, SearchRequest, Sort, WithContext } from '@peerbit/document';
 
 export type AnyObject = Record<string, unknown>;
 
@@ -27,6 +27,19 @@ export enum AccountType {
   GUEST = 0,
   MEMBER = 1,
   ADMIN = 2,
+}
+
+export type SearchOptions = {
+  request?: SearchRequest;
+  query?:
+    | Query[]
+    | Query
+    | Record<
+        string,
+        string | number | bigint | Uint8Array | boolean | null | undefined
+      >;
+  sort?: Sort[] | Sort;
+  fetch?: number;
 }
 export type IdData = {
   [ID_PROPERTY]: string
@@ -69,9 +82,17 @@ export type BlockedContentData = {
   [BLOCKED_CONTENT_CID_PROPERTY]: string;
 }
 
-export interface AddReleaseResponse {
-  id: string;
-  hash: string;
+export interface BaseResponse {
+  success: boolean;
+  error?: string;
+}
+
+export interface IdResponse extends BaseResponse {
+  id?: string;
+}
+
+export interface HashResponse extends IdResponse {
+  hash?: string;
 }
 
 export interface ILensService {
@@ -82,9 +103,18 @@ export interface ILensService {
   getPeerId: () => Promise<string>;
   getAccountStatus: () => Promise<AccountType>;
   dial: (address: string) => Promise<boolean>;
-  getRelease: (id: string) => Promise<WithContext<Release> | undefined>;
-  getLatestReleases: (size?: number) => Promise<WithContext<Release>[]>;
-  addRelease: (releaseData: ReleaseData) => Promise<AddReleaseResponse>;
+  getRelease: (data: IdData) => Promise<WithContext<Release> | undefined>;
+  getReleases: (options?: SearchOptions) => Promise<WithContext<Release>[]>;
+  getFeaturedRelease: (data: IdData) => Promise<WithContext<FeaturedRelease> | undefined>;
+  getFeaturedReleases: (options?: SearchOptions) => Promise<WithContext<FeaturedRelease>[]>;
+  addRelease: (data: ReleaseData) => Promise<HashResponse>;
+  // Admin methods
+  editRelease: (data: IdData & ReleaseData) => Promise<HashResponse>;
+  deleteRelease: (data: IdData) => Promise<IdResponse>;
+  addFeaturedRelease: (data: FeaturedReleaseData) => Promise<HashResponse>;
+  editFeaturedRelease: (data: IdData & FeaturedReleaseData) => Promise<HashResponse>;
+  deleteFeaturedRelease: (data: IdData) => Promise<IdResponse>;
+
 }
 
 export type SiteArgs = {
