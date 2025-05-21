@@ -31,6 +31,7 @@ import type {
 
 import { AccountType } from './types';
 import { publicSignKeyFromString } from './utils';
+import { FEATURED_RELEASE_ID_PROPERTY } from './constants';
 
 export async function authorise(
   siteProgram: Site,
@@ -377,6 +378,13 @@ export class LensService implements ILensService {
     try {
       const { siteProgram } = this.ensureSiteOpened();
 
+      const targetRelease = await this.getRelease({ id: data[FEATURED_RELEASE_ID_PROPERTY] });
+
+      if (!targetRelease) {
+        throw new Error(
+          `Cannot add featured release: The specified release ID ${data[FEATURED_RELEASE_ID_PROPERTY]} does not exist.`,
+        );
+      }
       const featuredRelease = new FeaturedRelease(data);
       const result = await siteProgram.featuredReleases.put(featuredRelease);
 
