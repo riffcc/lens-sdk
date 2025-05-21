@@ -17,18 +17,20 @@ export {
   SUBSCRIPTION_NAME_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
 } from './constants';
+
 export {
   Release,
   IndexableRelease,
   FeaturedRelease,
+  IndexableFeaturedRelease,
   ContentCategory,
   Subscription,
   BlockedContent,
   Site,
 } from './schema';
+
 export type {
   AnyObject,
-  AccountType,
   IdData,
   ReleaseData,
   FeaturedReleaseData,
@@ -36,9 +38,13 @@ export type {
   ContentCategoryMetadata,
   SubcriptionData,
   BlockedContentData,
-  AddReleaseResponse,
+  HashResponse,
+  IdResponse,
+  SearchOptions,
   ILensService,
 } from './types';
+
+export { AccountType } from './types';
 
 export { ElectronLensService, LensService, authorise } from './service';
 
