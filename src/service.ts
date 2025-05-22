@@ -254,6 +254,12 @@ export class LensService implements ILensService {
     };
   }
 
+  async closeSite(): Promise<void> {
+    const { siteProgram } = this.ensureSiteOpened();
+    await siteProgram.close();
+    this.siteProgram = null;
+  }
+
   async getPublicKey(): Promise<string> {
     const { client } = this.ensureInitialized();
     return client.identity.publicKey.toString();
