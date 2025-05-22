@@ -18,7 +18,7 @@ import type {
   SUBSCRIPTION_NAME_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
 } from './constants';
-import type { ReplicationOptions } from '@peerbit/shared-log';
+import type { ReplicationLimitsOptions, ReplicationOptions } from '@peerbit/shared-log';
 import type { Query, SearchRequest, Sort, WithContext } from '@peerbit/document';
 
 export type AnyObject = Record<string, unknown>;
@@ -117,7 +117,26 @@ export interface ILensService {
 
 }
 
-export type SiteArgs = {
-  replicate?: ReplicationOptions
-};
+export interface SiteArgs {
+  replicate?: ReplicationOptions;
+  replicas?: ReplicationLimitsOptions;
+
+  releasesReplicate?: ReplicationOptions;
+  releasesReplicas?: ReplicationLimitsOptions;
+
+  featuredReleasesReplicate?: ReplicationOptions;
+  featuredReleasesReplicas?: ReplicationLimitsOptions;
+
+  contentCategoriesReplicate?: ReplicationOptions;
+  contentCategoriesReplicas?: ReplicationLimitsOptions;
+
+  subscriptionsReplicate?: ReplicationOptions;
+  subscriptionsReplicas?: ReplicationLimitsOptions;
+
+  blockedContentReplicate?: ReplicationOptions;
+  blockedContentReplicas?: ReplicationLimitsOptions;
+
+  membersReplicate?: ReplicationOptions;
+  administratorsReplicate?: ReplicationOptions;
+}
 
