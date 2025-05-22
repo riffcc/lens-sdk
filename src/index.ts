@@ -47,6 +47,7 @@ export type {
   IdResponse,
   SearchOptions,
   ILensService,
+  SiteArgs,
 } from './types';
 
 export { AccountType } from './types';
