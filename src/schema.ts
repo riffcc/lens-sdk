@@ -276,7 +276,7 @@ export class Site extends Program<SiteArgs> {
 
   @field({ type: IdentityAccessController })
   administrators: IdentityAccessController;
-  
+
   constructor(rootTrust: PublicSignKey | PeerId) {
     super();
     this.releases = new Documents();
@@ -290,19 +290,23 @@ export class Site extends Program<SiteArgs> {
 
   async open(args?: SiteArgs): Promise<void> {
 
-    const defaultReplicationOptions = args?.replicate || { factor: 1 };
-    const defaultReplicaSettings = { min: 2, max: undefined };
+    const defaultReplicationOptions = args?.replicate ?? false;
+    const defaultReplicaSettings = args?.replicas;
 
-    await this.members.open({ replicate: args?.replicate || { factor: 1 } });
-    await this.administrators.open({ replicate: args?.replicate || { factor: 1 } });
+    await this.members.open({
+      replicate: args?.membersReplicate ?? defaultReplicationOptions,
+    });
+    await this.administrators.open({
+      replicate: args?.administratorsReplicate ?? defaultReplicationOptions,
+    });
 
     const memberCanPerform = this.members.canPerform.bind(this.members);
     const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
 
     await this.releases.open({
       type: Release,
-      replicate: defaultReplicationOptions,
-      replicas: defaultReplicaSettings,
+      replicate: args?.releasesReplicate ?? defaultReplicationOptions,
+      replicas: args?.releasesReplicas ?? defaultReplicaSettings,
       canPerform: (props) => {
         if (props.type === 'delete') {
           return administratorCanPerform(props);
@@ -332,8 +336,8 @@ export class Site extends Program<SiteArgs> {
 
     await this.featuredReleases.open({
       type: FeaturedRelease,
-      replicate: defaultReplicationOptions,
-      replicas: defaultReplicaSettings,
+      replicate: args?.featuredReleasesReplicate ?? defaultReplicationOptions,
+      replicas: args?.featuredReleasesReplicas ?? defaultReplicaSettings,
       canPerform: administratorCanPerform,
       index: {
         canRead: () => {
@@ -355,8 +359,8 @@ export class Site extends Program<SiteArgs> {
 
     await this.contentCategories.open({
       type: ContentCategory,
-      replicate: defaultReplicationOptions,
-      replicas: defaultReplicaSettings,
+      replicate: args?.contentCategoriesReplicate ?? defaultReplicationOptions,
+      replicas: args?.contentCategoriesReplicas ?? defaultReplicaSettings,
       canPerform: administratorCanPerform,
       index: {
         canRead: () => {
@@ -367,18 +371,18 @@ export class Site extends Program<SiteArgs> {
 
     await this.subscriptions.open({
       type: Subscription,
-      replicate: defaultReplicationOptions,
-      replicas: defaultReplicaSettings,
+      replicate: args?.subscriptionsReplicate ?? defaultReplicationOptions,
+      replicas: args?.subscriptionsReplicas ?? defaultReplicaSettings,
       canPerform: administratorCanPerform,
       index: {
         canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
-      }
+      },
     });
 
     await this.blockedContent.open({
       type: BlockedContent,
-      replicate: defaultReplicationOptions,
-      replicas: defaultReplicaSettings,
+      replicate: args?.blockedContentReplicate ?? defaultReplicationOptions,
+      replicas: args?.blockedContentReplicas ?? defaultReplicaSettings,
       canPerform: administratorCanPerform,
       index: {
         canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
