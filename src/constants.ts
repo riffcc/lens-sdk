@@ -24,48 +24,50 @@ export const SUBSCRIPTION_NAME_PROPERTY = 'name';
 export const BLOCKED_CONTENT_CID_PROPERTY = 'cid';
 
 
-export const GUEST_REPLICATION_ARGS: SiteArgs = {
-  replicate: false,
+export const MEMBER_SITE_ARGS: SiteArgs = {
+  releasesArgs: {
+    replicate: { factor: 1, limits: { storage: 500 * 1024 * 1024 } }, 
+  },
 };
-
-export const MEMBER_REPLICATION_ARGS: SiteArgs = {
-  releasesReplicate: { factor: 0.2, limits: { storage: 500 * 1024 * 1024 } }, 
-  releasesReplicas: { min: 2, max: 5 },
-
-  featuredReleasesReplicate: false,
-  contentCategoriesReplicate: false,
-
-  subscriptionsReplicate: false,
-  blockedContentReplicate: false,
-
-  membersReplicate: false,
-  administratorsReplicate: false,
+export const ADMIN_SITE_ARGS: SiteArgs = {
+  releasesArgs: {
+    replicate: { factor: 1, limits: { storage: 5 * 1024 * 1024 * 1024 } }, 
+  },
+  featuredReleasesArgs: {
+    replicate: { factor: 1, limits: { storage: 2 * 1024 * 1024 * 1024 } },
+  },
+  contentCategoriesArgs: {
+    replicate: true,
+  },
+  subscriptionsArgs: {
+    replicate: true,
+  },
+  blockedContentArgs: {
+    replicate: true,
+  },
+  membersArg: {
+    replicate: { factor: 1 },
+  },
+  administratorsArgs: {
+    replicate: { factor: 1 },
+  },
 };
-
-
-export const ADMIN_REPLICATION_ARGS: SiteArgs = {
-  releasesReplicate: { factor: 0.5, limits: { storage: 2 * 1024 * 1024 * 1024 } },
-  releasesReplicas: { min: 2, max: 5 },
-
-  contentCategoriesReplicate: { factor: 1 },
-  contentCategoriesReplicas: { min: 2, max: 3 },
-
-  featuredReleasesReplicate: { factor: 1 },
-  featuredReleasesReplicas: { min: 2, max: 3 },
-
-  blockedContentReplicate: { factor: 1 },
-  blockedContentReplicas: { min: 2, max: 3 },
-
-  subscriptionsReplicate: { factor: 1 },
-  subscriptionsReplicas: { min: 2, max: 3 },
-
-  membersReplicate: { factor: 1 },
-  administratorsReplicate: { factor: 1 },
-};
-
-export const DEDICATED_REPLICATOR_ARGS: SiteArgs = {
-  replicate: { factor: 1 },
-  replicas: { min: 2 },
+export const DEDICATED_SITE_ARGS: SiteArgs = {
+  releasesArgs: {
+    replicate: { factor: 1, limits: { storage: 10 * 1024 * 1024 * 1024 } },
+  },
+  featuredReleasesArgs: {
+    replicate: { factor: 1, limits: { storage: 5 * 1024* 1024 * 1024 } },
+  },
+  contentCategoriesArgs: {
+    replicate: true,
+  },
+  subscriptionsArgs: {
+    replicate: true,
+  },
+  blockedContentArgs: {
+    replicate: true,
+  },
 };
 
 

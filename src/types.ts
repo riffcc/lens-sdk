@@ -117,26 +117,18 @@ export interface ILensService {
 
 }
 
-export interface SiteArgs {
+export type StoreArgs = {
   replicate?: ReplicationOptions;
   replicas?: ReplicationLimitsOptions;
+}
 
-  releasesReplicate?: ReplicationOptions;
-  releasesReplicas?: ReplicationLimitsOptions;
-
-  featuredReleasesReplicate?: ReplicationOptions;
-  featuredReleasesReplicas?: ReplicationLimitsOptions;
-
-  contentCategoriesReplicate?: ReplicationOptions;
-  contentCategoriesReplicas?: ReplicationLimitsOptions;
-
-  subscriptionsReplicate?: ReplicationOptions;
-  subscriptionsReplicas?: ReplicationLimitsOptions;
-
-  blockedContentReplicate?: ReplicationOptions;
-  blockedContentReplicas?: ReplicationLimitsOptions;
-
-  membersReplicate?: ReplicationOptions;
-  administratorsReplicate?: ReplicationOptions;
+export interface SiteArgs {
+  releasesArgs?: StoreArgs;
+  featuredReleasesArgs?: StoreArgs;
+  contentCategoriesArgs?: StoreArgs
+  subscriptionsArgs?: StoreArgs;
+  blockedContentArgs?: StoreArgs;
+  membersArg?: StoreArgs;
+  administratorsArgs?: StoreArgs;
 }
 
