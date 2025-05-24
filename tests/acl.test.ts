@@ -11,7 +11,6 @@ import { AccountType, type ReleaseData } from '../src/types';
 // } from '@peerbit/identity-access-controller';
 import { Peerbit } from 'peerbit';
 import { authorise, LensService } from '../src/service';
-import { delay } from '@peerbit/time';
 
 describe('Site ACL', () => {
   let peer1: Peerbit;
@@ -68,7 +67,7 @@ describe('Site ACL', () => {
     // Open with replication enabled for access controllers so we get authorization updates
     await service3.openSite(siteProgram.address, {
       membersArg: { replicate: true },
-      administratorsArgs: { replicate: true }
+      administratorsArgs: { replicate: true },
     });
 
     await service3.siteProgram?.waitFor(peer1.identity.publicKey);
@@ -96,7 +95,7 @@ describe('Site ACL', () => {
     // Open with replication enabled for access controllers so we get authorization updates
     await service4.openSite(siteProgram.address, {
       membersArg: { replicate: true },
-      administratorsArgs: { replicate: true }
+      administratorsArgs: { replicate: true },
     });
 
     await service4.siteProgram?.waitFor(peer1.identity.publicKey);
