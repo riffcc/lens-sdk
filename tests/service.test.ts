@@ -101,7 +101,8 @@ describe('Site Program', () => {
 
     await delay(200);
 
-    const retrievedRelease = await service.getRelease(result.id);
+    expect(result.id).toBeDefined();
+    const retrievedRelease = await service.getRelease({ id: result.id! });
     expect(retrievedRelease).toBeDefined();
     if (retrievedRelease) {
       expect(retrievedRelease[RELEASE_NAME_PROPERTY]).toEqual(releaseData[RELEASE_NAME_PROPERTY]);
@@ -120,7 +121,7 @@ describe('Site Program', () => {
 
   it('getRelease returns undefined for a non-existent ID', async () => {
     const nonExistentId = 'non-existent-id-12345';
-    const retrievedRelease = await service.getRelease(nonExistentId);
+    const retrievedRelease = await service.getRelease({ id: nonExistentId });
     expect(retrievedRelease).toBeUndefined();
   });
 });

@@ -41,9 +41,11 @@ describe('Site ACL', () => {
 
   test('root trust (creator) can add releases', async () => {
     const result = await service.addRelease(releaseData);
-    const fetched = await service.getRelease(result.id);
+    expect(result.success).toBe(true);
+    expect(result.id).toBeDefined();
+    const fetched = await service.getRelease({ id: result.id! });
     expect(fetched).toBeDefined();
-    expect(fetched?.name).toEqual(releaseData.name);
+    expect(fetched?.[RELEASE_NAME_PROPERTY]).toEqual(releaseData[RELEASE_NAME_PROPERTY]);
   }, 15000);
 
   test('untrusted peer cannot add releases', async () => {
@@ -54,7 +56,9 @@ describe('Site ACL', () => {
 
     await service2.siteProgram?.waitFor(peer1.identity.publicKey);
 
-    await expect(service2.addRelease(releaseData)).rejects.toThrow(AccessError);
+    const result = await service2.addRelease(releaseData);
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
     await peer2.stop();
   }, 20000);
 
@@ -68,12 +72,12 @@ describe('Site ACL', () => {
     
     await authorise(siteProgram, AccountType.MEMBER, peer3.identity.publicKey.toString());
     await delay(1000);
-    await expect(
-      service3.addRelease({ 
-        ...releaseData,
-        [RELEASE_NAME_PROPERTY]: 'test-release-2',
-      }),
-    ).resolves.toHaveProperty('id');
+    const result3 = await service3.addRelease({ 
+      ...releaseData,
+      [RELEASE_NAME_PROPERTY]: 'test-release-2',
+    });
+    expect(result3.success).toBe(true);
+    expect(result3.id).toBeDefined();
 
     await expect(service3.getAccountStatus()).resolves.toBe(AccountType.MEMBER);
     await peer3.stop();
@@ -89,12 +93,12 @@ describe('Site ACL', () => {
     
     await authorise(siteProgram, AccountType.ADMIN, peer4.identity.publicKey.toString());
     await delay(1000);
-    await expect(
-      service4.addRelease({ 
-        ...releaseData,
-        [RELEASE_NAME_PROPERTY]: 'test-release-3',
-      }),
-    ).resolves.toHaveProperty('id');
+    const result4 = await service4.addRelease({ 
+      ...releaseData,
+      [RELEASE_NAME_PROPERTY]: 'test-release-3',
+    });
+    expect(result4.success).toBe(true);
+    expect(result4.id).toBeDefined();
 
     await expect(service4.getAccountStatus()).resolves.toBe(AccountType.ADMIN);
     await peer4.stop();

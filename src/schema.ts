@@ -26,7 +26,6 @@ import {
 } from './constants';
 
 import type {
-  IdData,
   ReleaseData,
   FeaturedReleaseData,
   ContentCategoryData,
@@ -56,8 +55,8 @@ export class Release {
   @field({ type: option('string') })
   [RELEASE_METADATA_PROPERTY]?: string;
 
-  constructor(props: Partial<IdData> & ReleaseData) {
-    this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
+  constructor(props: ReleaseData) {
+    this[ID_PROPERTY] = uuid();
     this[RELEASE_NAME_PROPERTY] = props[RELEASE_NAME_PROPERTY];
     this[RELEASE_CATEGORY_ID_PROPERTY] = props[RELEASE_CATEGORY_ID_PROPERTY];
     this[RELEASE_CONTENT_CID_PROPERTY] = props[RELEASE_CONTENT_CID_PROPERTY];
@@ -70,6 +69,7 @@ export class Release {
   }
 }
 
+@variant(0)
 export class IndexableRelease {
   @field({ type: 'string' })
   [ID_PROPERTY]: string;
@@ -95,28 +95,24 @@ export class IndexableRelease {
   @field({ type: 'u64' })
   modified: bigint;
 
-  @field({ type: Uint8Array })
-  author: Uint8Array;
+  @field({ type: 'string' })
+  author: string;
 
   constructor(
-    release: IdData & ReleaseData,
+    props: Release,
     created: bigint,
     modified: bigint,
     author: PublicSignKey,
   ) {
-    this[ID_PROPERTY] = release[ID_PROPERTY];
-    this[RELEASE_NAME_PROPERTY] = release[RELEASE_NAME_PROPERTY];
-    this[RELEASE_CATEGORY_ID_PROPERTY] = release[RELEASE_CATEGORY_ID_PROPERTY];
-    this[RELEASE_CONTENT_CID_PROPERTY] = release[RELEASE_CONTENT_CID_PROPERTY];
-    if (release[RELEASE_THUMBNAIL_CID_PROPERTY]) {
-      this[RELEASE_THUMBNAIL_CID_PROPERTY] = release[RELEASE_THUMBNAIL_CID_PROPERTY];
-    }
-    if (release[RELEASE_METADATA_PROPERTY]) {
-      this[RELEASE_METADATA_PROPERTY] = release[RELEASE_METADATA_PROPERTY];
-    }
+    this[ID_PROPERTY] = props[ID_PROPERTY];
+    this[RELEASE_NAME_PROPERTY] = props[RELEASE_NAME_PROPERTY];
+    this[RELEASE_CATEGORY_ID_PROPERTY] = props[RELEASE_CATEGORY_ID_PROPERTY];
+    this[RELEASE_CONTENT_CID_PROPERTY] = props[RELEASE_CONTENT_CID_PROPERTY];
+    this[RELEASE_THUMBNAIL_CID_PROPERTY] = props[RELEASE_THUMBNAIL_CID_PROPERTY];
+    this[RELEASE_METADATA_PROPERTY] = props[RELEASE_METADATA_PROPERTY];
     this.created = created;
     this.modified = modified;
-    this.author = author.bytes;
+    this.author = author.toString();
   }
 }
 
@@ -137,8 +133,8 @@ export class FeaturedRelease {
   @field({ type: 'bool' })
   [FEATURED_PROMOTED_PROPERTY]: boolean;
 
-  constructor(props: Partial<IdData> & FeaturedReleaseData) {
-    this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
+  constructor(props: FeaturedReleaseData) {
+    this[ID_PROPERTY] = uuid();
     this[FEATURED_RELEASE_ID_PROPERTY] = props[FEATURED_RELEASE_ID_PROPERTY];
     this[FEATURED_START_TIME_PROPERTY] = props[FEATURED_START_TIME_PROPERTY];
     this[FEATURED_END_TIME_PROPERTY] = props[FEATURED_END_TIME_PROPERTY];
@@ -146,6 +142,7 @@ export class FeaturedRelease {
   }
 }
 
+@variant(0)
 export class IndexableFeaturedRelease {
   @field({ type: 'string' })
   [ID_PROPERTY]: string;
@@ -168,24 +165,23 @@ export class IndexableFeaturedRelease {
   @field({ type: 'u64' })
   modified: bigint;
 
-  @field({ type: Uint8Array })
-  author: Uint8Array;
+  @field({ type: 'string' })
+  author: string;
 
   constructor(
-    featuredRelease: IdData & FeaturedReleaseData,
+    props: FeaturedRelease,
     created: bigint,
     modified: bigint,
     author: PublicSignKey,
   ) {
-    this[ID_PROPERTY] = featuredRelease[ID_PROPERTY];
-    this[FEATURED_RELEASE_ID_PROPERTY] = featuredRelease[FEATURED_RELEASE_ID_PROPERTY];
-    this[FEATURED_START_TIME_PROPERTY] = featuredRelease[FEATURED_START_TIME_PROPERTY];
-    this[FEATURED_END_TIME_PROPERTY] = featuredRelease[FEATURED_END_TIME_PROPERTY];
-    this[FEATURED_PROMOTED_PROPERTY] = featuredRelease[FEATURED_PROMOTED_PROPERTY];
-
+    this[ID_PROPERTY] = props[ID_PROPERTY];
+    this[FEATURED_RELEASE_ID_PROPERTY] = props[FEATURED_RELEASE_ID_PROPERTY];
+    this[FEATURED_START_TIME_PROPERTY] = props[FEATURED_START_TIME_PROPERTY];
+    this[FEATURED_END_TIME_PROPERTY] = props[FEATURED_END_TIME_PROPERTY];
+    this[FEATURED_PROMOTED_PROPERTY] = props[FEATURED_PROMOTED_PROPERTY];
     this.created = created;
     this.modified = modified;
-    this.author = author.bytes;
+    this.author = author.toString();
   }
 }
 
@@ -290,136 +286,139 @@ export class Site extends Program<SiteArgs> {
 
   async open(args?: SiteArgs): Promise<void> {
 
-    const defaultReplicateOption = false;
-
-    await this.members.open({
-      replicate: args?.membersArg?.replicate ?? defaultReplicateOption,
-    });
-    await this.administrators.open({
-      replicate: args?.administratorsArgs?.replicate ?? defaultReplicateOption,
-    });
-
+    // Pre-bind performance functions to avoid repeated lookups
     const memberCanPerform = this.members.canPerform.bind(this.members);
     const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
 
-    await this.releases.open({
-      type: Release,
-      replicate: args?.releasesArgs?.replicate ?? defaultReplicateOption,
-      replicas: args?.releasesArgs?.replicas,
-      timeUntilRoleMaturity: 6e4, // 60 seconds role maturity
-      canPerform: (props) => {
-        if (props.type === 'delete') {
-          return administratorCanPerform(props);
-        } else {
-          return (
-            memberCanPerform(props)
-          );
-        }
-      },
-      index: {
-        canRead: () => {
-          return true;
-        },
-        type: IndexableRelease,
-        prefetch: { strict: false }, // More flexible prefetching
-        cache: {
-          query: {
-            strategy: "auto",
-            maxSize: 50,
-            maxTotalSize: 1e4,
-            keepAlive: 1e4,
-            prefetchThreshold: 3,
+    // Open all stores in parallel for significantly faster initialization
+    await Promise.all([
+      // Access controllers need to be opened first for permission checks
+      this.members.open({
+        replicate: args?.membersArg?.replicate ?? false,
+      }),
+      this.administrators.open({
+        replicate: args?.administratorsArgs?.replicate ?? false,
+      }),
+    ]);
+
+    // Now open all data stores in parallel with factor 0 for fast loading
+    await Promise.all([
+      this.releases.open({
+        type: Release,
+        replicate: args?.releasesArgs?.replicate ?? { factor: 0 },
+        replicas: args?.releasesArgs?.replicas,
+        canPerform: (props) => {
+          if (props.type === 'delete') {
+            return administratorCanPerform(props);
+          } else {
+            return (
+              memberCanPerform(props)
+            );
           }
         },
-        transform: async (release, ctx) => {
-          return new IndexableRelease(
-            release,
-            ctx.created,
-            ctx.modified,
-            (await this.releases.log.log.get(
-              ctx.head,
-            ))!.signatures[0].publicKey,
-          );
+        index: {
+          canRead: () => {
+            return true;
+          },
+          type: IndexableRelease,
+          transform: async (release, ctx) => {
+            return new IndexableRelease(
+              release,
+              ctx.created,
+              ctx.modified,
+              (await this.releases.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
+            );
+          },
+          // Add query caching for faster repeated searches
+          cache: {
+            query: {
+              strategy: 'auto', // Automatic cache management
+              maxSize: 100, // Cache up to 100 queries
+              maxTotalSize: 1e6, // 1MB total cache size
+              keepAlive: 6e4, // 60 second TTL
+              prefetchThreshold: 2, // Prefetch after 2 hits
+            },
+          },
         },
-      },
-    });
+      }),
 
-    await this.featuredReleases.open({
-      type: FeaturedRelease,
-      replicate: args?.featuredReleasesArgs?.replicate ?? defaultReplicateOption,
-      replicas: args?.featuredReleasesArgs?.replicas,
-      timeUntilRoleMaturity: 6e4, // 60 seconds role maturity
-      canPerform: administratorCanPerform,
-      index: {
-        canRead: () => {
-          return true;
+      this.featuredReleases.open({
+        type: FeaturedRelease,
+        replicate: args?.featuredReleasesArgs?.replicate ?? { factor: 0 },
+        replicas: args?.featuredReleasesArgs?.replicas,
+        canPerform: administratorCanPerform,
+        index: {
+          canRead: () => {
+            return true;
+          },
+          type: IndexableFeaturedRelease,
+          transform: async (featuredRelease, ctx) => {
+            return new IndexableFeaturedRelease(
+              featuredRelease,
+              ctx.created,
+              ctx.modified,
+              (await this.featuredReleases.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
+            );
+          },
+          // Featured releases are accessed frequently, use aggressive caching
+          cache: {
+            query: {
+              strategy: 'auto',
+              maxSize: 50,
+              maxTotalSize: 5e5, // 500KB
+              keepAlive: 12e4, // 2 minute TTL
+              prefetchThreshold: 1, // Prefetch after first hit
+            },
+          },
         },
-        type: IndexableFeaturedRelease,
-        prefetch: { strict: false }, // More flexible prefetching
-        cache: {
-          query: {
-            strategy: "auto",
-            maxSize: 50,
-            maxTotalSize: 1e4,
-            keepAlive: 1e4,
-            prefetchThreshold: 3,
-          }
-        },
-        transform: async (featuredRelease, ctx) => {
-          return new IndexableFeaturedRelease(
-            featuredRelease,
-            ctx.created,
-            ctx.modified,
-            (await this.featuredReleases.log.log.get(
-              ctx.head,
-            ))!.signatures[0].publicKey,
-          );
-        },
-      },
-    });
+      }),
 
-    await this.contentCategories.open({
-      type: ContentCategory,
-      replicate: args?.contentCategoriesArgs?.replicate ?? defaultReplicateOption,
-      replicas: args?.contentCategoriesArgs?.replicas,
-      timeUntilRoleMaturity: 6e4, // 60 seconds role maturity
-      canPerform: administratorCanPerform,
-      index: {
-        canRead: () => {
-          return true;
+      this.contentCategories.open({
+        type: ContentCategory,
+        replicate: args?.contentCategoriesArgs?.replicate ?? { factor: 0 },
+        replicas: args?.contentCategoriesArgs?.replicas,
+        canPerform: administratorCanPerform,
+        index: {
+          canRead: () => {
+            return true;
+          },
+          // Categories rarely change, use long-lived cache
+          cache: {
+            query: {
+              strategy: 'auto',
+              maxSize: 20,
+              maxTotalSize: 1e5, // 100KB
+              keepAlive: 36e5, // 1 hour TTL
+              prefetchThreshold: 1,
+            },
+          },
         },
-        prefetch: { strict: false }, // More flexible prefetching
-        cache: {
-          query: {
-            strategy: "auto",
-            maxSize: 20,
-            maxTotalSize: 5e3,
-            keepAlive: 1e4,
-            prefetchThreshold: 2,
-          }
+      }),
+
+      this.subscriptions.open({
+        type: Subscription,
+        replicate: args?.subscriptionsArgs?.replicate ?? { factor: 0 },
+        replicas: args?.subscriptionsArgs?.replicas,
+        canPerform: administratorCanPerform,
+        index: {
+          canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
         },
-      },
-    });
+      }),
 
-    await this.subscriptions.open({
-      type: Subscription,
-      replicate: args?.subscriptionsArgs?.replicate ?? defaultReplicateOption,
-      replicas: args?.subscriptionsArgs?.replicas,
-      canPerform: administratorCanPerform,
-      index: {
-        canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
-      },
-    });
-
-    await this.blockedContent.open({
-      type: BlockedContent,
-      replicate: args?.blockedContentArgs?.replicate ?? defaultReplicateOption,
-      replicas: args?.blockedContentArgs?.replicas,
-      canPerform: administratorCanPerform,
-      index: {
-        canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
-      },
-    });
+      this.blockedContent.open({
+        type: BlockedContent,
+        replicate: args?.blockedContentArgs?.replicate ?? { factor: 0 },
+        replicas: args?.blockedContentArgs?.replicas,
+        canPerform: administratorCanPerform,
+        index: {
+          canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
+        },
+      }),
+    ]);
   }
 
 }

@@ -11,6 +11,7 @@ import {
   RELEASE_THUMBNAIL_CID_PROPERTY,
 } from '../src/constants';
 import type { ReleaseData } from '../src/types';
+import type { WithContext } from '@peerbit/document';
 import { Peerbit } from 'peerbit';
 import { LensService } from '../src/service';
 import { waitFor } from '@peerbit/time';
@@ -28,7 +29,7 @@ describe('Site Replication', () => {
 
     await peer2.dial(peer1.getMultiaddrs());
 
-    await service2.openSite(siteProgram1.address,{ replicate: true });
+    await service2.openSite(siteProgram1.address, { releasesArgs: { replicate: true } });
 
     await service1.siteProgram?.waitFor(peer2.identity.publicKey);
     await service2.siteProgram?.waitFor(peer1.identity.publicKey);
@@ -41,12 +42,14 @@ describe('Site Replication', () => {
     };
 
     const result = await service1.addRelease(releaseData);
-    const releaseId = result.id;
+    expect(result.success).toBe(true);
+    expect(result.id).toBeDefined();
+    const releaseId = result.id!;
 
-    let replicatedRelease: Release | undefined;
+    let replicatedRelease: WithContext<Release> | undefined;
     await waitFor(
       async () => {
-        replicatedRelease = await service2.getRelease(releaseId);
+        replicatedRelease = await service2.getRelease({ id: releaseId });
         return !!replicatedRelease;
       },
       { timeout: 20000, delayInterval: 1000 },
@@ -54,10 +57,10 @@ describe('Site Replication', () => {
 
     expect(replicatedRelease).toBeDefined();
     if (replicatedRelease) {
-      expect(replicatedRelease.name).toEqual(releaseData[RELEASE_NAME_PROPERTY]);
-      expect(replicatedRelease.contentCID).toEqual(releaseData[RELEASE_CONTENT_CID_PROPERTY]);
-      expect(replicatedRelease.categoryId).toEqual(releaseData[RELEASE_CATEGORY_ID_PROPERTY]);
-      expect(replicatedRelease.thumbnailCID).toEqual(releaseData[RELEASE_THUMBNAIL_CID_PROPERTY]);
+      expect(replicatedRelease[RELEASE_NAME_PROPERTY]).toEqual(releaseData[RELEASE_NAME_PROPERTY]);
+      expect(replicatedRelease[RELEASE_CONTENT_CID_PROPERTY]).toEqual(releaseData[RELEASE_CONTENT_CID_PROPERTY]);
+      expect(replicatedRelease[RELEASE_CATEGORY_ID_PROPERTY]).toEqual(releaseData[RELEASE_CATEGORY_ID_PROPERTY]);
+      expect(replicatedRelease[RELEASE_THUMBNAIL_CID_PROPERTY]).toEqual(releaseData[RELEASE_THUMBNAIL_CID_PROPERTY]);
     }
     await peer1.stop();
     await peer2.stop();
@@ -81,19 +84,21 @@ describe('Site Replication', () => {
     };
 
     const result = await service1.addRelease(releaseData);
-    const releaseId = result.id;
+    expect(result.success).toBe(true);
+    expect(result.id).toBeDefined();
+    const releaseId = result.id!;
 
     await peer2.dial(peer1.getMultiaddrs());
 
-    await service2.openSite(siteProgram1.address,{ replicate: true });
+    await service2.openSite(siteProgram1.address, { releasesArgs: { replicate: true } });
 
     await service1.siteProgram?.waitFor(peer2.identity.publicKey);
     await service2.siteProgram?.waitFor(peer1.identity.publicKey);
 
-    let replicatedRelease: Release | undefined;
+    let replicatedRelease: WithContext<Release> | undefined;
     await waitFor(
       async () => {
-        replicatedRelease = await service2.getRelease(releaseId);
+        replicatedRelease = await service2.getRelease({ id: releaseId });
         return !!replicatedRelease;
       },
       { timeout: 20000, delayInterval: 1000 },
@@ -101,10 +106,10 @@ describe('Site Replication', () => {
 
     expect(replicatedRelease).toBeDefined();
     if (replicatedRelease) {
-      expect(replicatedRelease.name).toEqual(releaseData[RELEASE_NAME_PROPERTY]);
-      expect(replicatedRelease.contentCID).toEqual(releaseData[RELEASE_CONTENT_CID_PROPERTY]);
-      expect(replicatedRelease.categoryId).toEqual(releaseData[RELEASE_CATEGORY_ID_PROPERTY]);
-      expect(replicatedRelease.thumbnailCID).toEqual(releaseData[RELEASE_THUMBNAIL_CID_PROPERTY]);
+      expect(replicatedRelease[RELEASE_NAME_PROPERTY]).toEqual(releaseData[RELEASE_NAME_PROPERTY]);
+      expect(replicatedRelease[RELEASE_CONTENT_CID_PROPERTY]).toEqual(releaseData[RELEASE_CONTENT_CID_PROPERTY]);
+      expect(replicatedRelease[RELEASE_CATEGORY_ID_PROPERTY]).toEqual(releaseData[RELEASE_CATEGORY_ID_PROPERTY]);
+      expect(replicatedRelease[RELEASE_THUMBNAIL_CID_PROPERTY]).toEqual(releaseData[RELEASE_THUMBNAIL_CID_PROPERTY]);
     }
     await peer1.stop();
     await peer2.stop();
