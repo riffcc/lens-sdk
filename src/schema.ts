@@ -306,6 +306,7 @@ export class Site extends Program<SiteArgs> {
       type: Release,
       replicate: args?.releasesArgs?.replicate ?? defaultReplicateOption,
       replicas: args?.releasesArgs?.replicas,
+      timeUntilRoleMaturity: 6e4, // 60 seconds role maturity
       canPerform: (props) => {
         if (props.type === 'delete') {
           return administratorCanPerform(props);
@@ -320,6 +321,16 @@ export class Site extends Program<SiteArgs> {
           return true;
         },
         type: IndexableRelease,
+        prefetch: { strict: false }, // More flexible prefetching
+        cache: {
+          query: {
+            strategy: "auto",
+            maxSize: 50,
+            maxTotalSize: 1e4,
+            keepAlive: 1e4,
+            prefetchThreshold: 3,
+          }
+        },
         transform: async (release, ctx) => {
           return new IndexableRelease(
             release,
@@ -337,12 +348,23 @@ export class Site extends Program<SiteArgs> {
       type: FeaturedRelease,
       replicate: args?.featuredReleasesArgs?.replicate ?? defaultReplicateOption,
       replicas: args?.featuredReleasesArgs?.replicas,
+      timeUntilRoleMaturity: 6e4, // 60 seconds role maturity
       canPerform: administratorCanPerform,
       index: {
         canRead: () => {
           return true;
         },
         type: IndexableFeaturedRelease,
+        prefetch: { strict: false }, // More flexible prefetching
+        cache: {
+          query: {
+            strategy: "auto",
+            maxSize: 50,
+            maxTotalSize: 1e4,
+            keepAlive: 1e4,
+            prefetchThreshold: 3,
+          }
+        },
         transform: async (featuredRelease, ctx) => {
           return new IndexableFeaturedRelease(
             featuredRelease,
@@ -360,10 +382,21 @@ export class Site extends Program<SiteArgs> {
       type: ContentCategory,
       replicate: args?.contentCategoriesArgs?.replicate ?? defaultReplicateOption,
       replicas: args?.contentCategoriesArgs?.replicas,
+      timeUntilRoleMaturity: 6e4, // 60 seconds role maturity
       canPerform: administratorCanPerform,
       index: {
         canRead: () => {
           return true;
+        },
+        prefetch: { strict: false }, // More flexible prefetching
+        cache: {
+          query: {
+            strategy: "auto",
+            maxSize: 20,
+            maxTotalSize: 5e3,
+            keepAlive: 1e4,
+            prefetchThreshold: 2,
+          }
         },
       },
     });
