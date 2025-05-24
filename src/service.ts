@@ -238,6 +238,7 @@ export class LensService implements ILensService {
     }
   }
 
+
   private ensureSiteOpened(): {
     client: Peerbit;
     siteProgram: Site;

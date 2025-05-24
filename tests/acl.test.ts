@@ -2,7 +2,6 @@ import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
 import { Site } from '../src/schema';
 import { RELEASE_NAME_PROPERTY, RELEASE_CATEGORY_ID_PROPERTY, RELEASE_CONTENT_CID_PROPERTY, RELEASE_THUMBNAIL_CID_PROPERTY } from '../src/constants';
 import { AccountType, type ReleaseData } from '../src/types';
-import { AccessError } from '@peerbit/crypto';
 // import { waitForResolved } from '@peerbit/time';
 // import { SearchRequest } from '@peerbit/document';
 // import {
@@ -66,16 +65,23 @@ describe('Site ACL', () => {
     const peer3 = await Peerbit.create();
     await peer3.dial(peer1.getMultiaddrs());
     const service3 = new LensService(peer3);
-    await service3.openSite(siteProgram.address);
+    // Open with replication enabled for access controllers so we get authorization updates
+    await service3.openSite(siteProgram.address, {
+      membersArg: { replicate: true },
+      administratorsArgs: { replicate: true }
+    });
 
     await service3.siteProgram?.waitFor(peer1.identity.publicKey);
     
     await authorise(siteProgram, AccountType.MEMBER, peer3.identity.publicKey.toString());
-    await delay(1000);
+    
     const result3 = await service3.addRelease({ 
       ...releaseData,
       [RELEASE_NAME_PROPERTY]: 'test-release-2',
     });
+    if (!result3.success) {
+      console.error('Member add release failed:', result3.error);
+    }
     expect(result3.success).toBe(true);
     expect(result3.id).toBeDefined();
 
@@ -87,16 +93,23 @@ describe('Site ACL', () => {
     const peer4 = await Peerbit.create();
     await peer4.dial(peer1.getMultiaddrs());
     const service4 = new LensService(peer4);
-    await service4.openSite(siteProgram.address);
+    // Open with replication enabled for access controllers so we get authorization updates
+    await service4.openSite(siteProgram.address, {
+      membersArg: { replicate: true },
+      administratorsArgs: { replicate: true }
+    });
 
     await service4.siteProgram?.waitFor(peer1.identity.publicKey);
     
     await authorise(siteProgram, AccountType.ADMIN, peer4.identity.publicKey.toString());
-    await delay(1000);
+    
     const result4 = await service4.addRelease({ 
       ...releaseData,
       [RELEASE_NAME_PROPERTY]: 'test-release-3',
     });
+    if (!result4.success) {
+      console.error('Admin add release failed:', result4.error);
+    }
     expect(result4.success).toBe(true);
     expect(result4.id).toBeDefined();
 

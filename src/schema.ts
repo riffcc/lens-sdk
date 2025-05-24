@@ -273,6 +273,8 @@ export class Site extends Program<SiteArgs> {
   @field({ type: IdentityAccessController })
   administrators: IdentityAccessController;
 
+
+
   constructor(rootTrust: PublicSignKey | PeerId) {
     super();
     this.releases = new Documents();
@@ -285,7 +287,6 @@ export class Site extends Program<SiteArgs> {
   }
 
   async open(args?: SiteArgs): Promise<void> {
-
     // Pre-bind performance functions to avoid repeated lookups
     const memberCanPerform = this.members.canPerform.bind(this.members);
     const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
@@ -420,5 +421,4 @@ export class Site extends Program<SiteArgs> {
       }),
     ]);
   }
-
 }
