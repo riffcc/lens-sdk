@@ -62,7 +62,19 @@ export async function authorise(
   }
 }
 
+// Cache for performance optimization
+const accessCheckCache = new Map<string, { result: boolean; timestamp: number }>();
+const CACHE_TTL = 60000; // 1 minute cache
+
 const canPerformCheck = async (accessController: IdentityAccessController, key: PublicSignKey) => {
+  // Check cache first
+  const cacheKey = `${accessController.address}_${key.toString()}`;
+  const cached = accessCheckCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.result;
+  }
+
+  // Optimized query with specific access types
   const accessWritedOrAny = await accessController.access.index.search(
     new SearchRequest({
       query: [
@@ -79,6 +91,7 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
           }),
         ]),
       ],
+      fetch: 50, // Limit results for performance
     }),
   );
 
@@ -91,12 +104,18 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
       ) {
         // check condition
         if (await access.accessCondition.allowed(key)) {
+          // Cache the result
+          accessCheckCache.set(cacheKey, { result: true, timestamp: Date.now() });
           return true;
         }
         continue;
       }
     }
   }
+  
+  // Cache negative result
+  accessCheckCache.set(cacheKey, { result: false, timestamp: Date.now() });
+  return false;
 };
 
 export class ElectronLensService implements ILensService {
@@ -189,6 +208,27 @@ export class LensService implements ILensService {
         'LensService: Already configured with instances from constructor. Do not call init().',
       );
     }
+    
+    // Validate directory if provided
+    if (directory) {
+      try {
+        // Import fs dynamically to avoid issues in browser environment
+        const fs = await import('fs');
+        
+        // Ensure directory exists
+        if (!fs.existsSync(directory)) {
+          fs.mkdirSync(directory, { recursive: true });
+        }
+        
+        // Check write permissions
+        fs.accessSync(directory, fs.constants.W_OK);
+      } catch (error) {
+        // In browser environment or if directory issues, continue without directory
+        console.warn('Directory validation failed, continuing without persistent storage:', error);
+        directory = undefined;
+      }
+    }
+    
     this.client = await Peerbit.create({
       directory,
     });
@@ -294,14 +334,24 @@ export class LensService implements ILensService {
 
   async getReleases(options?: SearchOptions): Promise<WithContext<Release>[]> {
     const { siteProgram } = this.ensureSiteOpened();
-    return siteProgram.releases.index.search(
-      options?.request ?? new SearchRequest({
-        sort: options?.sort ?? [
-          new Sort({ key: 'created', direction: SortDirection.DESC }),
-        ],
-        fetch: options?.fetch ?? 50,
-      }),
-    );
+    
+    // Optimized search request - reduce fetch size to minimize shard delivery load
+    const searchRequest = options?.request ?? new SearchRequest({
+      sort: options?.sort ?? [
+        new Sort({ key: 'created', direction: SortDirection.DESC }),
+      ],
+      fetch: Math.min(options?.fetch ?? 15, 15), // Smaller fetch for faster delivery
+    });
+    
+    // Use reasonable timeout for PeerBit operations
+    return Promise.race([
+      siteProgram.releases.index.search(searchRequest),
+      new Promise<WithContext<Release>[]>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('PeerBit search timeout - try reducing fetch size or check network connectivity'));
+        }, 5000); // 5s timeout - give PeerBit time to find nodes
+      })
+    ]);
   }
 
   async getFeaturedRelease({ id }: IdData): Promise<WithContext<FeaturedRelease> | undefined> {
@@ -311,14 +361,24 @@ export class LensService implements ILensService {
 
   async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
     const { siteProgram } = this.ensureSiteOpened();
-    return siteProgram.featuredReleases.index.search(
-      options?.request ?? new SearchRequest({
-        sort: options?.sort ?? [
-          new Sort({ key: 'created', direction: SortDirection.DESC }),
-        ],
-        fetch: options?.fetch ?? 50,
-      }),
-    );
+    
+    // Optimized search request - reduce fetch size to minimize shard delivery load
+    const searchRequest = options?.request ?? new SearchRequest({
+      sort: options?.sort ?? [
+        new Sort({ key: 'created', direction: SortDirection.DESC }),
+      ],
+      fetch: Math.min(options?.fetch ?? 10, 10), // Smaller fetch for faster delivery
+    });
+    
+    // Use reasonable timeout for PeerBit operations
+    return Promise.race([
+      siteProgram.featuredReleases.index.search(searchRequest),
+      new Promise<WithContext<FeaturedRelease>[]>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('PeerBit search timeout - try reducing fetch size or check network connectivity'));
+        }, 5000); // 5s timeout - give PeerBit time to find nodes
+      })
+    ]);
   }
 
   async addRelease(data: ReleaseData): Promise<HashResponse> {

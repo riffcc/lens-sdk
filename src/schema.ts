@@ -249,6 +249,118 @@ export class BlockedContent {
   }
 }
 
+export class IndexableContentCategory {
+  @field({ type: 'string' })
+  [ID_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [CONTENT_CATEGORY_DISPLAY_NAME_PROPERTY]: string;
+
+  @field({ type: 'bool' })
+  [CONTENT_CATEGORY_FEATURED_PROPERTY]: boolean;
+
+  @field({ type: option('string') })
+  [CONTENT_CATEGORY_DESCRIPTION_PROPERTY]?: string;
+
+  @field({ type: option('string') })
+  [CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY]?: string;
+
+  @field({ type: 'u64' })
+  created: bigint;
+
+  @field({ type: 'u64' })
+  modified: bigint;
+
+  @field({ type: Uint8Array })
+  author: Uint8Array;
+
+  constructor(
+    contentCategory: ContentCategoryData,
+    created: bigint,
+    modified: bigint,
+    author: PublicSignKey,
+  ) {
+    this[ID_PROPERTY] = contentCategory[ID_PROPERTY];
+    this[CONTENT_CATEGORY_DISPLAY_NAME_PROPERTY] = contentCategory[CONTENT_CATEGORY_DISPLAY_NAME_PROPERTY];
+    this[CONTENT_CATEGORY_FEATURED_PROPERTY] = contentCategory[CONTENT_CATEGORY_FEATURED_PROPERTY];
+    if (contentCategory[CONTENT_CATEGORY_DESCRIPTION_PROPERTY]) {
+      this[CONTENT_CATEGORY_DESCRIPTION_PROPERTY] = contentCategory[CONTENT_CATEGORY_DESCRIPTION_PROPERTY];
+    }
+    if (contentCategory[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY]) {
+      this[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY] = contentCategory[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY];
+    }
+    this.created = created;
+    this.modified = modified;
+    this.author = author.bytes;
+  }
+}
+
+export class IndexableSubscription {
+  @field({ type: 'string' })
+  [ID_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [SUBSCRIPTION_SITE_ID_PROPERTY]: string;
+
+  @field({ type: option('string') })
+  [SUBSCRIPTION_NAME_PROPERTY]?: string;
+
+  @field({ type: 'u64' })
+  created: bigint;
+
+  @field({ type: 'u64' })
+  modified: bigint;
+
+  @field({ type: Uint8Array })
+  author: Uint8Array;
+
+  constructor(
+    subscription: Subscription,
+    created: bigint,
+    modified: bigint,
+    author: PublicSignKey,
+  ) {
+    this[ID_PROPERTY] = subscription[ID_PROPERTY];
+    this[SUBSCRIPTION_SITE_ID_PROPERTY] = subscription[SUBSCRIPTION_SITE_ID_PROPERTY];
+    if (subscription[SUBSCRIPTION_NAME_PROPERTY]) {
+      this[SUBSCRIPTION_NAME_PROPERTY] = subscription[SUBSCRIPTION_NAME_PROPERTY];
+    }
+    this.created = created;
+    this.modified = modified;
+    this.author = author.bytes;
+  }
+}
+
+export class IndexableBlockedContent {
+  @field({ type: 'string' })
+  [ID_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [BLOCKED_CONTENT_CID_PROPERTY]: string;
+
+  @field({ type: 'u64' })
+  created: bigint;
+
+  @field({ type: 'u64' })
+  modified: bigint;
+
+  @field({ type: Uint8Array })
+  author: Uint8Array;
+
+  constructor(
+    blockedContent: BlockedContent,
+    created: bigint,
+    modified: bigint,
+    author: PublicSignKey,
+  ) {
+    this[ID_PROPERTY] = blockedContent[ID_PROPERTY];
+    this[BLOCKED_CONTENT_CID_PROPERTY] = blockedContent[BLOCKED_CONTENT_CID_PROPERTY];
+    this.created = created;
+    this.modified = modified;
+    this.author = author.bytes;
+  }
+}
+
 @variant('site')
 export class Site extends Program<SiteArgs> {
 
@@ -259,13 +371,13 @@ export class Site extends Program<SiteArgs> {
   featuredReleases: Documents<FeaturedRelease, IndexableFeaturedRelease>;
 
   @field({ type: Documents })
-  contentCategories: Documents<ContentCategory>;
+  contentCategories: Documents<ContentCategory, IndexableContentCategory>;
 
   @field({ type: Documents })
-  subscriptions: Documents<Subscription>;
+  subscriptions: Documents<Subscription, IndexableSubscription>;
 
   @field({ type: Documents })
-  blockedContent: Documents<BlockedContent>;
+  blockedContent: Documents<BlockedContent, IndexableBlockedContent>;
 
   @field({ type: IdentityAccessController })
   members: IdentityAccessController;
@@ -287,7 +399,6 @@ export class Site extends Program<SiteArgs> {
   }
 
   async open(args?: SiteArgs): Promise<void> {
-    // Pre-bind performance functions to avoid repeated lookups
     const memberCanPerform = this.members.canPerform.bind(this.members);
     const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
 
@@ -387,6 +498,17 @@ export class Site extends Program<SiteArgs> {
           canRead: () => {
             return true;
           },
+          type: IndexableContentCategory,
+          transform: async (contentCategory, ctx) => {
+            return new IndexableContentCategory(
+              contentCategory,
+              ctx.created,
+              ctx.modified,
+              (await this.contentCategories.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
+            );
+          },
           // Categories rarely change, use long-lived cache
           cache: {
             query: {
@@ -407,6 +529,26 @@ export class Site extends Program<SiteArgs> {
         canPerform: administratorCanPerform,
         index: {
           canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
+          type: IndexableSubscription,
+          transform: async (subscription, ctx) => {
+            return new IndexableSubscription(
+              subscription,
+              ctx.created,
+              ctx.modified,
+              (await this.subscriptions.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
+            );
+          },
+          cache: {
+            query: {
+              strategy: 'auto',
+              maxSize: 30,
+              maxTotalSize: 5e3,
+              keepAlive: 1e4,
+              prefetchThreshold: 2,
+            },
+          },
         },
       }),
 
@@ -417,6 +559,26 @@ export class Site extends Program<SiteArgs> {
         canPerform: administratorCanPerform,
         index: {
           canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
+          type: IndexableBlockedContent,
+          transform: async (blockedContent, ctx) => {
+            return new IndexableBlockedContent(
+              blockedContent,
+              ctx.created,
+              ctx.modified,
+              (await this.blockedContent.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
+            );
+          },
+          cache: {
+            query: {
+              strategy: 'auto',
+              maxSize: 100,
+              maxTotalSize: 1e4,
+              keepAlive: 1e4,
+              prefetchThreshold: 5,
+            },
+          },
         },
       }),
     ]);

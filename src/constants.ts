@@ -26,18 +26,18 @@ export const BLOCKED_CONTENT_CID_PROPERTY = 'cid';
 
 export const MEMBER_SITE_ARGS: SiteArgs = {
   releasesArgs: {
-    replicate: { factor: 1, limits: { storage: 500 * 1024 * 1024 } }, 
+    replicate: true, // Full replication for maximum availability
   },
 };
 export const ADMIN_SITE_ARGS: SiteArgs = {
   releasesArgs: {
-    replicate: { factor: 1, limits: { storage: 5 * 1024 * 1024 * 1024 } }, 
+    replicate: true, // Full replication for metadata
   },
   featuredReleasesArgs: {
-    replicate: { factor: 1, limits: { storage: 2 * 1024 * 1024 * 1024 } },
+    replicate: true, // Full replication for metadata
   },
   contentCategoriesArgs: {
-    replicate: true,
+    replicate: true, // Full replication for metadata
   },
   subscriptionsArgs: {
     replicate: true,
@@ -46,21 +46,21 @@ export const ADMIN_SITE_ARGS: SiteArgs = {
     replicate: true,
   },
   membersArg: {
-    replicate: { factor: 1 },
+    replicate: true, // Full replication for access control
   },
   administratorsArgs: {
-    replicate: { factor: 1 },
+    replicate: true, // Full replication for access control
   },
 };
 export const DEDICATED_SITE_ARGS: SiteArgs = {
   releasesArgs: {
-    replicate: { factor: 1, limits: { storage: 10 * 1024 * 1024 * 1024 } },
+    replicate: true, // Full replication - dedicated nodes store everything
   },
   featuredReleasesArgs: {
-    replicate: { factor: 1, limits: { storage: 5 * 1024* 1024 * 1024 } },
+    replicate: true, // Full replication - dedicated nodes store everything
   },
   contentCategoriesArgs: {
-    replicate: true,
+    replicate: true, // Full replication - dedicated nodes store everything
   },
   subscriptionsArgs: {
     replicate: true,
