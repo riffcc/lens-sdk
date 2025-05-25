@@ -208,30 +208,7 @@ export class LensService implements ILensService {
         'LensService: Already configured with instances from constructor. Do not call init().',
       );
     }
-    
-    // Validate directory if provided
-    if (directory) {
-      try {
-        // Import fs dynamically to avoid issues in browser environment
-        const fs = await import('fs');
-        
-        // Ensure directory exists
-        if (!fs.existsSync(directory)) {
-          fs.mkdirSync(directory, { recursive: true });
-        }
-        
-        // Check write permissions
-        fs.accessSync(directory, fs.constants.W_OK);
-      } catch (error) {
-        // In browser environment or if directory issues, continue without directory
-        console.warn('Directory validation failed, continuing without persistent storage:', error);
-        directory = undefined;
-      }
-    }
-    
-    this.client = await Peerbit.create({
-      directory,
-    });
+    this.client = await Peerbit.create({ directory });
     this.extenarlyManaged = false;
   }
 
@@ -277,7 +254,6 @@ export class LensService implements ILensService {
       });
     }
   }
-
 
   private ensureSiteOpened(): {
     client: Peerbit;
@@ -335,23 +311,14 @@ export class LensService implements ILensService {
   async getReleases(options?: SearchOptions): Promise<WithContext<Release>[]> {
     const { siteProgram } = this.ensureSiteOpened();
     
-    // Optimized search request - reduce fetch size to minimize shard delivery load
-    const searchRequest = options?.request ?? new SearchRequest({
-      sort: options?.sort ?? [
-        new Sort({ key: 'created', direction: SortDirection.DESC }),
-      ],
-      fetch: Math.min(options?.fetch ?? 15, 15), // Smaller fetch for faster delivery
-    });
-    
-    // Use reasonable timeout for PeerBit operations
-    return Promise.race([
-      siteProgram.releases.index.search(searchRequest),
-      new Promise<WithContext<Release>[]>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('PeerBit search timeout - try reducing fetch size or check network connectivity'));
-        }, 5000); // 5s timeout - give PeerBit time to find nodes
-      })
-    ]);
+    return siteProgram.releases.index.search(
+      options?.request ?? new SearchRequest({
+        sort: options?.sort ?? [
+          new Sort({ key: 'created', direction: SortDirection.DESC }),
+        ],
+        fetch: options?.fetch ?? 30,
+      }),
+    );
   }
 
   async getFeaturedRelease({ id }: IdData): Promise<WithContext<FeaturedRelease> | undefined> {
@@ -362,23 +329,14 @@ export class LensService implements ILensService {
   async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
     const { siteProgram } = this.ensureSiteOpened();
     
-    // Optimized search request - reduce fetch size to minimize shard delivery load
-    const searchRequest = options?.request ?? new SearchRequest({
-      sort: options?.sort ?? [
-        new Sort({ key: 'created', direction: SortDirection.DESC }),
-      ],
-      fetch: Math.min(options?.fetch ?? 10, 10), // Smaller fetch for faster delivery
-    });
-    
-    // Use reasonable timeout for PeerBit operations
-    return Promise.race([
-      siteProgram.featuredReleases.index.search(searchRequest),
-      new Promise<WithContext<FeaturedRelease>[]>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('PeerBit search timeout - try reducing fetch size or check network connectivity'));
-        }, 5000); // 5s timeout - give PeerBit time to find nodes
-      })
-    ]);
+    return siteProgram.featuredReleases.index.search(
+      options?.request ?? new SearchRequest({
+        sort: options?.sort ?? [
+          new Sort({ key: 'created', direction: SortDirection.DESC }),
+        ],
+        fetch: options?.fetch ?? 30,
+      }),
+    );
   }
 
   async addRelease(data: ReleaseData): Promise<HashResponse> {
