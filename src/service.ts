@@ -6,6 +6,7 @@ import {
   SearchRequest,
   Sort,
   SortDirection,
+  StringMatch,
   type WithContext,
 } from '@peerbit/document';
 
@@ -384,6 +385,21 @@ export class LensService implements ILensService {
   async deleteRelease({ id }: IdData): Promise<IdResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
+
+      const targetFeaturedReleases = await siteProgram.featuredReleases.index.search(
+        new SearchRequest({
+          query: [
+            new StringMatch({
+              key: 'releaseId',
+              value: id,
+            }),
+          ],
+        }),
+      );
+
+      for (const tfr of targetFeaturedReleases) {
+        await this.deleteFeaturedRelease({ id: tfr.id });
+      }
 
       await siteProgram.releases.del(id);
       return {
