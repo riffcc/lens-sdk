@@ -68,6 +68,12 @@ export const DEDICATED_SITE_ARGS: SiteArgs = {
   blockedContentArgs: {
     replicate: true,
   },
+  membersArg: {
+    replicate: true, // Full replication for access control
+  },
+  administratorsArgs: {
+    replicate: true, // Full replication for access control
+  },
 };
 
 
