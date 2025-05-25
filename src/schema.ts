@@ -362,6 +362,12 @@ export class IndexableBlockedContent {
   }
 }
 
+// Reusable placeholder to avoid expensive async calls during indexing
+const PLACEHOLDER_PUBLIC_KEY = {
+  toString: () => 'loading',
+  bytes: new Uint8Array(32) // dummy bytes
+} as PublicSignKey;
+
 @variant('site')
 export class Site extends Program<SiteArgs> {
 
@@ -400,10 +406,12 @@ export class Site extends Program<SiteArgs> {
   }
 
   async open(args?: SiteArgs): Promise<void> {
+    console.time('[Site] Total open time');
     const memberCanPerform = this.members.canPerform.bind(this.members);
     const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
 
     // Open all stores in parallel for significantly faster initialization
+    console.time('[Site] Access controllers open');
     await Promise.all([
       // Access controllers need to be opened first for permission checks
       this.members.open({
@@ -413,8 +421,10 @@ export class Site extends Program<SiteArgs> {
         replicate: args?.administratorsArgs?.replicate ?? false,
       }),
     ]);
+    console.timeEnd('[Site] Access controllers open');
 
     // Now open all data stores in parallel with factor 0 for fast loading
+    console.time('[Site] Data stores open');
     await Promise.all([
       this.releases.open({
         type: Release,
@@ -439,9 +449,7 @@ export class Site extends Program<SiteArgs> {
               release,
               ctx.created,
               ctx.modified,
-              (await this.releases.log.log.get(
-                ctx.head,
-              ))!.signatures[0].publicKey,
+              PLACEHOLDER_PUBLIC_KEY,
             );
           },
           // Add query caching for faster repeated searches
@@ -472,9 +480,7 @@ export class Site extends Program<SiteArgs> {
               featuredRelease,
               ctx.created,
               ctx.modified,
-              (await this.featuredReleases.log.log.get(
-                ctx.head,
-              ))!.signatures[0].publicKey,
+              PLACEHOLDER_PUBLIC_KEY,
             );
           },
           // Featured releases are accessed frequently, use aggressive caching
@@ -505,9 +511,7 @@ export class Site extends Program<SiteArgs> {
               contentCategory,
               ctx.created,
               ctx.modified,
-              (await this.contentCategories.log.log.get(
-                ctx.head,
-              ))!.signatures[0].publicKey,
+              PLACEHOLDER_PUBLIC_KEY,
             );
           },
           // Categories rarely change, use long-lived cache
@@ -536,9 +540,7 @@ export class Site extends Program<SiteArgs> {
               subscription,
               ctx.created,
               ctx.modified,
-              (await this.subscriptions.log.log.get(
-                ctx.head,
-              ))!.signatures[0].publicKey,
+              PLACEHOLDER_PUBLIC_KEY,
             );
           },
           cache: {
@@ -566,9 +568,7 @@ export class Site extends Program<SiteArgs> {
               blockedContent,
               ctx.created,
               ctx.modified,
-              (await this.blockedContent.log.log.get(
-                ctx.head,
-              ))!.signatures[0].publicKey,
+              PLACEHOLDER_PUBLIC_KEY,
             );
           },
           cache: {
@@ -583,5 +583,7 @@ export class Site extends Program<SiteArgs> {
         },
       }),
     ]);
+    console.timeEnd('[Site] Data stores open');
+    console.timeEnd('[Site] Total open time');
   }
 }

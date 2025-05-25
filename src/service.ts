@@ -68,14 +68,20 @@ const accessCheckCache = new Map<string, { result: boolean; timestamp: number }>
 const CACHE_TTL = 60000; // 1 minute cache
 
 const canPerformCheck = async (accessController: IdentityAccessController, key: PublicSignKey) => {
+  const timerLabel = `[LensSDK] canPerformCheck ${accessController.address?.slice(0, 8)}`;
+  console.time(timerLabel);
+  
   // Check cache first
   const cacheKey = `${accessController.address}_${key.toString()}`;
   const cached = accessCheckCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    console.log(`${timerLabel} - Cache hit`);
+    console.timeEnd(timerLabel);
     return cached.result;
   }
 
   // Optimized query with specific access types
+  console.time(`${timerLabel} - index.search`);
   const accessWritedOrAny = await accessController.access.index.search(
     new SearchRequest({
       query: [
@@ -95,6 +101,7 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
       fetch: 50, // Limit results for performance
     }),
   );
+  console.timeEnd(`${timerLabel} - index.search`);
 
   for (const access of accessWritedOrAny) {
     if (access instanceof Access) {
@@ -107,6 +114,7 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
         if (await access.accessCondition.allowed(key)) {
           // Cache the result
           accessCheckCache.set(cacheKey, { result: true, timestamp: Date.now() });
+          console.timeEnd(timerLabel);
           return true;
         }
         continue;
@@ -116,6 +124,7 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
   
   // Cache negative result
   accessCheckCache.set(cacheKey, { result: false, timestamp: Date.now() });
+  console.timeEnd(timerLabel);
   return false;
 };
 
@@ -245,15 +254,24 @@ export class LensService implements ILensService {
     }
     const { client } = this.ensureInitialized();
 
+    console.time('[LensSDK] Total openSite');
+    console.log('[LensSDK] Opening site with args:', JSON.stringify(openOptions, null, 2));
+    
     if (siteOrAddress instanceof Site) {
+      console.time('[LensSDK] client.open (Site instance)');
       this.siteProgram = await client.open(siteOrAddress, {
         args: openOptions,
       });
+      console.timeEnd('[LensSDK] client.open (Site instance)');
     } else {
+      console.time('[LensSDK] client.open (address)');
       this.siteProgram = await client.open<Site>(siteOrAddress, {
         args: openOptions,
       });
+      console.timeEnd('[LensSDK] client.open (address)');
     }
+    
+    console.timeEnd('[LensSDK] Total openSite');
   }
 
   private ensureSiteOpened(): {
@@ -294,14 +312,25 @@ export class LensService implements ILensService {
   }
 
   async getAccountStatus(): Promise<AccountType> {
+    console.time('[LensSDK] getAccountStatus');
     const { client, siteProgram } = this.ensureSiteOpened();
 
-    if (await canPerformCheck(siteProgram.administrators, client.identity.publicKey)) {
+    // Check administrators first (smaller set, faster query)
+    console.time('[LensSDK] Admin check');
+    const isAdmin = await canPerformCheck(siteProgram.administrators, client.identity.publicKey);
+    console.timeEnd('[LensSDK] Admin check');
+    
+    if (isAdmin) {
+      console.timeEnd('[LensSDK] getAccountStatus');
       return AccountType.ADMIN;
-    } else if (await canPerformCheck(siteProgram.members, client.identity.publicKey)) {
-      return AccountType.MEMBER;
     }
-    return AccountType.GUEST;
+    
+    console.time('[LensSDK] Member check');
+    const isMember = await canPerformCheck(siteProgram.members, client.identity.publicKey);
+    console.timeEnd('[LensSDK] Member check');
+    
+    console.timeEnd('[LensSDK] getAccountStatus');
+    return isMember ? AccountType.MEMBER : AccountType.GUEST;
   }
 
   async getRelease({ id }: IdData): Promise<WithContext<Release> | undefined> {
@@ -310,16 +339,24 @@ export class LensService implements ILensService {
   }
 
   async getReleases(options?: SearchOptions): Promise<WithContext<Release>[]> {
+    console.time('[LensSDK] getReleases');
     const { siteProgram } = this.ensureSiteOpened();
     
-    return siteProgram.releases.index.search(
-      options?.request ?? new SearchRequest({
-        sort: options?.sort ?? [
-          new Sort({ key: 'created', direction: SortDirection.DESC }),
-        ],
-        fetch: options?.fetch ?? 30,
-      }),
-    );
+    const request = options?.request ?? new SearchRequest({
+      sort: options?.sort ?? [
+        new Sort({ key: 'created', direction: SortDirection.DESC }),
+      ],
+      fetch: options?.fetch ?? 30,
+    });
+    
+    console.log('[LensSDK] Searching releases with fetch limit:', options?.fetch ?? 30);
+    console.time('[LensSDK] releases.index.search');
+    const results = await siteProgram.releases.index.search(request);
+    console.timeEnd('[LensSDK] releases.index.search');
+    
+    console.log('[LensSDK] Found releases:', results.length);
+    console.timeEnd('[LensSDK] getReleases');
+    return results;
   }
 
   async getFeaturedRelease({ id }: IdData): Promise<WithContext<FeaturedRelease> | undefined> {
