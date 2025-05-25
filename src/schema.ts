@@ -32,6 +32,7 @@ import type {
   SubcriptionData,
   BlockedContentData,
   SiteArgs,
+  IdData,
 } from './types';
 
 
@@ -55,8 +56,8 @@ export class Release {
   @field({ type: option('string') })
   [RELEASE_METADATA_PROPERTY]?: string;
 
-  constructor(props: ReleaseData) {
-    this[ID_PROPERTY] = uuid();
+  constructor(props: Partial<IdData> & ReleaseData) {
+    this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
     this[RELEASE_NAME_PROPERTY] = props[RELEASE_NAME_PROPERTY];
     this[RELEASE_CATEGORY_ID_PROPERTY] = props[RELEASE_CATEGORY_ID_PROPERTY];
     this[RELEASE_CONTENT_CID_PROPERTY] = props[RELEASE_CONTENT_CID_PROPERTY];
@@ -133,8 +134,8 @@ export class FeaturedRelease {
   @field({ type: 'bool' })
   [FEATURED_PROMOTED_PROPERTY]: boolean;
 
-  constructor(props: FeaturedReleaseData) {
-    this[ID_PROPERTY] = uuid();
+  constructor(props: Partial<IdData> & FeaturedReleaseData) {
+    this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
     this[FEATURED_RELEASE_ID_PROPERTY] = props[FEATURED_RELEASE_ID_PROPERTY];
     this[FEATURED_START_TIME_PROPERTY] = props[FEATURED_START_TIME_PROPERTY];
     this[FEATURED_END_TIME_PROPERTY] = props[FEATURED_END_TIME_PROPERTY];
