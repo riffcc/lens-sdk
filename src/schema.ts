@@ -244,7 +244,7 @@ export class IndexableContentCategory {
   author: Uint8Array;
 
   constructor(
-    contentCategory: ContentCategoryData,
+    contentCategory: ContentCategory,
     created: bigint,
     modified: bigint,
     author: PublicSignKey,
