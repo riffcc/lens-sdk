@@ -1,6 +1,6 @@
 {
   "name": "@riffcc/lens-sdk",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "type": "module",
   "files": [
     "dist"
@@ -39,7 +39,6 @@
     "@peerbit/program": "^5.2.11",
     "@peerbit/shared-log": "^11.2.3",
     "@peerbit/time": "^2.1.0",
-    "@riffcc/lens-sdk": "link:",
     "peerbit": "^4.1.36",
     "uuid": "^11.1.0"
   },
