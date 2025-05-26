@@ -456,8 +456,8 @@ export class Site extends Program<SiteArgs> {
           cache: {
             query: {
               strategy: 'auto', // Automatic cache management
-              maxSize: 100, // Cache up to 100 queries
-              maxTotalSize: 1e6, // 1MB total cache size
+              maxSize: Infinity, // Unlimited cache size
+              maxTotalSize: Infinity, // Unlimited total cache size
               keepAlive: 6e4, // 60 second TTL
               prefetchThreshold: 2, // Prefetch after 2 hits
             },
@@ -487,8 +487,8 @@ export class Site extends Program<SiteArgs> {
           cache: {
             query: {
               strategy: 'auto',
-              maxSize: 50,
-              maxTotalSize: 5e5, // 500KB
+              maxSize: Infinity, // Unlimited cache size
+              maxTotalSize: Infinity, // Unlimited total cache size
               keepAlive: 12e4, // 2 minute TTL
               prefetchThreshold: 1, // Prefetch after first hit
             },
