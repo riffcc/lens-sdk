@@ -16,6 +16,7 @@ import type {
   CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY,
   SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
+  SUBSCRIPTION_RECURSIVE_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
 } from './constants';
 import type { ReplicationLimitsOptions, ReplicationOptions } from '@peerbit/shared-log';
@@ -73,9 +74,14 @@ export type ContentCategoryMetadata = Record<string, {
   options?: string[];
 }>;
 
-export type SubcriptionData = {
+export type SubscriptionData = {
+  [ID_PROPERTY]: string;
   [SUBSCRIPTION_SITE_ID_PROPERTY]: string;
   [SUBSCRIPTION_NAME_PROPERTY]?: string;
+  [SUBSCRIPTION_RECURSIVE_PROPERTY]: boolean;
+  subscriptionType: string;
+  currentDepth: number;
+  followChain: string[];
 }
 
 export type BlockedContentData = {
@@ -114,6 +120,10 @@ export interface ILensService {
   addFeaturedRelease: (data: FeaturedReleaseData) => Promise<HashResponse>;
   editFeaturedRelease: (data: IdData & FeaturedReleaseData) => Promise<HashResponse>;
   deleteFeaturedRelease: (data: IdData) => Promise<IdResponse>;
+  // Subscription methods
+  getSubscriptions: (options?: SearchOptions) => Promise<SubscriptionData[]>;
+  addSubscription: (data: Omit<SubscriptionData, 'id'>) => Promise<HashResponse>;
+  deleteSubscription: (data: IdData) => Promise<IdResponse>;
 
 }
 
@@ -129,6 +139,7 @@ export interface SiteArgs {
   contentCategoriesArgs?: StoreArgs
   subscriptionsArgs?: StoreArgs;
   blockedContentArgs?: StoreArgs;
+  syncSitesArgs?: StoreArgs;
   membersArg?: StoreArgs;
   administratorsArgs?: StoreArgs;
 }

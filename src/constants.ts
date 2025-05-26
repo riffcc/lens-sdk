@@ -20,8 +20,17 @@ export const CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY = 'metadataSchema';
 
 export const SUBSCRIPTION_SITE_ID_PROPERTY = 'siteId';
 export const SUBSCRIPTION_NAME_PROPERTY = 'name';
+export const SUBSCRIPTION_RECURSIVE_PROPERTY = 'recursive';
 
 export const BLOCKED_CONTENT_CID_PROPERTY = 'cid';
+
+export const SYNC_SITE_TARGET_ID_PROPERTY = 'targetSiteId';
+export const SYNC_SITE_STATUS_PROPERTY = 'status';
+export const SYNC_SITE_LAST_SYNC_PROPERTY = 'lastSync';
+export const SYNC_SITE_RECURSIVE_PROPERTY = 'recursive';
+export const SYNC_SITE_FOLLOW_CHAIN_PROPERTY = 'followChain';
+
+export const RELEASE_SOURCE_SITE_ID_PROPERTY = 'sourceSiteId';
 
 
 export const MEMBER_SITE_ARGS: SiteArgs = {
@@ -45,6 +54,9 @@ export const ADMIN_SITE_ARGS: SiteArgs = {
   blockedContentArgs: {
     replicate: true,
   },
+  syncSitesArgs: {
+    replicate: true, // Lens nodes participate in sync coordination
+  },
   membersArg: {
     replicate: true, // Full replication for access control
   },
@@ -67,6 +79,9 @@ export const DEDICATED_SITE_ARGS: SiteArgs = {
   },
   blockedContentArgs: {
     replicate: true,
+  },
+  syncSitesArgs: {
+    replicate: true, // Replicators manage sync coordination
   },
   membersArg: {
     replicate: true, // Full replication for access control

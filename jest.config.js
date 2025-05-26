@@ -15,4 +15,8 @@ export default {
   // Automatically clear mock calls and instances between every test
   clearMocks: true,
   // No need for 'extensionsToTreatAsEsm' or manual 'transform' if using the ESM preset
+  // Force Jest to exit after all tests have completed
+  forceExit: true,
+  // Maximum number of worker processes
+  maxWorkers: 2,
 };

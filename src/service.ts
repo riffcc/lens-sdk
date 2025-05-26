@@ -9,6 +9,7 @@ import {
   StringMatch,
   type WithContext,
 } from '@peerbit/document';
+import { v4 as uuid } from 'uuid';
 
 import {
   Access,
@@ -18,7 +19,7 @@ import {
   type IdentityAccessController,
 } from '@peerbit/identity-access-controller';
 import type { PublicSignKey } from '@peerbit/crypto';
-import { FeaturedRelease, Release, Site } from './schema';
+import { FeaturedRelease, Release, Site, Subscription } from './schema';
 import type {
   FeaturedReleaseData,
   HashResponse,
@@ -28,11 +29,18 @@ import type {
   ReleaseData,
   SearchOptions,
   SiteArgs,
+  SubscriptionData,
 } from './types';
 
 import { AccountType } from './types';
 import { publicSignKeyFromString } from './utils';
-import { FEATURED_RELEASE_ID_PROPERTY } from './constants';
+import { 
+  FEATURED_RELEASE_ID_PROPERTY,
+  ID_PROPERTY,
+  SUBSCRIPTION_SITE_ID_PROPERTY,
+  SUBSCRIPTION_NAME_PROPERTY,
+  SUBSCRIPTION_RECURSIVE_PROPERTY,
+} from './constants';
 
 export async function authorise(
   siteProgram: Site,
@@ -197,6 +205,18 @@ export class ElectronLensService implements ILensService {
 
   async deleteFeaturedRelease(data: IdData): Promise<IdResponse> {
     return window.electronLensService.deleteFeaturedRelease(data);
+  }
+
+  async getSubscriptions(options?: SearchOptions): Promise<SubscriptionData[]> {
+    return window.electronLensService.getSubscriptions(options);
+  }
+
+  async addSubscription(data: Omit<SubscriptionData, 'id'>): Promise<HashResponse> {
+    return window.electronLensService.addSubscription(data);
+  }
+
+  async deleteSubscription(data: IdData): Promise<IdResponse> {
+    return window.electronLensService.deleteSubscription(data);
   }
 }
 
@@ -536,6 +556,88 @@ export class LensService implements ILensService {
         success: false,
         id,
         error: error instanceof Error ? error.message : 'Failed to delete featured release',
+      };
+    }
+  }
+
+  async getSubscriptions(options?: SearchOptions): Promise<SubscriptionData[]> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+
+      const request = options?.request ?? new SearchRequest({
+        sort: options?.sort ?? [
+          new Sort({ key: 'created', direction: SortDirection.DESC }),
+        ],
+      });
+
+      const allResults: SubscriptionData[] = [];
+      const iterator = siteProgram.subscriptions.index.iterate(request);
+
+      while (iterator.done() !== true) {
+        const batch = await iterator.next(100); // Fetch 100 subscriptions per page
+        for (const subscription of batch) {
+          allResults.push({
+            [ID_PROPERTY]: subscription[ID_PROPERTY],
+            [SUBSCRIPTION_SITE_ID_PROPERTY]: subscription[SUBSCRIPTION_SITE_ID_PROPERTY],
+            [SUBSCRIPTION_NAME_PROPERTY]: subscription[SUBSCRIPTION_NAME_PROPERTY],
+            [SUBSCRIPTION_RECURSIVE_PROPERTY]: subscription[SUBSCRIPTION_RECURSIVE_PROPERTY],
+            subscriptionType: subscription.subscriptionType,
+            currentDepth: subscription.currentDepth,
+            followChain: subscription.followChain,
+          });
+        }
+
+        // Apply fetch limit if specified
+        if (options?.fetch && allResults.length >= options.fetch) {
+          break;
+        }
+      }
+
+      return allResults;
+    } catch (error) {
+      console.error('Failed to get subscriptions:', error);
+      return [];
+    }
+  }
+
+  async addSubscription(data: Omit<SubscriptionData, 'id'>): Promise<HashResponse> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+
+      const subscriptionData = {
+        [ID_PROPERTY]: uuid(),
+        ...data,
+      };
+      const subscription = new Subscription(subscriptionData);
+      const result = await siteProgram.subscriptions.put(subscription);
+
+      return {
+        success: true,
+        id: subscription.id,
+        hash: result.entry.hash,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to add subscription',
+      };
+    }
+  }
+
+  async deleteSubscription({ id }: IdData): Promise<IdResponse> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+
+      await siteProgram.subscriptions.del(id);
+      return {
+        success: true,
+        id,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        id,
+        error: error instanceof Error ? error.message : 'Failed to delete subscription',
       };
     }
   }

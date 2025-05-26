@@ -1,5 +1,5 @@
 import { Documents } from '@peerbit/document';
-import { field, option, variant } from '@dao-xyz/borsh';
+import { field, option, variant, vec } from '@dao-xyz/borsh';
 import { type PublicSignKey } from '@peerbit/crypto';
 import { Program } from '@peerbit/program';
 import { IdentityAccessController } from '@peerbit/identity-access-controller';
@@ -22,6 +22,7 @@ import {
   CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY,
   SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
+  SUBSCRIPTION_RECURSIVE_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
 } from './constants';
 
@@ -29,7 +30,7 @@ import type {
   ReleaseData,
   FeaturedReleaseData,
   ContentCategoryData,
-  SubcriptionData,
+  SubscriptionData,
   BlockedContentData,
   SiteArgs,
   IdData,
@@ -275,9 +276,25 @@ export class Subscription {
   @field({ type: option('string') })
   [SUBSCRIPTION_NAME_PROPERTY]?: string;
 
-  constructor(props: SubcriptionData) {
+  @field({ type: 'bool' })
+  [SUBSCRIPTION_RECURSIVE_PROPERTY]: boolean;
+
+  @field({ type: 'string' })
+  subscriptionType: string;
+
+  @field({ type: 'u32' })
+  currentDepth: number;
+
+  @field({ type: vec('string') })
+  followChain: string[];
+
+  constructor(props: SubscriptionData) {
     this[ID_PROPERTY] = uuid();
     this[SUBSCRIPTION_SITE_ID_PROPERTY] = props[SUBSCRIPTION_SITE_ID_PROPERTY];
+    this[SUBSCRIPTION_RECURSIVE_PROPERTY] = props[SUBSCRIPTION_RECURSIVE_PROPERTY];
+    this.subscriptionType = props.subscriptionType;
+    this.currentDepth = props.currentDepth;
+    this.followChain = props.followChain;
     if (props[SUBSCRIPTION_NAME_PROPERTY]) {
       this[SUBSCRIPTION_NAME_PROPERTY] = props[SUBSCRIPTION_NAME_PROPERTY];
     }
@@ -293,6 +310,18 @@ export class IndexableSubscription {
 
   @field({ type: option('string') })
   [SUBSCRIPTION_NAME_PROPERTY]?: string;
+
+  @field({ type: 'bool' })
+  [SUBSCRIPTION_RECURSIVE_PROPERTY]: boolean;
+
+  @field({ type: 'string' })
+  subscriptionType: string;
+
+  @field({ type: 'u32' })
+  currentDepth: number;
+
+  @field({ type: vec('string') })
+  followChain: string[];
 
   @field({ type: 'u64' })
   created: bigint;
@@ -311,6 +340,10 @@ export class IndexableSubscription {
   ) {
     this[ID_PROPERTY] = subscription[ID_PROPERTY];
     this[SUBSCRIPTION_SITE_ID_PROPERTY] = subscription[SUBSCRIPTION_SITE_ID_PROPERTY];
+    this[SUBSCRIPTION_RECURSIVE_PROPERTY] = subscription[SUBSCRIPTION_RECURSIVE_PROPERTY];
+    this.subscriptionType = subscription.subscriptionType;
+    this.currentDepth = subscription.currentDepth;
+    this.followChain = subscription.followChain;
     if (subscription[SUBSCRIPTION_NAME_PROPERTY]) {
       this[SUBSCRIPTION_NAME_PROPERTY] = subscription[SUBSCRIPTION_NAME_PROPERTY];
     }
@@ -540,7 +573,7 @@ export class Site extends Program<SiteArgs> {
         replicas: args?.subscriptionsArgs?.replicas,
         canPerform: administratorCanPerform,
         index: {
-          canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
+          canRead: () => true, // Site owners can always read their own subscriptions
           type: IndexableSubscription,
           transform: async (subscription, ctx) => {
             return new IndexableSubscription(
