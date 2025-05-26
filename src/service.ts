@@ -346,17 +346,24 @@ export class LensService implements ILensService {
       sort: options?.sort ?? [
         new Sort({ key: 'created', direction: SortDirection.DESC }),
       ],
-      fetch: options?.fetch ?? 30,
     });
     
-    console.log('[LensSDK] Searching releases with fetch limit:', options?.fetch ?? 30);
-    console.time('[LensSDK] releases.index.search');
-    const results = await siteProgram.releases.index.search(request);
-    console.timeEnd('[LensSDK] releases.index.search');
+    console.log('[LensSDK] Fetching all releases using iterator pattern');
+    console.time('[LensSDK] releases.index.iterate');
     
-    console.log('[LensSDK] Found releases:', results.length);
+    const allResults: WithContext<Release>[] = [];
+    const iterator = siteProgram.releases.index.iterate(request);
+    
+    while (iterator.done() !== true) {
+      const batch = await iterator.next(100); // Fetch 100 releases per page
+      allResults.push(...batch);
+      console.log(`[LensSDK] Fetched batch of ${batch.length} releases, total: ${allResults.length}`);
+    }
+    
+    console.timeEnd('[LensSDK] releases.index.iterate');
+    console.log('[LensSDK] Found total releases:', allResults.length);
     console.timeEnd('[LensSDK] getReleases');
-    return results;
+    return allResults;
   }
 
   async getFeaturedRelease({ id }: IdData): Promise<WithContext<FeaturedRelease> | undefined> {
@@ -365,16 +372,31 @@ export class LensService implements ILensService {
   }
 
   async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
+    console.time('[LensSDK] getFeaturedReleases');
     const { siteProgram } = this.ensureSiteOpened();
     
-    return siteProgram.featuredReleases.index.search(
-      options?.request ?? new SearchRequest({
-        sort: options?.sort ?? [
-          new Sort({ key: 'created', direction: SortDirection.DESC }),
-        ],
-        fetch: options?.fetch ?? 30,
-      }),
-    );
+    const request = options?.request ?? new SearchRequest({
+      sort: options?.sort ?? [
+        new Sort({ key: 'created', direction: SortDirection.DESC }),
+      ],
+    });
+    
+    console.log('[LensSDK] Fetching all featured releases using iterator pattern');
+    console.time('[LensSDK] featuredReleases.index.iterate');
+    
+    const allResults: WithContext<FeaturedRelease>[] = [];
+    const iterator = siteProgram.featuredReleases.index.iterate(request);
+    
+    while (iterator.done() !== true) {
+      const batch = await iterator.next(100); // Fetch 100 featured releases per page
+      allResults.push(...batch);
+      console.log(`[LensSDK] Fetched batch of ${batch.length} featured releases, total: ${allResults.length}`);
+    }
+    
+    console.timeEnd('[LensSDK] featuredReleases.index.iterate');
+    console.log('[LensSDK] Found total featured releases:', allResults.length);
+    console.timeEnd('[LensSDK] getFeaturedReleases');
+    return allResults;
   }
 
   async addRelease(data: ReleaseData): Promise<HashResponse> {
