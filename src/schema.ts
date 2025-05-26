@@ -36,7 +36,7 @@ import type {
 } from './types';
 
 
-@variant(0)
+@variant('release')
 export class Release {
   @field({ type: 'string' })
   [ID_PROPERTY]: string;
@@ -116,7 +116,7 @@ export class IndexableRelease {
   }
 }
 
-@variant(0)
+@variant('featured_release')
 export class FeaturedRelease {
   @field({ type: 'string' })
   [ID_PROPERTY]: string;
@@ -184,7 +184,7 @@ export class IndexableFeaturedRelease {
   }
 }
 
-@variant(0)
+@variant('content_category')
 export class ContentCategory {
   @field({ type: 'string' })
   [ID_PROPERTY]: string;
@@ -211,40 +211,6 @@ export class ContentCategory {
     if (props[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY]) {
       this[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY] = props[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY];
     }
-  }
-}
-
-@variant(0)
-export class Subscription {
-  @field({ type: 'string' })
-  [ID_PROPERTY]: string;
-
-  @field({ type: 'string' })
-  [SUBSCRIPTION_SITE_ID_PROPERTY]: string;
-
-  @field({ type: option('string') })
-  [SUBSCRIPTION_NAME_PROPERTY]?: string;
-
-  constructor(props: SubcriptionData) {
-    this[ID_PROPERTY] = uuid();
-    this[SUBSCRIPTION_SITE_ID_PROPERTY] = props[SUBSCRIPTION_SITE_ID_PROPERTY];
-    if (props[SUBSCRIPTION_NAME_PROPERTY]) {
-      this[SUBSCRIPTION_NAME_PROPERTY] = props[SUBSCRIPTION_NAME_PROPERTY];
-    }
-  }
-}
-
-@variant(0)
-export class BlockedContent {
-  @field({ type: 'string' })
-  [ID_PROPERTY]: string;
-
-  @field({ type: 'string' })
-  [BLOCKED_CONTENT_CID_PROPERTY]: string;
-
-  constructor(props: BlockedContentData) {
-    this[ID_PROPERTY] = uuid();
-    this[BLOCKED_CONTENT_CID_PROPERTY] = props[BLOCKED_CONTENT_CID_PROPERTY];
   }
 }
 
@@ -294,6 +260,26 @@ export class IndexableContentCategory {
   }
 }
 
+@variant('subscription')
+export class Subscription {
+  @field({ type: 'string' })
+  [ID_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [SUBSCRIPTION_SITE_ID_PROPERTY]: string;
+
+  @field({ type: option('string') })
+  [SUBSCRIPTION_NAME_PROPERTY]?: string;
+
+  constructor(props: SubcriptionData) {
+    this[ID_PROPERTY] = uuid();
+    this[SUBSCRIPTION_SITE_ID_PROPERTY] = props[SUBSCRIPTION_SITE_ID_PROPERTY];
+    if (props[SUBSCRIPTION_NAME_PROPERTY]) {
+      this[SUBSCRIPTION_NAME_PROPERTY] = props[SUBSCRIPTION_NAME_PROPERTY];
+    }
+  }
+}
+
 export class IndexableSubscription {
   @field({ type: 'string' })
   [ID_PROPERTY]: string;
@@ -327,6 +313,20 @@ export class IndexableSubscription {
     this.created = created;
     this.modified = modified;
     this.author = author.bytes;
+  }
+}
+
+@variant('blocked_content')
+export class BlockedContent {
+  @field({ type: 'string' })
+  [ID_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [BLOCKED_CONTENT_CID_PROPERTY]: string;
+
+  constructor(props: BlockedContentData) {
+    this[ID_PROPERTY] = uuid();
+    this[BLOCKED_CONTENT_CID_PROPERTY] = props[BLOCKED_CONTENT_CID_PROPERTY];
   }
 }
 
