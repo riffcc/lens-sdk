@@ -120,6 +120,7 @@ export interface ILensService {
 export type StoreArgs = {
   replicate?: ReplicationOptions;
   replicas?: ReplicationLimitsOptions;
+  disableCache?: boolean;
 }
 
 export interface SiteArgs {

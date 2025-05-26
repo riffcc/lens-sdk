@@ -25,11 +25,11 @@ describe('Site Replication', () => {
     const service2 = new LensService(peer2);
 
     const siteProgram1 = new Site(peer1.identity.publicKey);
-    await service1.openSite(siteProgram1);
+    await service1.openSite(siteProgram1, { releasesArgs: { disableCache: true } });
 
     await peer2.dial(peer1.getMultiaddrs());
 
-    await service2.openSite(siteProgram1.address, { releasesArgs: { replicate: true } });
+    await service2.openSite(siteProgram1.address, { releasesArgs: { replicate: true, disableCache: true } });
 
     await service1.siteProgram?.waitFor(peer2.identity.publicKey);
     await service2.siteProgram?.waitFor(peer1.identity.publicKey);
@@ -74,7 +74,7 @@ describe('Site Replication', () => {
     const service2 = new LensService(peer2);
 
     const siteProgram1 = new Site(peer1.identity.publicKey);
-    await service1.openSite(siteProgram1);
+    await service1.openSite(siteProgram1, { releasesArgs: { disableCache: true } });
 
     const releaseData: ReleaseData = {
       [RELEASE_NAME_PROPERTY]: 'TPB AFK: The Pirate Bay Away from Keyboard',
@@ -90,7 +90,7 @@ describe('Site Replication', () => {
 
     await peer2.dial(peer1.getMultiaddrs());
 
-    await service2.openSite(siteProgram1.address, { releasesArgs: { replicate: true } });
+    await service2.openSite(siteProgram1.address, { releasesArgs: { replicate: true, disableCache: true } });
 
     await service1.siteProgram?.waitFor(peer2.identity.publicKey);
     await service2.siteProgram?.waitFor(peer1.identity.publicKey);

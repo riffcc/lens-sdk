@@ -35,7 +35,7 @@ describe('Lens Service Site Opening', () => {
     const client = await Peerbit.create();
     const siteProgram = new Site(client.identity.publicKey);
     const lensService = new LensService(client);
-    await lensService.openSite(siteProgram);
+    await lensService.openSite(siteProgram, { releasesArgs: { disableCache: true } });
     expect(lensService.siteProgram).toBeDefined();
     expect(lensService.siteProgram?.address).toBe(siteProgram.address);
     await siteProgram.close();
@@ -55,6 +55,7 @@ describe('Lens Service Site Opening', () => {
 
     await lensService.openSite(siteProgram.address, {
       replicate: false,
+      releasesArgs: { disableCache: true },
     });
 
     expect(lensService.siteProgram).toBeDefined();
@@ -77,7 +78,7 @@ describe('Site Program', () => {
     client = await Peerbit.create();
     siteProgram = new Site(client.identity.publicKey);
     service = new LensService(client);
-    await service.openSite(siteProgram);
+    await service.openSite(siteProgram, { releasesArgs: { disableCache: true } });
   });
 
   afterAll(async () => {

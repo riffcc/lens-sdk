@@ -21,7 +21,7 @@ describe('Site ACL', () => {
     peer1 = await Peerbit.create();
     siteProgram = new Site(peer1.identity.publicKey);
     service = new LensService(peer1);
-    await service.openSite(siteProgram);
+    await service.openSite(siteProgram, { releasesArgs: { disableCache: true } });
     
   });
 
@@ -50,7 +50,7 @@ describe('Site ACL', () => {
     const peer2 = await Peerbit.create();
     await peer2.dial(peer1.getMultiaddrs());
     const service2 = new LensService(peer2);
-    await service2.openSite(siteProgram.address);
+    await service2.openSite(siteProgram.address, { releasesArgs: { disableCache: true } });
 
     await service2.siteProgram?.waitFor(peer1.identity.publicKey);
 
@@ -68,6 +68,7 @@ describe('Site ACL', () => {
     await service3.openSite(siteProgram.address, {
       membersArg: { replicate: true },
       administratorsArgs: { replicate: true },
+      releasesArgs: { disableCache: true },
     });
 
     await service3.siteProgram?.waitFor(peer1.identity.publicKey);
@@ -96,6 +97,7 @@ describe('Site ACL', () => {
     await service4.openSite(siteProgram.address, {
       membersArg: { replicate: true },
       administratorsArgs: { replicate: true },
+      releasesArgs: { disableCache: true },
     });
 
     await service4.siteProgram?.waitFor(peer1.identity.publicKey);
