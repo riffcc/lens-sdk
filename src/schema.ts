@@ -460,15 +460,15 @@ export class Site extends Program<SiteArgs> {
             );
           },
           // Add query caching for faster repeated searches
-          cache: {
-            query: {
-              strategy: 'auto', // Automatic cache management
-              maxSize: args?.releasesArgs?.disableCache ? 0 : Infinity, // Unlimited cache size or disabled for tests
-              maxTotalSize: args?.releasesArgs?.disableCache ? 0 : Infinity, // Unlimited total cache size or disabled for tests
-              keepAlive: 6e4, // 60 second TTL
-              prefetchThreshold: 2, // Prefetch after 2 hits
-            },
-          },
+          // cache: {
+          //   query: {
+          //     strategy: 'auto', // Automatic cache management
+          //     maxSize: args?.releasesArgs?.disableCache ? 0 : Infinity, // Unlimited cache size or disabled for tests
+          //     maxTotalSize: args?.releasesArgs?.disableCache ? 0 : Infinity, // Unlimited total cache size or disabled for tests
+          //     keepAlive: 6e4, // 60 second TTL
+          //     prefetchThreshold: 2, // Prefetch after 2 hits
+          //   },
+          // },
         },
       }),
 
@@ -491,15 +491,15 @@ export class Site extends Program<SiteArgs> {
             );
           },
           // Featured releases are accessed frequently, use aggressive caching
-          cache: {
-            query: {
-              strategy: 'auto',
-              maxSize: args?.featuredReleasesArgs?.disableCache ? 0 : Infinity, // Unlimited cache size or disabled for tests
-              maxTotalSize: args?.featuredReleasesArgs?.disableCache ? 0 : Infinity, // Unlimited total cache size or disabled for tests
-              keepAlive: 12e4, // 2 minute TTL
-              prefetchThreshold: 1, // Prefetch after first hit
-            },
-          },
+          // cache: {
+          //   query: {
+          //     strategy: 'auto',
+          //     maxSize: args?.featuredReleasesArgs?.disableCache ? 0 : Infinity, // Unlimited cache size or disabled for tests
+          //     maxTotalSize: args?.featuredReleasesArgs?.disableCache ? 0 : Infinity, // Unlimited total cache size or disabled for tests
+          //     keepAlive: 12e4, // 2 minute TTL
+          //     prefetchThreshold: 1, // Prefetch after first hit
+          //   },
+          // },
         },
       }),
 
@@ -522,15 +522,15 @@ export class Site extends Program<SiteArgs> {
             );
           },
           // Categories rarely change, use long-lived cache
-          cache: {
-            query: {
-              strategy: 'auto',
-              maxSize: args?.contentCategoriesArgs?.disableCache ? 0 : 20,
-              maxTotalSize: args?.contentCategoriesArgs?.disableCache ? 0 : 1e5, // 100KB or disabled for tests
-              keepAlive: 36e5, // 1 hour TTL
-              prefetchThreshold: 1,
-            },
-          },
+          // cache: {
+          //   query: {
+          //     strategy: 'auto',
+          //     maxSize: args?.contentCategoriesArgs?.disableCache ? 0 : 20,
+          //     maxTotalSize: args?.contentCategoriesArgs?.disableCache ? 0 : 1e5, // 100KB or disabled for tests
+          //     keepAlive: 36e5, // 1 hour TTL
+          //     prefetchThreshold: 1,
+          //   },
+          // },
         },
       }),
 
@@ -550,15 +550,15 @@ export class Site extends Program<SiteArgs> {
               PLACEHOLDER_PUBLIC_KEY,
             );
           },
-          cache: {
-            query: {
-              strategy: 'auto',
-              maxSize: args?.subscriptionsArgs?.disableCache ? 0 : 30,
-              maxTotalSize: args?.subscriptionsArgs?.disableCache ? 0 : 5e3,
-              keepAlive: 1e4,
-              prefetchThreshold: 2,
-            },
-          },
+          // cache: {
+          //   query: {
+          //     strategy: 'auto',
+          //     maxSize: args?.subscriptionsArgs?.disableCache ? 0 : 30,
+          //     maxTotalSize: args?.subscriptionsArgs?.disableCache ? 0 : 5e3,
+          //     keepAlive: 1e4,
+          //     prefetchThreshold: 2,
+          //   },
+          // },
         },
       }),
 
@@ -578,15 +578,15 @@ export class Site extends Program<SiteArgs> {
               PLACEHOLDER_PUBLIC_KEY,
             );
           },
-          cache: {
-            query: {
-              strategy: 'auto',
-              maxSize: args?.blockedContentArgs?.disableCache ? 0 : 100,
-              maxTotalSize: args?.blockedContentArgs?.disableCache ? 0 : 1e4,
-              keepAlive: 1e4,
-              prefetchThreshold: 5,
-            },
-          },
+          // cache: {
+          //   query: {
+          //     strategy: 'auto',
+          //     maxSize: args?.blockedContentArgs?.disableCache ? 0 : 100,
+          //     maxTotalSize: args?.blockedContentArgs?.disableCache ? 0 : 1e4,
+          //     keepAlive: 1e4,
+          //     prefetchThreshold: 5,
+          //   },
+          // },
         },
       }),
     ]);
