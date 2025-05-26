@@ -96,8 +96,8 @@ export class IndexableRelease {
   @field({ type: 'u64' })
   modified: bigint;
 
-  @field({ type: 'string' })
-  author: string;
+  @field({ type: Uint8Array })
+  author: Uint8Array;
 
   constructor(
     props: Release,
@@ -113,7 +113,7 @@ export class IndexableRelease {
     this[RELEASE_METADATA_PROPERTY] = props[RELEASE_METADATA_PROPERTY];
     this.created = created;
     this.modified = modified;
-    this.author = author.toString();
+    this.author = author.bytes;
   }
 }
 
@@ -166,8 +166,8 @@ export class IndexableFeaturedRelease {
   @field({ type: 'u64' })
   modified: bigint;
 
-  @field({ type: 'string' })
-  author: string;
+  @field({ type: Uint8Array })
+  author: Uint8Array;
 
   constructor(
     props: FeaturedRelease,
@@ -182,7 +182,7 @@ export class IndexableFeaturedRelease {
     this[FEATURED_PROMOTED_PROPERTY] = props[FEATURED_PROMOTED_PROPERTY];
     this.created = created;
     this.modified = modified;
-    this.author = author.toString();
+    this.author = author.bytes;
   }
 }
 
