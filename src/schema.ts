@@ -363,9 +363,14 @@ export class IndexableBlockedContent {
 }
 
 // Reusable placeholder to avoid expensive async calls during indexing
+// Using a valid Ed25519 public key (all zeros is a valid point on the curve)
 const PLACEHOLDER_PUBLIC_KEY = {
-  toString: () => 'loading',
-  bytes: new Uint8Array(32) // dummy bytes
+  toString: () => '12D3KooWBfmETW1ZbkdZbKKPpE3jpjyQ5WBXoDF8y9oE78cKpBsn',
+  bytes: new Uint8Array([
+    0, 37, 8, 1, 18, 32, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  ])
 } as PublicSignKey;
 
 @variant('site')
