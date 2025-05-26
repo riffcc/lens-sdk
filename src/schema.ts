@@ -70,7 +70,6 @@ export class Release {
   }
 }
 
-@variant(0)
 export class IndexableRelease {
   @field({ type: 'string' })
   [ID_PROPERTY]: string;
@@ -143,7 +142,6 @@ export class FeaturedRelease {
   }
 }
 
-@variant(0)
 export class IndexableFeaturedRelease {
   @field({ type: 'string' })
   [ID_PROPERTY]: string;
