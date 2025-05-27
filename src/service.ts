@@ -180,6 +180,10 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.setSiteMetadata(metadata);
   }
 
+  async getRemoteSiteMetadata(siteId: string): Promise<SiteMetadata | null> {
+    return window.electronLensService.getRemoteSiteMetadata(siteId);
+  }
+
   async dial(address: string): Promise<boolean> {
     return window.electronLensService.dial(address);
   }
@@ -405,6 +409,29 @@ export class LensService implements ILensService {
         success: false, 
         error: error instanceof Error ? error.message : 'Failed to update site metadata' 
       };
+    }
+  }
+
+  async getRemoteSiteMetadata(siteId: string): Promise<SiteMetadata | null> {
+    try {
+      const { client } = this.ensureInitialized();
+      
+      // Open remote site temporarily to get metadata
+      const remoteSite = await client.open<Site>(siteId);
+      
+      const metadata: SiteMetadata = {
+        [SITE_NAME_PROPERTY]: remoteSite[SITE_NAME_PROPERTY],
+        [SITE_DESCRIPTION_PROPERTY]: remoteSite[SITE_DESCRIPTION_PROPERTY],
+        [SITE_IMAGE_CID_PROPERTY]: remoteSite[SITE_IMAGE_CID_PROPERTY],
+      };
+      
+      // Close the remote site
+      await remoteSite.close();
+      
+      return metadata;
+    } catch (error) {
+      console.error('Failed to get remote site metadata:', error);
+      return null;
     }
   }
 

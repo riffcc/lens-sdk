@@ -123,6 +123,7 @@ export interface ILensService {
   getSiteId: () => Promise<string>;
   getSiteMetadata: () => Promise<SiteMetadata>;
   setSiteMetadata: (metadata: SiteMetadata) => Promise<BaseResponse>;
+  getRemoteSiteMetadata: (siteId: string) => Promise<SiteMetadata | null>;
   dial: (address: string) => Promise<boolean>;
   getRelease: (data: IdData) => Promise<WithContext<Release> | undefined>;
   getReleases: (options?: SearchOptions) => Promise<WithContext<Release>[]>;
