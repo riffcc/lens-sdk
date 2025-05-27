@@ -52,6 +52,9 @@ export type ReleaseData<T = string> = {
   [RELEASE_CONTENT_CID_PROPERTY]: string;
   [RELEASE_THUMBNAIL_CID_PROPERTY]?: string;
   [RELEASE_METADATA_PROPERTY]?: T;
+  federatedFrom?: string;
+  federatedAt?: string;
+  federatedRealtime?: boolean;
 }
 
 export type FeaturedReleaseData = {

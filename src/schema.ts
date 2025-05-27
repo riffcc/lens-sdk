@@ -57,6 +57,15 @@ export class Release {
   @field({ type: option('string') })
   [RELEASE_METADATA_PROPERTY]?: string;
 
+  @field({ type: option('string') })
+  federatedFrom?: string;
+
+  @field({ type: option('string') })
+  federatedAt?: string;
+
+  @field({ type: option('bool') })
+  federatedRealtime?: boolean;
+
   constructor(props: Partial<IdData> & ReleaseData) {
     this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
     this[RELEASE_NAME_PROPERTY] = props[RELEASE_NAME_PROPERTY];
@@ -67,6 +76,15 @@ export class Release {
     }
     if (props[RELEASE_METADATA_PROPERTY]) {
       this[RELEASE_METADATA_PROPERTY] = props[RELEASE_METADATA_PROPERTY];
+    }
+    if ((props as any).federatedFrom) {
+      this.federatedFrom = (props as any).federatedFrom;
+    }
+    if ((props as any).federatedAt) {
+      this.federatedAt = (props as any).federatedAt;
+    }
+    if ((props as any).federatedRealtime !== undefined) {
+      this.federatedRealtime = (props as any).federatedRealtime;
     }
   }
 }
@@ -89,6 +107,15 @@ export class IndexableRelease {
 
   @field({ type: option('string') })
   [RELEASE_METADATA_PROPERTY]?: string;
+
+  @field({ type: option('string') })
+  federatedFrom?: string;
+
+  @field({ type: option('string') })
+  federatedAt?: string;
+
+  @field({ type: option('bool') })
+  federatedRealtime?: boolean;
 
   @field({ type: 'u64' })
   created: bigint;
@@ -114,6 +141,15 @@ export class IndexableRelease {
     }
     if (props[RELEASE_METADATA_PROPERTY]) {
       this[RELEASE_METADATA_PROPERTY] = props[RELEASE_METADATA_PROPERTY];
+    }
+    if (props.federatedFrom) {
+      this.federatedFrom = props.federatedFrom;
+    }
+    if (props.federatedAt) {
+      this.federatedAt = props.federatedAt;
+    }
+    if (props.federatedRealtime !== undefined) {
+      this.federatedRealtime = props.federatedRealtime;
     }
     this.created = created;
     this.modified = modified;
