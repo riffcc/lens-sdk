@@ -24,6 +24,9 @@ import {
   SUBSCRIPTION_NAME_PROPERTY,
   SUBSCRIPTION_RECURSIVE_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
+  SITE_NAME_PROPERTY,
+  SITE_DESCRIPTION_PROPERTY,
+  SITE_IMAGE_CID_PROPERTY,
 } from './constants';
 
 import type {
@@ -467,6 +470,16 @@ export class Site extends Program<SiteArgs> {
 
   @field({ type: IdentityAccessController })
   administrators: IdentityAccessController;
+
+  // Site metadata
+  @field({ type: option('string') })
+  [SITE_NAME_PROPERTY]?: string;
+
+  @field({ type: option('string') })
+  [SITE_DESCRIPTION_PROPERTY]?: string;
+
+  @field({ type: option('string') })
+  [SITE_IMAGE_CID_PROPERTY]?: string;
 
 
 

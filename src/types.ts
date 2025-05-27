@@ -18,6 +18,9 @@ import type {
   SUBSCRIPTION_NAME_PROPERTY,
   SUBSCRIPTION_RECURSIVE_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
+  SITE_NAME_PROPERTY,
+  SITE_DESCRIPTION_PROPERTY,
+  SITE_IMAGE_CID_PROPERTY,
 } from './constants';
 import type { ReplicationLimitsOptions, ReplicationOptions } from '@peerbit/shared-log';
 import type { Query, SearchRequest, Sort, WithContext } from '@peerbit/document';
@@ -91,6 +94,12 @@ export type BlockedContentData = {
   [BLOCKED_CONTENT_CID_PROPERTY]: string;
 }
 
+export type SiteMetadata = {
+  [SITE_NAME_PROPERTY]?: string;
+  [SITE_DESCRIPTION_PROPERTY]?: string;
+  [SITE_IMAGE_CID_PROPERTY]?: string;
+}
+
 export interface BaseResponse {
   success: boolean;
   error?: string;
@@ -111,6 +120,9 @@ export interface ILensService {
   getPublicKey: () => Promise<string>;
   getPeerId: () => Promise<string>;
   getAccountStatus: () => Promise<AccountType>;
+  getSiteId: () => Promise<string>;
+  getSiteMetadata: () => Promise<SiteMetadata>;
+  setSiteMetadata: (metadata: SiteMetadata) => Promise<BaseResponse>;
   dial: (address: string) => Promise<boolean>;
   getRelease: (data: IdData) => Promise<WithContext<Release> | undefined>;
   getReleases: (options?: SearchOptions) => Promise<WithContext<Release>[]>;

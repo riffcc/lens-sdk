@@ -21,6 +21,7 @@ import {
 import type { PublicSignKey } from '@peerbit/crypto';
 import { FeaturedRelease, Release, Site, Subscription } from './schema';
 import type {
+  BaseResponse,
   FeaturedReleaseData,
   HashResponse,
   IdData,
@@ -29,6 +30,7 @@ import type {
   ReleaseData,
   SearchOptions,
   SiteArgs,
+  SiteMetadata,
   SubscriptionData,
 } from './types';
 
@@ -40,6 +42,9 @@ import {
   SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
   SUBSCRIPTION_RECURSIVE_PROPERTY,
+  SITE_NAME_PROPERTY,
+  SITE_DESCRIPTION_PROPERTY,
+  SITE_IMAGE_CID_PROPERTY,
 } from './constants';
 
 export async function authorise(
@@ -161,6 +166,18 @@ export class ElectronLensService implements ILensService {
 
   async getAccountStatus(): Promise<AccountType> {
     return window.electronLensService.getAccountStatus();
+  }
+
+  async getSiteId(): Promise<string> {
+    return window.electronLensService.getSiteId();
+  }
+
+  async getSiteMetadata(): Promise<SiteMetadata> {
+    return window.electronLensService.getSiteMetadata();
+  }
+
+  async setSiteMetadata(metadata: SiteMetadata): Promise<BaseResponse> {
+    return window.electronLensService.setSiteMetadata(metadata);
   }
 
   async dial(address: string): Promise<boolean> {
@@ -351,6 +368,44 @@ export class LensService implements ILensService {
     
     console.timeEnd('[LensSDK] getAccountStatus');
     return isMember ? AccountType.MEMBER : AccountType.GUEST;
+  }
+
+  async getSiteId(): Promise<string> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return siteProgram.address;
+  }
+
+  async getSiteMetadata(): Promise<SiteMetadata> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return {
+      [SITE_NAME_PROPERTY]: siteProgram[SITE_NAME_PROPERTY],
+      [SITE_DESCRIPTION_PROPERTY]: siteProgram[SITE_DESCRIPTION_PROPERTY],
+      [SITE_IMAGE_CID_PROPERTY]: siteProgram[SITE_IMAGE_CID_PROPERTY],
+    };
+  }
+
+  async setSiteMetadata(metadata: SiteMetadata): Promise<BaseResponse> {
+    try {
+      const { siteProgram } = this.ensureSiteOpened();
+      
+      // Update the site metadata fields
+      if (metadata[SITE_NAME_PROPERTY] !== undefined) {
+        siteProgram[SITE_NAME_PROPERTY] = metadata[SITE_NAME_PROPERTY];
+      }
+      if (metadata[SITE_DESCRIPTION_PROPERTY] !== undefined) {
+        siteProgram[SITE_DESCRIPTION_PROPERTY] = metadata[SITE_DESCRIPTION_PROPERTY];
+      }
+      if (metadata[SITE_IMAGE_CID_PROPERTY] !== undefined) {
+        siteProgram[SITE_IMAGE_CID_PROPERTY] = metadata[SITE_IMAGE_CID_PROPERTY];
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to update site metadata' 
+      };
+    }
   }
 
   async getRelease({ id }: IdData): Promise<WithContext<Release> | undefined> {
