@@ -179,5 +179,6 @@ export interface SiteArgs {
   membersArg?: StoreArgs;
   administratorsArgs?: StoreArgs;
   federationIndexArgs?: StoreArgs;
+  minimalMode?: boolean; // When true, only opens federation index and defers access controllers
 }
 

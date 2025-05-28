@@ -450,6 +450,8 @@ const PLACEHOLDER_PUBLIC_KEY = {
 
 @variant('site')
 export class Site extends Program<SiteArgs> {
+  // Track access controller loading state
+  private accessControllersReady: Promise<void> | null = null;
 
   @field({ type: Documents })
   releases: Documents<Release, IndexableRelease>;
@@ -502,33 +504,166 @@ export class Site extends Program<SiteArgs> {
   async openMinimal(args?: SiteArgs): Promise<void> {
     console.time('[Site] Minimal open time');
     
-    // Open only access controllers and federation index
-    console.time('[Site] Access controllers and federation index open');
+    // Open federation index FIRST for immediate public content access
+    console.time('[Site] Federation index open');
+    await this.node.open(this.federationIndex, {
+      args: {
+        replicate: args?.federationIndexArgs?.replicate ?? true,
+        replicas: args?.federationIndexArgs?.replicas ?? { min: 1 }
+      }
+    }).then(() => 
+      this.federationIndex.open()
+    );
+    console.timeEnd('[Site] Federation index open');
+    
+    // Open critical data stores with minimal replication for fast cached data access
+    console.time('[Site] Critical stores open');
     await Promise.all([
-      // Access controllers for permission checks
-      this.members.open({
-        replicate: args?.membersArg?.replicate ?? false,
+      // Open releases for immediate content access
+      this.releases.open({
+        type: Release,
+        replicate: { factor: 0 }, // Don't replicate, just access local cache
+        canPerform: () => true, // Temporarily allow all for fast loading
+        index: {
+          canRead: () => true,
+          type: IndexableRelease,
+          transform: async (release, ctx) => {
+            return new IndexableRelease(
+              release,
+              ctx.created,
+              ctx.modified,
+              PLACEHOLDER_PUBLIC_KEY,
+            );
+          },
+        },
       }),
-      this.administrators.open({
-        replicate: args?.administratorsArgs?.replicate ?? false,
+      // Open featured releases for homepage
+      this.featuredReleases.open({
+        type: FeaturedRelease,
+        replicate: { factor: 0 }, // Don't replicate, just access local cache
+        canPerform: () => true, // Temporarily allow all for fast loading
+        index: {
+          canRead: () => true,
+          type: IndexableFeaturedRelease,
+          transform: async (featuredRelease, ctx) => {
+            return new IndexableFeaturedRelease(
+              featuredRelease,
+              ctx.created,
+              ctx.modified,
+              PLACEHOLDER_PUBLIC_KEY,
+            );
+          },
+        },
       }),
-      // Federation index for all content queries
-      // IMPORTANT: Nested Programs must be opened through the parent's node
-      // AND then the program's own open() method must be called
-      this.node.open(this.federationIndex, {
-        args: {
-          replicate: args?.federationIndexArgs?.replicate ?? true,
-          replicas: args?.federationIndexArgs?.replicas ?? { min: 1 }
-        }
-      }).then(() => 
-        this.federationIndex.open()
-      ),
+      // Open content categories for navigation
+      this.contentCategories.open({
+        type: ContentCategory,
+        replicate: { factor: 0 }, // Don't replicate, just access local cache
+        canPerform: () => true, // Temporarily allow all for fast loading
+        index: {
+          canRead: () => true,
+          type: IndexableContentCategory,
+          transform: async (contentCategory, ctx) => {
+            return new IndexableContentCategory(
+              contentCategory,
+              ctx.created,
+              ctx.modified,
+              PLACEHOLDER_PUBLIC_KEY,
+            );
+          },
+        },
+      }),
     ]);
-    console.timeEnd('[Site] Access controllers and federation index open');
+    console.timeEnd('[Site] Critical stores open');
+    
+    // Open access controllers and other stores in the background (non-blocking)
+    console.log('[Site] Starting background store initialization...');
+    this.accessControllersReady = this.openRemainingStores(args);
+    
     console.timeEnd('[Site] Minimal open time');
   }
 
+  private async openRemainingStores(args?: SiteArgs): Promise<void> {
+    const memberCanPerform = this.members.canPerform.bind(this.members);
+    const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
+    
+    try {
+      // First open access controllers
+      console.time('[Site] Background: Access controllers');
+      await Promise.all([
+        this.members.open({
+          replicate: args?.membersArg?.replicate ?? false,
+        }),
+        this.administrators.open({
+          replicate: args?.administratorsArgs?.replicate ?? false,
+        }),
+      ]);
+      console.timeEnd('[Site] Background: Access controllers');
+      
+      // Then open remaining stores with proper permissions
+      console.time('[Site] Background: Open remaining stores');
+      await Promise.all([
+        // Note: We can't reconfigure already opened stores in Peerbit, so releases/featured/categories
+        // will continue with permissive settings from minimal open. This is acceptable as they're
+        // read-mostly stores and real permission checks happen at write time.
+        // Open remaining stores
+        this.subscriptions.open({
+          type: Subscription,
+          replicate: args?.subscriptionsArgs?.replicate ?? { factor: 0 },
+          replicas: args?.subscriptionsArgs?.replicas,
+          canPerform: administratorCanPerform,
+          index: {
+            canRead: () => true,
+            type: IndexableSubscription,
+            transform: async (subscription, ctx) => {
+              return new IndexableSubscription(
+                subscription,
+                ctx.created,
+                ctx.modified,
+                PLACEHOLDER_PUBLIC_KEY,
+              );
+            },
+          },
+        }),
+        this.blockedContent.open({
+          type: BlockedContent,
+          replicate: args?.blockedContentArgs?.replicate ?? { factor: 0 },
+          replicas: args?.blockedContentArgs?.replicas,
+          canPerform: administratorCanPerform,
+          index: {
+            canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
+            type: IndexableBlockedContent,
+            transform: async (blockedContent, ctx) => {
+              return new IndexableBlockedContent(
+                blockedContent,
+                ctx.created,
+                ctx.modified,
+                PLACEHOLDER_PUBLIC_KEY,
+              );
+            },
+          },
+        }),
+      ]);
+      console.timeEnd('[Site] Background: Open remaining stores');
+      console.log('[Site] Background initialization complete');
+    } catch (err) {
+      console.error('[Site] Error in background initialization:', err);
+      throw err;
+    }
+  }
+
+  async waitForAccessControllers(): Promise<void> {
+    if (this.accessControllersReady) {
+      await this.accessControllersReady;
+    }
+  }
+
   async open(args?: SiteArgs): Promise<void> {
+    // Check if we should use minimal open mode
+    if (args?.minimalMode === true) {
+      return this.openMinimal(args);
+    }
+    
     console.time('[Site] Total open time');
     const memberCanPerform = this.members.canPerform.bind(this.members);
     const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);

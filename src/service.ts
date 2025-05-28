@@ -360,13 +360,20 @@ export class LensService implements ILensService {
     const { client } = this.ensureInitialized();
 
     console.time('[LensSDK] Total openSiteMinimal');
-    console.log('[LensSDK] Opening site (minimal) with args:', JSON.stringify(openOptions, null, 2));
+    
+    // Add minimalMode flag to the options
+    const minimalOptions = {
+      ...openOptions,
+      minimalMode: true,
+    };
+    
+    console.log('[LensSDK] Opening site (minimal) with args:', JSON.stringify(minimalOptions, null, 2));
 
     let site: Site;
     if (typeof siteOrAddress === 'string') {
       console.time('[LensSDK] Open remote site');
       site = await client.open<Site>(siteOrAddress, {
-        args: openOptions,
+        args: minimalOptions,
       });
       console.timeEnd('[LensSDK] Open remote site');
     } else {
@@ -377,7 +384,7 @@ export class LensService implements ILensService {
       console.log('[LensSDK] Site to open:', site);
       // Open with peerbit but don't let it call the regular open method
       await client.open(site, {
-        args: openOptions,
+        args: minimalOptions,
         existing: 'reuse', // Reuse if already open
       });
       console.timeEnd('[LensSDK] Open local site');
@@ -451,6 +458,9 @@ export class LensService implements ILensService {
     const timerId = `[LensSDK] getAccountStatus-${Date.now()}`;
     console.time(timerId);
     const { client, siteProgram } = this.ensureSiteOpened();
+
+    // Wait for access controllers to be ready
+    await siteProgram.waitForAccessControllers();
 
     // Check administrators first (smaller set, faster query)
     const adminTimerId = `[LensSDK] Admin check-${Date.now()}`;
