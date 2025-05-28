@@ -23,6 +23,9 @@ importers:
       '@peerbit/program':
         specifier: ^5.2.11
         version: 5.2.11(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))
+      '@peerbit/pubsub':
+        specifier: ^4.0.4
+        version: 4.0.4
       '@peerbit/shared-log':
         specifier: ^11.2.3
         version: 11.2.3(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))
@@ -48,6 +51,9 @@ importers:
       '@peerbit/test-utils':
         specifier: ^2.1.46
         version: 2.1.46(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))
+      '@riffcc/lens-sdk':
+        specifier: 'link:'
+        version: 'link:'
       '@types/jest':
         specifier: ^29.5.14
         version: 29.5.14
@@ -63,6 +69,9 @@ importers:
       '@typescript-eslint/parser':
         specifier: ^8.32.1
         version: 8.32.1(eslint@9.27.0)(typescript@5.8.3)
+      dotenv:
+        specifier: ^16.5.0
+        version: 16.5.0
       esbuild:
         specifier: ^0.25.4
         version: 0.25.4
@@ -1478,6 +1487,10 @@ packages:
   dns-packet@5.6.1:
     resolution: {integrity: sha512-l4gcSouhcgIKRvyy99RNVOgxXiicE+2jZoNmaNmZ6JXiGajBOJAesk1OBlJuM5k2c+eudGdLxDqXuPCKIj6kpw==}
     engines: {node: '>=6'}
+
+  dotenv@16.5.0:
+    resolution: {integrity: sha512-m/C+AwOAr9/W1UOIZUo232ejMNnJAJtYQjUbHoNTBNTJSvqzzDh7vnrei3o3r3m9blf6ZoDkvcw0VmozNRFJxg==}
+    engines: {node: '>=12'}
 
   eastasianwidth@0.2.0:
     resolution: {integrity: sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA==}
@@ -5318,6 +5331,8 @@ snapshots:
   dns-packet@5.6.1:
     dependencies:
       '@leichtgewicht/ip-codec': 2.0.5
+
+  dotenv@16.5.0: {}
 
   eastasianwidth@0.2.0: {}
 

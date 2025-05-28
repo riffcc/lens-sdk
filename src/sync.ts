@@ -2,10 +2,8 @@ import { Site, Release } from './schema';
 import type { SubscriptionData } from './types';
 import { 
   RELEASE_NAME_PROPERTY,
-  RELEASE_CATEGORY_ID_PROPERTY,
   RELEASE_CONTENT_CID_PROPERTY,
   RELEASE_THUMBNAIL_CID_PROPERTY,
-  RELEASE_METADATA_PROPERTY,
   SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
   SUBSCRIPTION_RECURSIVE_PROPERTY,
@@ -311,27 +309,15 @@ export class SubscriptionSyncManager {
               return false;
             }
             
-            // Get the source site metadata
-            const sourceSiteName = siteName || 'Unknown Site';
-            
-            // Extract metadata for the index entry
-            const metadata = release[RELEASE_METADATA_PROPERTY] ? 
-              (typeof release[RELEASE_METADATA_PROPERTY] === 'string' ? 
-                JSON.parse(release[RELEASE_METADATA_PROPERTY]) : 
-                release[RELEASE_METADATA_PROPERTY]) : {};
-            
             // Create federation index entry
             const indexEntry = {
-              contentCid: release[RELEASE_CONTENT_CID_PROPERTY],
+              contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
               title: release[RELEASE_NAME_PROPERTY] || 'Untitled',
+              thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
               sourceSiteId: release.federatedFrom || siteId,
-              sourceSiteName: sourceSiteName,
-              contentType: metadata.contentType || 'video', // Default to video
-              categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || 'uncategorized',
               timestamp: Date.now(),
-              description: metadata.description,
-              thumbnailCid: release[RELEASE_THUMBNAIL_CID_PROPERTY],
-              tags: metadata.tags || [],
+              isFeatured: false,
+              isPromoted: false,
             };
             
             // Insert into federation index
@@ -339,7 +325,7 @@ export class SubscriptionSyncManager {
             
             this.logger?.debug('Added to federation index', {
               title: indexEntry.title,
-              contentCid: indexEntry.contentCid,
+              contentCID: indexEntry.contentCID,
               sourceSiteId: indexEntry.sourceSiteId,
             });
             

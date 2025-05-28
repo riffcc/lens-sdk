@@ -11,7 +11,8 @@ import {
   SUBSCRIPTION_NAME_PROPERTY,
   SUBSCRIPTION_RECURSIVE_PROPERTY,
 } from '../src/constants';
-import { delay } from './utils';
+// Helper function for delays
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 describe('Federation Index Integration', () => {
   let client1: Peerbit;
@@ -136,6 +137,8 @@ describe('Federation Index Integration', () => {
         categoryId: 'video',
         timestamp: Date.now(),
         tags: ['action'],
+        isFeatured: false,
+        isPromoted: false,
       });
       
       await site2FedIndex.insertContent({
@@ -147,6 +150,8 @@ describe('Federation Index Integration', () => {
         categoryId: 'music',
         timestamp: Date.now(),
         tags: ['rock'],
+        isFeatured: false,
+        isPromoted: false,
       });
       
       await site2FedIndex.insertContent({
@@ -158,6 +163,8 @@ describe('Federation Index Integration', () => {
         categoryId: 'video',
         timestamp: Date.now(),
         tags: ['comedy'],
+        isFeatured: false,
+        isPromoted: false,
       });
       
       // Query by category

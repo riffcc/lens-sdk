@@ -1,4 +1,5 @@
 import type { FeaturedRelease, Release, Site } from './schema';
+import type { IndexableFederationEntry } from './per-site-federation-index';
 import type {
   ID_PROPERTY,
   RELEASE_NAME_PROPERTY,
@@ -117,6 +118,8 @@ export interface ILensService {
   init: (directory?: string) => Promise<void>;
   stop: () => Promise<void>;
   openSite: (siteOrAddress: Site | string, openOptions?: SiteArgs) => Promise<void>;
+  openSiteMinimal: (siteOrAddress: Site | string, openOptions?: SiteArgs) => Promise<void>;
+  closeSite: () => Promise<void>;
   getPublicKey: () => Promise<string>;
   getPeerId: () => Promise<string>;
   getAccountStatus: () => Promise<AccountType>;
@@ -140,7 +143,24 @@ export interface ILensService {
   getSubscriptions: (options?: SearchOptions) => Promise<SubscriptionData[]>;
   addSubscription: (data: Omit<SubscriptionData, 'id'>) => Promise<HashResponse>;
   deleteSubscription: (data: IdData) => Promise<IdResponse>;
-
+  // Federation Index methods
+  getFederationIndexFeatured: (limit?: number) => Promise<IndexableFederationEntry[]>;
+  searchFederationIndex: (query: string, options?: SearchOptions) => Promise<IndexableFederationEntry[]>;
+  getFederationIndexRecent: (limit?: number, offset?: number) => Promise<IndexableFederationEntry[]>;
+  complexFederationIndexQuery: (params: {
+    query?: string;
+    sourceSiteId?: string;
+    afterTimestamp?: number;
+    beforeTimestamp?: number;
+    isFeatured?: boolean;
+    isPromoted?: boolean;
+    limit?: number;
+    offset?: number;
+  }) => Promise<IndexableFederationEntry[]>;
+  getFederationIndexStats: () => Promise<{
+    totalEntries: number;
+    entriesBySite: Record<string, number>;
+  }>;
 }
 
 export type StoreArgs = {

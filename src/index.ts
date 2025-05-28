@@ -36,6 +36,12 @@ export {
   Site,
 } from './schema';
 
+export {
+  FederationIndexEntry,
+  IndexableFederationEntry,
+  PerSiteFederationIndex,
+} from './per-site-federation-index';
+
 export type {
   AnyObject,
   IdData,
@@ -55,6 +61,10 @@ export type {
 
 export { AccountType } from './types';
 
-export { ElectronLensService, LensService, authorise } from './service';
+export { ElectronLensService, LensService, authorise, clearAccessCache } from './service';
 
 export { publicSignKeyFromString } from './utils';
+
+export { SubscriptionSyncManager } from './sync';
+
+export { SearchRequest } from '@peerbit/document';

@@ -5,6 +5,7 @@ import { Program } from '@peerbit/program';
 import { IdentityAccessController } from '@peerbit/identity-access-controller';
 import { v4 as uuid } from 'uuid';
 import type { PeerId } from '@libp2p/interface';
+import { PerSiteFederationIndex } from './per-site-federation-index';
 import {
   ID_PROPERTY,
   RELEASE_NAME_PROPERTY,
@@ -471,6 +472,9 @@ export class Site extends Program<SiteArgs> {
   @field({ type: IdentityAccessController })
   administrators: IdentityAccessController;
 
+  @field({ type: PerSiteFederationIndex })
+  federationIndex: PerSiteFederationIndex;
+
   // Site metadata
   @field({ type: option('string') })
   [SITE_NAME_PROPERTY]?: string;
@@ -492,6 +496,31 @@ export class Site extends Program<SiteArgs> {
     this.blockedContent = new Documents();
     this.members = new IdentityAccessController({ rootTrust });
     this.administrators = new IdentityAccessController({ rootTrust });
+    this.federationIndex = new PerSiteFederationIndex(this[SITE_NAME_PROPERTY] || 'Unnamed Site');
+  }
+
+  async openMinimal(args?: SiteArgs): Promise<void> {
+    console.time('[Site] Minimal open time');
+    
+    // Open only access controllers and federation index
+    console.time('[Site] Access controllers and federation index open');
+    await Promise.all([
+      // Access controllers for permission checks
+      this.members.open({
+        replicate: args?.membersArg?.replicate ?? false,
+      }),
+      this.administrators.open({
+        replicate: args?.administratorsArgs?.replicate ?? false,
+      }),
+      // Federation index for all content queries
+      // IMPORTANT: Nested Programs must be opened through the parent's node
+      // AND then the program's own open() method must be called
+      this.node.open(this.federationIndex).then(() => 
+        this.federationIndex.open()
+      ),
+    ]);
+    console.timeEnd('[Site] Access controllers and federation index open');
+    console.timeEnd('[Site] Minimal open time');
   }
 
   async open(args?: SiteArgs): Promise<void> {
@@ -671,6 +700,13 @@ export class Site extends Program<SiteArgs> {
           // },
         },
       }),
+
+      // Federation index for all content queries
+      // IMPORTANT: Nested Programs must be opened through the parent's node
+      // AND then the program's own open() method must be called
+      this.node.open(this.federationIndex).then(() => 
+        this.federationIndex.open()
+      ),
     ]);
     console.timeEnd('[Site] Data stores open');
     console.timeEnd('[Site] Total open time');

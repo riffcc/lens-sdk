@@ -1,6 +1,6 @@
 import { SubscriptionSyncManager, SyncOptions } from './sync';
 import { DirectSubSyncManager, DirectSubSyncOptions } from './sync-directsub';
-import { DocumentsSyncManager, DocumentsSyncOptions } from './sync-documents';
+// import { DocumentsSyncManager, DocumentsSyncOptions } from './sync-documents';
 import { ReplicationSyncManager, ReplicationSyncOptions } from './sync-replication';
 // import { ScalableSyncManager, ScalableSyncOptions } from './sync-scalable';
 import type { Peerbit } from 'peerbit';
@@ -12,8 +12,11 @@ import {
   SUBSCRIPTION_RECURSIVE_PROPERTY,
 } from './constants';
 
+// Type for DocumentsSyncOptions since we're commenting out the import
+type DocumentsSyncOptions = any;
+
 export class FederationService {
-  syncManager: SubscriptionSyncManager | DirectSubSyncManager | DocumentsSyncManager | ReplicationSyncManager | null = null;
+  syncManager: SubscriptionSyncManager | DirectSubSyncManager | ReplicationSyncManager | null = null;
 
   constructor(
     private client: Peerbit,
@@ -32,13 +35,8 @@ export class FederationService {
         );
         await this.syncManager.initialize();
       } else if (this.syncOptions?.mode === 'documents') {
-        this.syncManager = new DocumentsSyncManager(
-          this.client,
-          this.siteProgram,
-          undefined,
-          this.syncOptions
-        );
-        await this.syncManager.initialize();
+        // DocumentsSyncManager is currently disabled
+        throw new Error('Documents sync mode is not currently available');
       } else if (this.syncOptions?.mode === 'replication') {
         this.syncManager = new ReplicationSyncManager(
           this.client,
@@ -59,25 +57,15 @@ export class FederationService {
   }
   
   async initializeForPublishing(): Promise<void> {
-    // For DirectSub and Documents modes, we need to initialize even without subscriptions
+    // For DirectSub mode, we need to initialize even without subscriptions
     // so that we can publish updates
-    if ((this.syncOptions?.mode === 'directsub' || 
-         this.syncOptions?.mode === 'documents') && !this.syncManager) {
-      if (this.syncOptions.mode === 'directsub') {
-        this.syncManager = new DirectSubSyncManager(
-          this.client,
-          this.siteProgram,
-          undefined,
-          this.syncOptions
-        );
-      } else if (this.syncOptions.mode === 'documents') {
-        this.syncManager = new DocumentsSyncManager(
-          this.client,
-          this.siteProgram,
-          undefined,
-          this.syncOptions
-        );
-      }
+    if (this.syncOptions?.mode === 'directsub' && !this.syncManager) {
+      this.syncManager = new DirectSubSyncManager(
+        this.client,
+        this.siteProgram,
+        undefined,
+        this.syncOptions
+      );
       await this.syncManager!.initialize();
     }
   }
@@ -86,7 +74,6 @@ export class FederationService {
     await this.initializeSync();
     if (this.syncManager) {
       if (this.syncManager instanceof DirectSubSyncManager || 
-          this.syncManager instanceof DocumentsSyncManager ||
           this.syncManager instanceof ReplicationSyncManager) {
         // These managers handle subscriptions individually
         for (const subscription of subscriptions) {
@@ -106,7 +93,6 @@ export class FederationService {
     await this.initializeSync();
     if (this.syncManager) {
       if (this.syncManager instanceof DirectSubSyncManager || 
-          this.syncManager instanceof DocumentsSyncManager ||
           this.syncManager instanceof ReplicationSyncManager) {
         const siteId = subscription[SUBSCRIPTION_SITE_ID_PROPERTY];
         const siteName = subscription[SUBSCRIPTION_NAME_PROPERTY];

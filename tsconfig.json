@@ -28,6 +28,7 @@
   "exclude": [
     "node_modules",
     "dist",
-    "eslint.config.js"
+    "eslint.config.js",
+    "src/sync-documents.ts"
   ]
 }

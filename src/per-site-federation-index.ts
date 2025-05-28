@@ -5,61 +5,57 @@ import { field, variant, option, vec } from '@dao-xyz/borsh';
 /**
  * Lightweight pointer for the federation index
  * This is what gets inserted by sites we follow
+ * Minimal data for efficient storage and sync
  */
 @variant('federation-index-entry')
 export class FederationIndexEntry {
   @field({ type: 'string' })
-  contentCid: string;
+  contentCID: string; // IPFS CID - for loading the content
   
   @field({ type: 'string' })
-  title: string;
+  title: string; // Display name
+  
+  @field({ type: option('string') })
+  thumbnailCID?: string; // For visual display
   
   @field({ type: 'string' })
-  sourceSiteId: string;
-  
-  @field({ type: 'string' })
-  sourceSiteName: string;
-  
-  @field({ type: 'string' })
-  contentType: string; // video, audio, document, etc
-  
-  @field({ type: 'string' })
-  categoryId: string;
+  sourceSiteId: string; // Which site this came from (author)
   
   @field({ type: 'u64' })
-  timestamp: number;
+  timestamp: number; // When it was published
   
-  @field({ type: option('string') })
-  description?: string;
+  @field({ type: 'bool' })
+  isFeatured: boolean;
   
-  @field({ type: option('string') })
-  thumbnailCid?: string;
+  @field({ type: 'bool' })
+  isPromoted: boolean;
   
-  @field({ type: vec('string') })
-  tags: string[];
+  @field({ type: option('u64') })
+  featuredUntil?: number; // Timestamp when featuring expires
+  
+  @field({ type: option('u64') })
+  promotedUntil?: number; // Timestamp when promotion expires
   
   constructor(props?: {
-    contentCid: string;
+    contentCID: string;
     title: string;
+    thumbnailCID?: string;
     sourceSiteId: string;
-    sourceSiteName: string;
-    contentType: string;
-    categoryId: string;
     timestamp: number;
-    description?: string;
-    thumbnailCid?: string;
-    tags?: string[];
+    isFeatured?: boolean;
+    isPromoted?: boolean;
+    featuredUntil?: number;
+    promotedUntil?: number;
   }) {
-    this.contentCid = props?.contentCid || '';
+    this.contentCID = props?.contentCID || '';
     this.title = props?.title || '';
+    this.thumbnailCID = props?.thumbnailCID;
     this.sourceSiteId = props?.sourceSiteId || '';
-    this.sourceSiteName = props?.sourceSiteName || '';
-    this.contentType = props?.contentType || '';
-    this.categoryId = props?.categoryId || '';
-    this.timestamp = props?.timestamp || 0;
-    this.description = props?.description;
-    this.thumbnailCid = props?.thumbnailCid;
-    this.tags = props?.tags || [];
+    this.timestamp = props?.timestamp || Date.now();
+    this.isFeatured = props?.isFeatured || false;
+    this.isPromoted = props?.isPromoted || false;
+    this.featuredUntil = props?.featuredUntil;
+    this.promotedUntil = props?.promotedUntil;
   }
 }
 
@@ -71,7 +67,7 @@ export class IndexableFederationEntry extends FederationIndexEntry {
   constructor(props?: FederationIndexEntry & { id?: string }) {
     super(props);
     // Unique ID combines source and content
-    this.id = props?.id || `${this.sourceSiteId}:${this.contentCid}`;
+    this.id = props?.id || `${this.sourceSiteId}:${this.contentCID}`;
   }
 }
 
@@ -106,9 +102,17 @@ export class PerSiteFederationIndex extends Program {
   }
   
   async open(): Promise<void> {
+    console.log('[PerSiteFederationIndex] Opening entries store...');
     await this.entries.open({
       type: IndexableFederationEntry,
       replicate: true,
+      canOpen: () => true, // Required for nested Programs with Documents
+      
+      // Provide explicit id resolver
+      id: (entry: IndexableFederationEntry) => {
+        console.log('[PerSiteFederationIndex] id resolver called for entry:', entry);
+        return entry.id;
+      },
       
       // TODO: Consider using memory index for browser stability
       // For now, use default indexing
@@ -155,6 +159,7 @@ export class PerSiteFederationIndex extends Program {
         return false;
       }
     });
+    console.log('[PerSiteFederationIndex] Entries store opened successfully');
   }
   
   /**
@@ -187,11 +192,44 @@ export class PerSiteFederationIndex extends Program {
    */
   async insertContent(entry: FederationIndexEntry): Promise<void> {
     console.log('[PerSiteFederationIndex] insertContent called for:', entry.title);
+    
+    // Check if entries is properly initialized
+    if (!this.entries) {
+      throw new Error('Federation index entries not initialized');
+    }
+    
+    if (!this.entries.put) {
+      console.error('[PerSiteFederationIndex] entries object:', this.entries);
+      throw new Error('Federation index entries.put is not a function');
+    }
+    
     const indexableEntry = new IndexableFederationEntry({
-      ...entry,
-      id: `${entry.sourceSiteId}:${entry.contentCid}`
+      contentCID: entry.contentCID,
+      title: entry.title,
+      thumbnailCID: entry.thumbnailCID,
+      sourceSiteId: entry.sourceSiteId,
+      timestamp: entry.timestamp,
+      isFeatured: entry.isFeatured,
+      isPromoted: entry.isPromoted,
+      featuredUntil: entry.featuredUntil,
+      promotedUntil: entry.promotedUntil,
+      id: `${entry.sourceSiteId}:${entry.contentCID}`
     });
     try {
+      // Debug: Check all fields before put
+      console.log('[PerSiteFederationIndex] About to put entry:', {
+        hasContentCID: !!indexableEntry.contentCID,
+        contentCID: indexableEntry.contentCID,
+        hasTitle: !!indexableEntry.title,
+        title: indexableEntry.title,
+        hasSourceSiteId: !!indexableEntry.sourceSiteId,
+        sourceSiteId: indexableEntry.sourceSiteId,
+        hasTimestamp: !!indexableEntry.timestamp,
+        timestamp: indexableEntry.timestamp,
+        hasId: !!indexableEntry.id,
+        id: indexableEntry.id,
+      });
+      
       await this.entries.put(indexableEntry);
       console.log('[PerSiteFederationIndex] Successfully inserted:', indexableEntry.id);
     } catch (error) {
@@ -227,24 +265,22 @@ export class PerSiteFederationIndex extends Program {
     // Convert WithContext entries to IndexableFederationEntry
     const converted = all.map(entry => {
       const indexableEntry = new IndexableFederationEntry({
-        contentCid: entry.contentCid,
+        contentCID: entry.contentCID,
         title: entry.title,
+        thumbnailCID: entry.thumbnailCID,
         sourceSiteId: entry.sourceSiteId,
-        sourceSiteName: entry.sourceSiteName,
-        contentType: entry.contentType,
-        categoryId: entry.categoryId,
         timestamp: entry.timestamp,
-        description: entry.description,
-        thumbnailCid: entry.thumbnailCid,
-        tags: entry.tags
+        isFeatured: entry.isFeatured,
+        isPromoted: entry.isPromoted,
+        featuredUntil: entry.featuredUntil,
+        promotedUntil: entry.promotedUntil
       });
       return indexableEntry;
     });
     
-    // Filter by query
+    // Filter by query - search in title only now
     const filtered = converted.filter(entry => 
-      entry.title.toLowerCase().includes(query.toLowerCase()) ||
-      (entry.description && entry.description.toLowerCase().includes(query.toLowerCase()))
+      entry.title.toLowerCase().includes(query.toLowerCase())
     );
     
     // Sort if requested
@@ -264,40 +300,11 @@ export class PerSiteFederationIndex extends Program {
   }
   
   /**
-   * Filter by content type
-   */
-  async getByType(contentType: string, limit?: number): Promise<IndexableFederationEntry[]> {
-    const all = await this.getAllEntries();
-    const filtered = all.filter(entry => entry.contentType === contentType);
-    return limit ? filtered.slice(0, limit) : filtered;
-  }
-  
-  /**
    * Get all content from a specific site
    */
   async getBySite(sourceSiteId: string, limit?: number): Promise<IndexableFederationEntry[]> {
     const all = await this.getAllEntries();
     const filtered = all.filter(entry => entry.sourceSiteId === sourceSiteId);
-    return limit ? filtered.slice(0, limit) : filtered;
-  }
-  
-  /**
-   * Get content by category
-   */
-  async getByCategory(categoryId: string, limit?: number): Promise<IndexableFederationEntry[]> {
-    const all = await this.getAllEntries();
-    const filtered = all.filter(entry => entry.categoryId === categoryId);
-    return limit ? filtered.slice(0, limit) : filtered;
-  }
-  
-  /**
-   * Search by tags (any matching tag)
-   */
-  async getByTags(tags: string[], limit?: number): Promise<IndexableFederationEntry[]> {
-    const all = await this.getAllEntries();
-    const filtered = all.filter(entry => 
-      entry.tags.some(tag => tags.includes(tag))
-    );
     return limit ? filtered.slice(0, limit) : filtered;
   }
   
@@ -314,9 +321,37 @@ export class PerSiteFederationIndex extends Program {
   }
   
   /**
+   * Get featured content (that hasn't expired)
+   */
+  async getFeatured(limit?: number): Promise<IndexableFederationEntry[]> {
+    const now = Date.now();
+    const all = await this.getAllEntries();
+    const featured = all.filter(entry => 
+      entry.isFeatured && (!entry.featuredUntil || entry.featuredUntil > now)
+    );
+    // Sort by timestamp descending (most recent first)
+    const sorted = featured.sort((a, b) => b.timestamp - a.timestamp);
+    return limit ? sorted.slice(0, limit) : sorted;
+  }
+  
+  /**
+   * Get promoted content (that hasn't expired)
+   */
+  async getPromoted(limit?: number): Promise<IndexableFederationEntry[]> {
+    const now = Date.now();
+    const all = await this.getAllEntries();
+    const promoted = all.filter(entry => 
+      entry.isPromoted && (!entry.promotedUntil || entry.promotedUntil > now)
+    );
+    // Sort by timestamp descending (most recent first)
+    const sorted = promoted.sort((a, b) => b.timestamp - a.timestamp);
+    return limit ? sorted.slice(0, limit) : sorted;
+  }
+  
+  /**
    * Helper to get all entries
    */
-  private async getAllEntries(): Promise<IndexableFederationEntry[]> {
+  async getAllEntries(): Promise<IndexableFederationEntry[]> {
     console.log('[PerSiteFederationIndex] getAllEntries called');
     
     try {
@@ -327,16 +362,15 @@ export class PerSiteFederationIndex extends Program {
       // Convert WithContext<FederationIndexEntry> to IndexableFederationEntry
       const converted = results.map(entry => {
         return new IndexableFederationEntry({
-          contentCid: entry.contentCid,
+          contentCID: entry.contentCID,
           title: entry.title,
+          thumbnailCID: entry.thumbnailCID,
           sourceSiteId: entry.sourceSiteId,
-          sourceSiteName: entry.sourceSiteName,
-          contentType: entry.contentType,
-          categoryId: entry.categoryId,
           timestamp: entry.timestamp,
-          description: entry.description,
-          thumbnailCid: entry.thumbnailCid,
-          tags: entry.tags
+          isFeatured: entry.isFeatured,
+          isPromoted: entry.isPromoted,
+          featuredUntil: entry.featuredUntil,
+          promotedUntil: entry.promotedUntil
         });
       });
       
@@ -357,12 +391,11 @@ export class PerSiteFederationIndex extends Program {
    */
   async complexQuery(params: {
     query?: string;
-    contentType?: string;
     sourceSiteId?: string;
-    categoryId?: string;
-    tags?: string[];
     afterTimestamp?: number;
     beforeTimestamp?: number;
+    isFeatured?: boolean;
+    isPromoted?: boolean;
     limit?: number;
     offset?: number;
   }): Promise<IndexableFederationEntry[]> {
@@ -372,27 +405,12 @@ export class PerSiteFederationIndex extends Program {
     if (params.query) {
       const query = params.query.toLowerCase();
       results = results.filter(entry => 
-        entry.title.toLowerCase().includes(query) ||
-        (entry.description && entry.description.toLowerCase().includes(query))
+        entry.title.toLowerCase().includes(query)
       );
-    }
-    
-    if (params.contentType) {
-      results = results.filter(entry => entry.contentType === params.contentType);
     }
     
     if (params.sourceSiteId) {
       results = results.filter(entry => entry.sourceSiteId === params.sourceSiteId);
-    }
-    
-    if (params.categoryId) {
-      results = results.filter(entry => entry.categoryId === params.categoryId);
-    }
-    
-    if (params.tags && params.tags.length > 0) {
-      results = results.filter(entry => 
-        entry.tags.some(tag => params.tags!.includes(tag))
-      );
     }
     
     // Post-filter for timestamp ranges
@@ -401,6 +419,29 @@ export class PerSiteFederationIndex extends Program {
         if (params.afterTimestamp && entry.timestamp < params.afterTimestamp) return false;
         if (params.beforeTimestamp && entry.timestamp > params.beforeTimestamp) return false;
         return true;
+      });
+    }
+    
+    // Filter by featured/promoted status
+    if (params.isFeatured !== undefined) {
+      const now = Date.now();
+      results = results.filter(entry => {
+        if (params.isFeatured) {
+          return entry.isFeatured && (!entry.featuredUntil || entry.featuredUntil > now);
+        } else {
+          return !entry.isFeatured || (entry.featuredUntil && entry.featuredUntil <= now);
+        }
+      });
+    }
+    
+    if (params.isPromoted !== undefined) {
+      const now = Date.now();
+      results = results.filter(entry => {
+        if (params.isPromoted) {
+          return entry.isPromoted && (!entry.promotedUntil || entry.promotedUntil > now);
+        } else {
+          return !entry.isPromoted || (entry.promotedUntil && entry.promotedUntil <= now);
+        }
       });
     }
     
@@ -416,18 +457,15 @@ export class PerSiteFederationIndex extends Program {
   async getStats(): Promise<{
     totalEntries: number;
     entriesBySite: Map<string, number>;
-    entriesByType: Map<string, number>;
     oldestEntry?: IndexableFederationEntry;
     newestEntry?: IndexableFederationEntry;
   }> {
     const all = await this.getAllEntries();
     
     const entriesBySite = new Map<string, number>();
-    const entriesByType = new Map<string, number>();
     
     for (const entry of all) {
       entriesBySite.set(entry.sourceSiteId, (entriesBySite.get(entry.sourceSiteId) || 0) + 1);
-      entriesByType.set(entry.contentType, (entriesByType.get(entry.contentType) || 0) + 1);
     }
     
     const sorted = all.sort((a, b) => a.timestamp - b.timestamp);
@@ -435,7 +473,6 @@ export class PerSiteFederationIndex extends Program {
     return {
       totalEntries: all.length,
       entriesBySite,
-      entriesByType,
       oldestEntry: sorted[0],
       newestEntry: sorted[sorted.length - 1]
     };

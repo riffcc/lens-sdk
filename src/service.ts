@@ -20,6 +20,7 @@ import {
 } from '@peerbit/identity-access-controller';
 import type { PublicSignKey } from '@peerbit/crypto';
 import { FeaturedRelease, Release, Site, Subscription } from './schema';
+import { IndexableFederationEntry, FederationIndexEntry } from './per-site-federation-index';
 import type {
   BaseResponse,
   FeaturedReleaseData,
@@ -45,6 +46,10 @@ import {
   SITE_NAME_PROPERTY,
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
+  RELEASE_NAME_PROPERTY,
+  RELEASE_CONTENT_CID_PROPERTY,
+  RELEASE_THUMBNAIL_CID_PROPERTY,
+  RELEASE_METADATA_PROPERTY,
 } from './constants';
 
 export async function authorise(
@@ -80,6 +85,12 @@ export async function authorise(
 const accessCheckCache = new Map<string, { result: boolean; timestamp: number }>();
 const CACHE_TTL = 60000; // 1 minute cache
 
+// Add method to clear cache (useful for debugging)
+export function clearAccessCache() {
+  accessCheckCache.clear();
+  console.log('[LensSDK] Access cache cleared');
+}
+
 const canPerformCheck = async (accessController: IdentityAccessController, key: PublicSignKey) => {
   const timerLabel = `[LensSDK] canPerformCheck ${accessController.address?.slice(0, 8)}`;
   console.time(timerLabel);
@@ -88,7 +99,7 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
   const cacheKey = `${accessController.address}_${key.toString()}`;
   const cached = accessCheckCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    console.log(`${timerLabel} - Cache hit`);
+    console.log(`${timerLabel} - Cache hit (result: ${cached.result})`);
     console.timeEnd(timerLabel);
     return cached.result;
   }
@@ -116,6 +127,9 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
   );
   console.timeEnd(`${timerLabel} - index.search`);
 
+  console.log(`${timerLabel} - Found ${accessWritedOrAny.length} access entries`);
+  console.log(`${timerLabel} - Checking key: ${key.toString()}`);
+  
   for (const access of accessWritedOrAny) {
     if (access instanceof Access) {
       if (
@@ -124,7 +138,9 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
         ) !== undefined
       ) {
         // check condition
-        if (await access.accessCondition.allowed(key)) {
+        const allowed = await access.accessCondition.allowed(key);
+        console.log(`${timerLabel} - Access check for ${access.id}: ${allowed}`);
+        if (allowed) {
           // Cache the result
           accessCheckCache.set(cacheKey, { result: true, timestamp: Date.now() });
           console.timeEnd(timerLabel);
@@ -239,6 +255,47 @@ export class ElectronLensService implements ILensService {
   async deleteSubscription(data: IdData): Promise<IdResponse> {
     return window.electronLensService.deleteSubscription(data);
   }
+
+  async openSiteMinimal(siteOrAddress: Site | string, openOptions?: SiteArgs): Promise<void> {
+    return window.electronLensService.openSiteMinimal(siteOrAddress, openOptions);
+  }
+
+  async closeSite(): Promise<void> {
+    return window.electronLensService.closeSite();
+  }
+
+  async getFederationIndexFeatured(limit?: number): Promise<IndexableFederationEntry[]> {
+    return window.electronLensService.getFederationIndexFeatured(limit);
+  }
+
+
+  async searchFederationIndex(query: string, options?: SearchOptions): Promise<IndexableFederationEntry[]> {
+    return window.electronLensService.searchFederationIndex(query, options);
+  }
+
+  async getFederationIndexRecent(limit?: number, offset?: number): Promise<IndexableFederationEntry[]> {
+    return window.electronLensService.getFederationIndexRecent(limit, offset);
+  }
+
+  async complexFederationIndexQuery(params: {
+    query?: string;
+    sourceSiteId?: string;
+    afterTimestamp?: number;
+    beforeTimestamp?: number;
+    isFeatured?: boolean;
+    isPromoted?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<IndexableFederationEntry[]> {
+    return window.electronLensService.complexFederationIndexQuery(params);
+  }
+
+  async getFederationIndexStats(): Promise<{
+    totalEntries: number;
+    entriesBySite: Record<string, number>;
+  }> {
+    return window.electronLensService.getFederationIndexStats();
+  }
 }
 
 export class LensService implements ILensService {
@@ -263,6 +320,13 @@ export class LensService implements ILensService {
     this.extenarlyManaged = false;
   }
 
+  async closeSite(): Promise<void> {
+    if (this.siteProgram) {
+      await this.siteProgram.close();
+      this.siteProgram = null;
+    }
+  }
+
   async stop(): Promise<void> {
     if (!this.extenarlyManaged) {
       const { client } = this.ensureInitialized();
@@ -285,6 +349,39 @@ export class LensService implements ILensService {
     return {
       client: this.client,
     };
+  }
+
+  async openSiteMinimal(siteOrAddress: Site | string, openOptions?: SiteArgs): Promise<void> {
+    if (this.siteProgram) {
+      throw new Error(
+        'Site already opened.',
+      );
+    }
+    const { client } = this.ensureInitialized();
+
+    console.time('[LensSDK] Total openSiteMinimal');
+    console.log('[LensSDK] Opening site (minimal) with args:', JSON.stringify(openOptions, null, 2));
+
+    let site: Site;
+    if (typeof siteOrAddress === 'string') {
+      console.time('[LensSDK] Open remote site');
+      site = await client.open<Site>(siteOrAddress, {
+        args: openOptions,
+      });
+      console.timeEnd('[LensSDK] Open remote site');
+    } else {
+      site = siteOrAddress;
+      console.time('[LensSDK] Open local site');
+      // Open with peerbit but don't let it call the regular open method
+      await client.open(site, {
+        args: openOptions,
+        existing: 'reuse', // Reuse if already open
+      });
+      console.timeEnd('[LensSDK] Open local site');
+    }
+    
+    this.siteProgram = site;
+    console.timeEnd('[LensSDK] Total openSiteMinimal');
   }
 
   async openSite(siteOrAddress: Site | string, openOptions?: SiteArgs): Promise<void> {
@@ -331,11 +428,6 @@ export class LensService implements ILensService {
     };
   }
 
-  async closeSite(): Promise<void> {
-    const { siteProgram } = this.ensureSiteOpened();
-    await siteProgram.close();
-    this.siteProgram = null;
-  }
 
   async getPublicKey(): Promise<string> {
     const { client } = this.ensureInitialized();
@@ -353,24 +445,27 @@ export class LensService implements ILensService {
   }
 
   async getAccountStatus(): Promise<AccountType> {
-    console.time('[LensSDK] getAccountStatus');
+    const timerId = `[LensSDK] getAccountStatus-${Date.now()}`;
+    console.time(timerId);
     const { client, siteProgram } = this.ensureSiteOpened();
 
     // Check administrators first (smaller set, faster query)
-    console.time('[LensSDK] Admin check');
+    const adminTimerId = `[LensSDK] Admin check-${Date.now()}`;
+    console.time(adminTimerId);
     const isAdmin = await canPerformCheck(siteProgram.administrators, client.identity.publicKey);
-    console.timeEnd('[LensSDK] Admin check');
+    console.timeEnd(adminTimerId);
     
     if (isAdmin) {
-      console.timeEnd('[LensSDK] getAccountStatus');
+      console.timeEnd(timerId);
       return AccountType.ADMIN;
     }
     
-    console.time('[LensSDK] Member check');
+    const memberTimerId = `[LensSDK] Member check-${Date.now()}`;
+    console.time(memberTimerId);
     const isMember = await canPerformCheck(siteProgram.members, client.identity.publicKey);
-    console.timeEnd('[LensSDK] Member check');
+    console.timeEnd(memberTimerId);
     
-    console.timeEnd('[LensSDK] getAccountStatus');
+    console.timeEnd(timerId);
     return isMember ? AccountType.MEMBER : AccountType.GUEST;
   }
 
@@ -508,6 +603,22 @@ export class LensService implements ILensService {
       const release = new Release(data);
       const result = await siteProgram.releases.put(release);
 
+      // Also add to federation index
+      const metadata = data[RELEASE_METADATA_PROPERTY] ? JSON.parse(data[RELEASE_METADATA_PROPERTY] as string) : {};
+      const federationEntry: FederationIndexEntry = {
+        contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
+        title: release[RELEASE_NAME_PROPERTY],
+        thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
+        sourceSiteId: await this.getSiteId(),
+        timestamp: Date.now(),
+        isFeatured: metadata.isFeatured || false,
+        isPromoted: metadata.isPromoted || false,
+        featuredUntil: metadata.featuredUntil,
+        promotedUntil: metadata.promotedUntil,
+      };
+      
+      await siteProgram.federationIndex.insertContent(federationEntry);
+
       return {
         success: true,
         id: release.id,
@@ -529,6 +640,28 @@ export class LensService implements ILensService {
       const release = new Release(data);
       const result = await siteProgram.releases.put(release);
 
+      // Also update in federation index
+      const siteId = await this.getSiteId();
+      
+      // Delete old entry and insert new one
+      const entryId = `${siteId}:${release[RELEASE_CONTENT_CID_PROPERTY]}`;
+      await siteProgram.federationIndex.removeContent(entryId);
+      
+      const metadata = data[RELEASE_METADATA_PROPERTY] ? JSON.parse(data[RELEASE_METADATA_PROPERTY] as string) : {};
+      const federationEntry: FederationIndexEntry = {
+        contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
+        title: release[RELEASE_NAME_PROPERTY],
+        thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
+        sourceSiteId: siteId,
+        timestamp: Date.now(),
+        isFeatured: metadata.isFeatured || false,
+        isPromoted: metadata.isPromoted || false,
+        featuredUntil: metadata.featuredUntil,
+        promotedUntil: metadata.promotedUntil,
+      };
+      
+      await siteProgram.federationIndex.insertContent(federationEntry);
+
       return {
         success: true,
         id: release.id,
@@ -546,6 +679,15 @@ export class LensService implements ILensService {
   async deleteRelease({ id }: IdData): Promise<IdResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
+
+      // Get the release to find its content CID
+      const release = await siteProgram.releases.index.get(id);
+      if (release) {
+        // Remove from federation index
+        const siteId = await this.getSiteId();
+        const entryId = `${siteId}:${release[RELEASE_CONTENT_CID_PROPERTY]}`;
+        await siteProgram.federationIndex.removeContent(entryId);
+      }
 
       const targetFeaturedReleases = await siteProgram.featuredReleases.index.search(
         new SearchRequest({
@@ -722,6 +864,60 @@ export class LensService implements ILensService {
         error: error instanceof Error ? error.message : 'Failed to delete subscription',
       };
     }
+  }
+
+  // Federation Index methods
+  async getFederationIndexFeatured(limit?: number): Promise<IndexableFederationEntry[]> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return await siteProgram.federationIndex.getFeatured(limit);
+  }
+
+
+  async searchFederationIndex(query: string, options?: SearchOptions): Promise<IndexableFederationEntry[]> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return await siteProgram.federationIndex.search(query, {
+      limit: options?.fetch,
+      sortBy: 'timestamp',
+      sortDirection: 'desc',
+    });
+  }
+
+  async getFederationIndexRecent(limit?: number, offset?: number): Promise<IndexableFederationEntry[]> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return await siteProgram.federationIndex.getRecent(limit, offset);
+  }
+
+  async complexFederationIndexQuery(params: {
+    query?: string;
+    sourceSiteId?: string;
+    afterTimestamp?: number;
+    beforeTimestamp?: number;
+    isFeatured?: boolean;
+    isPromoted?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<IndexableFederationEntry[]> {
+    const { siteProgram } = this.ensureSiteOpened();
+    return await siteProgram.federationIndex.complexQuery(params);
+  }
+
+  async getFederationIndexStats(): Promise<{
+    totalEntries: number;
+    entriesBySite: Record<string, number>;
+  }> {
+    const { siteProgram } = this.ensureSiteOpened();
+    const stats = await siteProgram.federationIndex.getStats();
+    
+    // Convert Maps to Records
+    const entriesBySite: Record<string, number> = {};
+    stats.entriesBySite.forEach((count, site) => {
+      entriesBySite[site] = count;
+    });
+    
+    return {
+      totalEntries: stats.totalEntries,
+      entriesBySite,
+    };
   }
 
 }
