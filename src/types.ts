@@ -162,6 +162,7 @@ export interface ILensService {
     totalEntries: number;
     entriesBySite: Record<string, number>;
   }>;
+  reindexReleases: () => Promise<{ success: boolean; reindexed: number; errors: number }>;
 }
 
 export type StoreArgs = {

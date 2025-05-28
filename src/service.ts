@@ -39,6 +39,8 @@ import { AccountType } from './types';
 import { publicSignKeyFromString } from './utils';
 import { 
   FEATURED_RELEASE_ID_PROPERTY,
+  FEATURED_PROMOTED_PROPERTY,
+  FEATURED_END_TIME_PROPERTY,
   ID_PROPERTY,
   SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
@@ -300,6 +302,10 @@ export class ElectronLensService implements ILensService {
     entriesBySite: Record<string, number>;
   }> {
     return window.electronLensService.getFederationIndexStats();
+  }
+
+  async reindexReleases(): Promise<{ success: boolean; reindexed: number; errors: number }> {
+    return window.electronLensService.reindexReleases();
   }
 }
 
@@ -762,6 +768,65 @@ export class LensService implements ILensService {
       const featuredRelease = new FeaturedRelease(data);
       const result = await siteProgram.featuredReleases.put(featuredRelease);
 
+      // Update the federation index entry to mark it as featured/promoted
+      try {
+        console.log('[LensSDK] addFeaturedRelease - data:', data);
+        console.log('[LensSDK] addFeaturedRelease - isPromoted:', data[FEATURED_PROMOTED_PROPERTY]);
+        
+        const siteId = await this.getSiteId();
+        const entryId = `${siteId}:${targetRelease[RELEASE_CONTENT_CID_PROPERTY]}`;
+        
+        // Get existing entry to preserve other fields
+        const existingEntries = await siteProgram.federationIndex.getAllEntries();
+        const existingEntry = existingEntries.find(e => e.id === entryId);
+        
+        if (existingEntry) {
+          // Update existing entry
+          await siteProgram.federationIndex.removeContent(entryId);
+          
+          const updatedEntry: FederationIndexEntry = {
+            contentCID: existingEntry.contentCID,
+            title: existingEntry.title,
+            thumbnailCID: existingEntry.thumbnailCID,
+            coverCID: existingEntry.coverCID,
+            categoryId: existingEntry.categoryId,
+            sourceSiteId: existingEntry.sourceSiteId,
+            timestamp: typeof existingEntry.timestamp === 'bigint' ? Number(existingEntry.timestamp) : existingEntry.timestamp,
+            isFeatured: true, // Always featured when adding a featured release
+            isPromoted: data[FEATURED_PROMOTED_PROPERTY] || false,
+            featuredUntil: Number(data[FEATURED_END_TIME_PROPERTY]), // Always set when featuring
+            promotedUntil: data[FEATURED_PROMOTED_PROPERTY] ? Number(data[FEATURED_END_TIME_PROPERTY]) : undefined,
+          };
+          
+          await siteProgram.federationIndex.insertContent(updatedEntry);
+          console.log('[LensSDK] Updated federation index entry for featured release');
+        } else {
+          // Create new federation index entry if it doesn't exist
+          console.log('[LensSDK] Creating new federation index entry for featured release');
+          const metadata = targetRelease[RELEASE_METADATA_PROPERTY] ? JSON.parse(targetRelease[RELEASE_METADATA_PROPERTY] as string) : {};
+          
+          const newEntry: FederationIndexEntry = {
+            contentCID: targetRelease[RELEASE_CONTENT_CID_PROPERTY],
+            title: targetRelease[RELEASE_NAME_PROPERTY],
+            thumbnailCID: targetRelease[RELEASE_THUMBNAIL_CID_PROPERTY],
+            coverCID: metadata.Cover || undefined,
+            categoryId: targetRelease[RELEASE_CATEGORY_ID_PROPERTY] || '',
+            sourceSiteId: siteId,
+            timestamp: Date.now(),
+            isFeatured: true, // Always featured when adding a featured release
+            isPromoted: data[FEATURED_PROMOTED_PROPERTY] || false,
+            featuredUntil: Number(data[FEATURED_END_TIME_PROPERTY]), // Always set when featuring
+            promotedUntil: data[FEATURED_PROMOTED_PROPERTY] ? Number(data[FEATURED_END_TIME_PROPERTY]) : undefined,
+          };
+          
+          await siteProgram.federationIndex.insertContent(newEntry);
+          console.log('[LensSDK] Created new federation index entry for featured release');
+        }
+      } catch (error) {
+        console.error('[LensSDK] Failed to update federation index for featured release:', error);
+        // Don't fail the whole operation if federation index update fails
+      }
+
       return {
         success: true,
         id: featuredRelease.id,
@@ -800,7 +865,48 @@ export class LensService implements ILensService {
     try {
       const { siteProgram } = this.ensureSiteOpened();
 
+      // Get the featured release before deleting to find the associated release
+      const featuredRelease = await siteProgram.featuredReleases.index.get(id);
+      
       await siteProgram.featuredReleases.del(id);
+      
+      // Update the federation index to remove featured/promoted flags
+      if (featuredRelease) {
+        try {
+          const targetRelease = await this.getRelease({ id: featuredRelease[FEATURED_RELEASE_ID_PROPERTY] });
+          if (targetRelease) {
+            const siteId = await this.getSiteId();
+            const entryId = `${siteId}:${targetRelease[RELEASE_CONTENT_CID_PROPERTY]}`;
+            
+            const existingEntries = await siteProgram.federationIndex.getAllEntries();
+            const existingEntry = existingEntries.find(e => e.id === entryId);
+            
+            if (existingEntry) {
+              await siteProgram.federationIndex.removeContent(entryId);
+              
+              const updatedEntry: FederationIndexEntry = {
+                contentCID: existingEntry.contentCID,
+                title: existingEntry.title,
+                thumbnailCID: existingEntry.thumbnailCID,
+                coverCID: existingEntry.coverCID,
+                categoryId: existingEntry.categoryId,
+                sourceSiteId: existingEntry.sourceSiteId,
+                timestamp: existingEntry.timestamp,
+                isFeatured: false,
+                isPromoted: false,
+                featuredUntil: undefined,
+                promotedUntil: undefined,
+              };
+              
+              await siteProgram.federationIndex.insertContent(updatedEntry);
+              console.log('[LensSDK] Removed featured/promoted flags from federation index');
+            }
+          }
+        } catch (error) {
+          console.error('[LensSDK] Failed to update federation index after featured release deletion:', error);
+        }
+      }
+      
       return {
         success: true,
         id,
@@ -976,6 +1082,81 @@ export class LensService implements ILensService {
       totalEntries: stats.totalEntries,
       entriesBySite,
     };
+  }
+
+  async reindexReleases(): Promise<{ success: boolean; reindexed: number; errors: number }> {
+    // Check if site is properly opened
+    if (!this.siteProgram) {
+      console.error('[LensSDK] Site not opened, cannot reindex');
+      return {
+        success: false,
+        reindexed: 0,
+        errors: 0,
+      };
+    }
+    
+    const siteProgram = this.siteProgram;
+    const siteId = await this.getSiteId();
+    
+    let reindexed = 0;
+    let errors = 0;
+    
+    try {
+      // Get all releases
+      const releases = await this.getReleases();
+      
+      // Clear existing federation index entries for this site
+      const allEntries = await siteProgram.federationIndex.getAllEntries();
+      for (const entry of allEntries) {
+        if (entry.sourceSiteId === siteId) {
+          await siteProgram.federationIndex.removeContent(entry.id);
+        }
+      }
+      
+      // Re-add all releases to federation index
+      for (const release of releases) {
+        try {
+          const metadata = release[RELEASE_METADATA_PROPERTY] 
+            ? JSON.parse(release[RELEASE_METADATA_PROPERTY] as string) 
+            : {};
+            
+          const federationEntry: FederationIndexEntry = {
+            contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
+            title: release[RELEASE_NAME_PROPERTY],
+            thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
+            coverCID: metadata.Cover || undefined,
+            categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || '',
+            sourceSiteId: siteId,
+            timestamp: Date.now(),
+            isFeatured: metadata.isFeatured || false,
+            isPromoted: metadata.isPromoted || false,
+            featuredUntil: metadata.featuredUntil,
+            promotedUntil: metadata.promotedUntil,
+          };
+          
+          await siteProgram.federationIndex.insertContent(federationEntry);
+          reindexed++;
+        } catch (error) {
+          console.error('[LensSDK] Failed to reindex release:', release.id, error);
+          errors++;
+        }
+      }
+      
+      console.log(`[LensSDK] Reindexing complete: ${reindexed} indexed, ${errors} errors`);
+      
+      return {
+        success: true,
+        reindexed,
+        errors,
+      };
+    } catch (error) {
+      console.error('[LensSDK] Reindexing failed:', error);
+      return {
+        success: false,
+        reindexed,
+        errors,
+      };
+    }
   }
 
 }

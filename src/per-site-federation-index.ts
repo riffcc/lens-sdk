@@ -1,5 +1,5 @@
 import { Program } from '@peerbit/program';
-import { Documents } from '@peerbit/document';
+import { Documents, SearchRequest, Sort, SortDirection, BoolQuery } from '@peerbit/document';
 import { field, variant, option, vec } from '@dao-xyz/borsh';
 
 /**
@@ -49,11 +49,11 @@ export class FederationIndexEntry {
     coverCID?: string;
     categoryId: string;
     sourceSiteId: string;
-    timestamp: number;
+    timestamp: number | bigint;
     isFeatured?: boolean;
     isPromoted?: boolean;
-    featuredUntil?: number;
-    promotedUntil?: number;
+    featuredUntil?: number | bigint;
+    promotedUntil?: number | bigint;
   }) {
     // IMPORTANT: Ensure all required fields are initialized
     this.contentCID = props?.contentCID ?? '';
@@ -62,11 +62,11 @@ export class FederationIndexEntry {
     this.coverCID = props?.coverCID;
     this.categoryId = props?.categoryId ?? '';
     this.sourceSiteId = props?.sourceSiteId ?? '';
-    this.timestamp = props?.timestamp ?? Date.now();
+    this.timestamp = typeof props?.timestamp === 'bigint' ? Number(props.timestamp) : (props?.timestamp ?? Date.now());
     this.isFeatured = props?.isFeatured ?? false;
     this.isPromoted = props?.isPromoted ?? false;
-    this.featuredUntil = props?.featuredUntil;
-    this.promotedUntil = props?.promotedUntil;
+    this.featuredUntil = props?.featuredUntil ? (typeof props.featuredUntil === 'bigint' ? Number(props.featuredUntil) : props.featuredUntil) : undefined;
+    this.promotedUntil = props?.promotedUntil ? (typeof props.promotedUntil === 'bigint' ? Number(props.promotedUntil) : props.promotedUntil) : undefined;
   }
 }
 
@@ -116,11 +116,11 @@ export class IndexableFederationEntry {
       this.coverCID = props.coverCID;
       this.categoryId = props.categoryId ?? '';
       this.sourceSiteId = props.sourceSiteId ?? '';
-      this.timestamp = props.timestamp ?? Date.now();
+      this.timestamp = typeof props.timestamp === 'bigint' ? Number(props.timestamp) : (props.timestamp ?? Date.now());
       this.isFeatured = props.isFeatured ?? false;
       this.isPromoted = props.isPromoted ?? false;
-      this.featuredUntil = props.featuredUntil;
-      this.promotedUntil = props.promotedUntil;
+      this.featuredUntil = props.featuredUntil ? (typeof props.featuredUntil === 'bigint' ? Number(props.featuredUntil) : props.featuredUntil) : undefined;
+      this.promotedUntil = props.promotedUntil ? (typeof props.promotedUntil === 'bigint' ? Number(props.promotedUntil) : props.promotedUntil) : undefined;
       this.id = props.id ?? `${this.sourceSiteId}:${this.contentCID}`;
     }
   }
@@ -262,11 +262,11 @@ export class PerSiteFederationIndex extends Program {
       coverCID: entry.coverCID,
       categoryId: entry.categoryId,
       sourceSiteId: entry.sourceSiteId,
-      timestamp: entry.timestamp,
+      timestamp: typeof entry.timestamp === 'bigint' ? Number(entry.timestamp) : entry.timestamp,
       isFeatured: entry.isFeatured,
       isPromoted: entry.isPromoted,
-      featuredUntil: entry.featuredUntil,
-      promotedUntil: entry.promotedUntil,
+      featuredUntil: entry.featuredUntil ? (typeof entry.featuredUntil === 'bigint' ? Number(entry.featuredUntil) : entry.featuredUntil) : undefined,
+      promotedUntil: entry.promotedUntil ? (typeof entry.promotedUntil === 'bigint' ? Number(entry.promotedUntil) : entry.promotedUntil) : undefined,
       id: `${entry.sourceSiteId}:${entry.contentCID}`
     });
     try {
@@ -362,13 +362,45 @@ export class PerSiteFederationIndex extends Program {
    */
   async getFeatured(limit?: number): Promise<IndexableFederationEntry[]> {
     const now = Date.now();
-    const all = await this.getAllEntries();
-    const featured = all.filter(entry => 
-      entry.isFeatured && (!entry.featuredUntil || entry.featuredUntil > now)
-    );
-    // Sort by timestamp descending (most recent first)
-    const sorted = featured.sort((a, b) => b.timestamp - a.timestamp);
-    return limit ? sorted.slice(0, limit) : sorted;
+    console.log('[PerSiteFederationIndex] getFeatured called, now:', now);
+    
+    try {
+      // Search specifically for featured entries
+      const request = new SearchRequest({
+        query: [
+          new BoolQuery({
+            value: true,
+            key: 'isFeatured',
+          }),
+        ],
+        sort: [new Sort({ key: 'timestamp', direction: SortDirection.DESC })],
+      });
+      
+      // Use fetch parameter for more than 10 results
+      (request as any).fetch = limit || 100;
+      
+      console.log('[PerSiteFederationIndex] Searching for featured entries...');
+      const results = await this.entries.index.search(request);
+      console.log('[PerSiteFederationIndex] Featured search results:', results?.length || 0);
+      
+      if (!results || results.length === 0) {
+        console.log('[PerSiteFederationIndex] No featured entries found');
+        return [];
+      }
+      
+      // Filter out expired featured items
+      const nonExpired = results.filter(entry => {
+        const isExpired = entry.featuredUntil && entry.featuredUntil <= now;
+        console.log('[PerSiteFederationIndex] Featured entry:', entry.title, 'expired:', isExpired, 'featuredUntil:', entry.featuredUntil);
+        return !isExpired;
+      });
+      
+      console.log('[PerSiteFederationIndex] Non-expired featured entries:', nonExpired.length);
+      return nonExpired as IndexableFederationEntry[];
+    } catch (error) {
+      console.error('[PerSiteFederationIndex] Error getting featured entries:', error);
+      return [];
+    }
   }
   
   /**
@@ -376,13 +408,38 @@ export class PerSiteFederationIndex extends Program {
    */
   async getPromoted(limit?: number): Promise<IndexableFederationEntry[]> {
     const now = Date.now();
-    const all = await this.getAllEntries();
-    const promoted = all.filter(entry => 
-      entry.isPromoted && (!entry.promotedUntil || entry.promotedUntil > now)
-    );
-    // Sort by timestamp descending (most recent first)
-    const sorted = promoted.sort((a, b) => b.timestamp - a.timestamp);
-    return limit ? sorted.slice(0, limit) : sorted;
+    
+    try {
+      // Search specifically for promoted entries
+      const request = new SearchRequest({
+        query: [
+          new BoolQuery({
+            value: true,
+            key: 'isPromoted',
+          }),
+        ],
+        sort: [new Sort({ key: 'timestamp', direction: SortDirection.DESC })],
+      });
+      
+      // Use fetch parameter for more than 10 results
+      (request as any).fetch = limit || 100;
+      
+      const results = await this.entries.index.search(request);
+      
+      if (!results || results.length === 0) {
+        return [];
+      }
+      
+      // Filter out expired promoted items
+      const nonExpired = results.filter(entry => 
+        !entry.promotedUntil || entry.promotedUntil > now
+      );
+      
+      return nonExpired as IndexableFederationEntry[];
+    } catch (error) {
+      console.error('[PerSiteFederationIndex] Error getting promoted entries:', error);
+      return [];
+    }
   }
   
   /**
@@ -405,7 +462,9 @@ export class PerSiteFederationIndex extends Program {
     try {
       // Use a simple search to get all entries
       console.log('[PerSiteFederationIndex] Searching entries...');
-      const results = await this.entries.index.search({});
+      const request = new SearchRequest({});
+      (request as any).fetch = 1000; // Get up to 1000 entries
+      const results = await this.entries.index.search(request);
       console.log('[PerSiteFederationIndex] search results:', results?.length || 0, 'entries');
       
       if (!results || results.length === 0) {
