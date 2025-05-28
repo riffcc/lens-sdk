@@ -178,5 +178,6 @@ export interface SiteArgs {
   syncSitesArgs?: StoreArgs;
   membersArg?: StoreArgs;
   administratorsArgs?: StoreArgs;
+  federationIndexArgs?: StoreArgs;
 }
 

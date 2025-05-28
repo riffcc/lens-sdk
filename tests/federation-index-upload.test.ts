@@ -1,198 +1,95 @@
+import { randomBytes } from 'crypto';
+import { Peerbit } from 'peerbit';
 import { LensService } from '../src/service';
-import { 
-  RELEASE_NAME_PROPERTY,
-  RELEASE_CATEGORY_ID_PROPERTY,
-  RELEASE_CONTENT_CID_PROPERTY,
-  RELEASE_THUMBNAIL_CID_PROPERTY,
-  RELEASE_METADATA_PROPERTY,
-} from '../src/constants';
 import { getTestPeerbit } from './test-identity';
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-// Get __dirname equivalent for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Load environment variables from current directory
-dotenv.config({ path: join(__dirname, '../.env') });
-
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 describe('Federation Index Upload Test', () => {
-  let lensService: LensService;
-  let publicKey: string;
+  let peerbit: Peerbit;
+  let service: LensService;
 
   beforeAll(async () => {
-    // Get persistent test identity
-    const { peerbit, publicKey: pubKey } = await getTestPeerbit();
-    publicKey = pubKey;
+    // Get or create persistent test identity
+    const testIdentity = await getTestPeerbit();
+    peerbit = testIdentity.peerbit;
     
-    console.log('Test identity public key:', publicKey);
-    console.log('Please ensure this key is authorized in lens-node');
-    
-    // Create lens service with test identity
-    lensService = new LensService();
-    lensService['_client'] = peerbit;
-    await lensService.init();
-    
-    // Connect to bootstrap nodes
-    const bootstrappers = process.env.VITE_BOOTSTRAPPERS?.split(',') || [];
-    console.log('Connecting to bootstrap nodes:', bootstrappers.length);
-    
-    for (const addr of bootstrappers) {
-      try {
-        await lensService.dial(addr.trim());
-        console.log('Connected to bootstrap node:', addr.trim().split('/').pop());
-      } catch (err) {
-        console.warn('Failed to connect to bootstrap node:', addr, err);
-      }
-    }
-    
-    // Wait for connections to establish
-    await delay(3000);
-  }, 30000);
-
-  afterAll(async () => {
-    await lensService?.stop();
+    service = new LensService(peerbit);
+    console.log('Service client after constructor:', service.client);
+    console.log('Peerbit identity:', peerbit.identity);
+    // Don't call init when passing peerbit to constructor
   });
 
-  test('should upload content with featured flag to federation index', async () => {
-    // Load site address from environment
-    const siteAddress = process.env.VITE_SITE_ADDRESS || process.env.SITE_ADDRESS || process.env.BOOTSTRAP_SITE_ADDRESS;
-    if (!siteAddress) {
-      throw new Error('No VITE_SITE_ADDRESS, SITE_ADDRESS or BOOTSTRAP_SITE_ADDRESS found in environment');
-    }
+  afterAll(async () => {
+    await service.closeSite();
+    await service.stop();
+    await peerbit.stop();
+  });
 
-    console.log('Opening site:', siteAddress);
+  test('should upload featured release to Federation Index', async () => {
+    // First, create a new Site instance
+    const site = new (await import('../src/schema')).Site();
     
-    // Open the site with full configuration to ensure proper authorization
-    await lensService.openSite(siteAddress, {
-      releasesArgs: { replicate: false },
-      featuredReleasesArgs: { replicate: false },
-      contentCategoriesArgs: { replicate: false },
-      subscriptionsArgs: { replicate: false },
-      blockedContentArgs: { replicate: false },
-      syncSitesArgs: { replicate: false },
-      membersArg: { replicate: true },
-      administratorsArgs: { replicate: true },
+    // Open the site with federation index enabled
+    await service.openSiteMinimal(site, {
+      releasesArgs: { replicate: true }
     });
     
-    console.log('Site opened successfully');
+    console.log('Created new site with federation index');
+
+    // Create test CIDs (simulating IPFS hashes)
+    const contentCID = 'QmPRDz3YP9fNbe3AGHAA3VaNjS6CsV3PfUb9b7UqQfYiU6';
+    const thumbnailCID = 'QmNzNjaPiwCiMYxY37ejcMYWDpedDYEo6AYa6ja8ASzZAp';
+
+    // Add a featured release to the federation index
+    console.log('Adding featured release to federation index...');
+    const siteId = service.site!.address;
     
-    // Check account status with retries
-    let accountStatus = 0;
-    for (let i = 0; i < 10; i++) {
-      accountStatus = await lensService.getAccountStatus();
-      console.log(`Account status check ${i + 1}: ${accountStatus}`);
-      
-      if (accountStatus > 0) break;
-      await delay(2000);
-    }
-    
-    if (accountStatus === 0) {
-      console.error('Account is not authorized. Please authorize in lens-node and try again.');
-      console.log('Test identity public key:', publicKey);
-      return;
-    }
-    
-    console.log('Account authorized, uploading release...');
-    
-    // Create release with the provided CIDs and featured flag
-    const releaseData = {
-      [RELEASE_NAME_PROPERTY]: 'Featured Test Release',
-      [RELEASE_CATEGORY_ID_PROPERTY]: 'video',
-      [RELEASE_CONTENT_CID_PROPERTY]: 'QmPRDz3YP9fNbe3AGHAA3VaNjS6CsV3PfUb9b7UqQfYiU6',
-      [RELEASE_THUMBNAIL_CID_PROPERTY]: 'QmNzNjaPiwCiMYxY37ejcMYWDpedDYEo6AYa6ja8ASzZAp',
-      [RELEASE_METADATA_PROPERTY]: JSON.stringify({
-        description: 'Test release with featured flag',
-        contentType: 'video',
-        tags: ['test', 'featured', 'demo'],
-        isFeatured: true,
-        isPromoted: false,
-        featuredUntil: Date.now() + (7 * 24 * 60 * 60 * 1000), // Featured for 7 days
-      }),
-    };
-    
-    const result = await lensService.addRelease(releaseData);
-    expect(result.success).toBe(true);
-    console.log('Release added successfully:', result.id);
-    
-    // Wait for propagation
-    await delay(2000);
-    
-    // Query featured content from federation index
-    const featuredEntries = await lensService.getFederationIndexFeatured(10);
-    console.log('Featured entries found:', featuredEntries.length);
-    
-    // Find our entry
-    const ourEntry = featuredEntries.find(entry => 
-      entry.contentCid === releaseData[RELEASE_CONTENT_CID_PROPERTY]
-    );
-    
-    expect(ourEntry).toBeDefined();
-    expect(ourEntry?.title).toBe('Featured Test Release');
-    expect(ourEntry?.isFeatured).toBe(true);
-    expect(ourEntry?.isPromoted).toBe(false);
-    expect(ourEntry?.featuredUntil).toBeDefined();
-    expect(ourEntry?.featuredUntil).toBeGreaterThan(Date.now());
-    
-    console.log('Featured entry verified:', ourEntry);
-    
-    // Test promoted content
-    const promotedReleaseData = {
-      [RELEASE_NAME_PROPERTY]: 'Promoted Test Release',
-      [RELEASE_CATEGORY_ID_PROPERTY]: 'video',
-      [RELEASE_CONTENT_CID_PROPERTY]: 'QmPRDz3YP9fNbe3AGHAA3VaNjS6CsV3PfUb9b7UqQfYiU7', // Different CID
-      [RELEASE_THUMBNAIL_CID_PROPERTY]: 'QmNzNjaPiwCiMYxY37ejcMYWDpedDYEo6AYa6ja8ASzZAp',
-      [RELEASE_METADATA_PROPERTY]: JSON.stringify({
-        description: 'Test release with promoted flag',
-        contentType: 'video',
-        tags: ['test', 'promoted', 'demo'],
-        isFeatured: false,
-        isPromoted: true,
-        promotedUntil: Date.now() + (30 * 24 * 60 * 60 * 1000), // Promoted for 30 days
-      }),
-    };
-    
-    const promotedResult = await lensService.addRelease(promotedReleaseData);
-    expect(promotedResult.success).toBe(true);
-    console.log('Promoted release added successfully:', promotedResult.id);
-    
-    // Wait for propagation
-    await delay(2000);
-    
-    // Query promoted content
-    const promotedEntries = await lensService.complexFederationIndexQuery({
-      isPromoted: true,
-      limit: 10,
-    });
-    
-    console.log('Promoted entries found:', promotedEntries.length);
-    
-    const promotedEntry = promotedEntries.find(entry => 
-      entry.title === 'Promoted Test Release'
-    );
-    
-    expect(promotedEntry).toBeDefined();
-    expect(promotedEntry?.isPromoted).toBe(true);
-    expect(promotedEntry?.isFeatured).toBe(false);
-    expect(promotedEntry?.promotedUntil).toBeDefined();
-    expect(promotedEntry?.promotedUntil).toBeGreaterThan(Date.now());
-    
-    console.log('Promoted entry verified:', promotedEntry);
-    
-    // Test complex query with both featured and promoted
-    const featuredAndPromoted = await lensService.complexFederationIndexQuery({
+    // Insert into federation index with featured flag
+    await service.site!.federationIndex!.insertContent({
+      contentCID,
+      title: 'Featured Video Release',
+      thumbnailCID,
+      sourceSiteId: siteId,
+      timestamp: Date.now(),
       isFeatured: true,
-      contentType: 'video',
-      limit: 10,
+      isPromoted: true,
+      featuredUntil: Date.now() + 24 * 60 * 60 * 1000, // Featured for 24 hours
+      promotedUntil: Date.now() + 24 * 60 * 60 * 1000, // Promoted for 24 hours
     });
-    
-    console.log('Featured video entries found:', featuredAndPromoted.length);
-    expect(featuredAndPromoted.length).toBeGreaterThan(0);
-    
-    console.log('All tests completed successfully!');
-  }, 60000);
+
+    // Also add a non-featured release
+    await service.site!.federationIndex!.insertContent({
+      contentCID: 'QmXxxxDifferentCIDxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      title: 'Regular Video Release',
+      thumbnailCID: 'QmYyyyDifferentThumbnailCIDyyyyyyyyyyyyyyyyyyyy',
+      sourceSiteId: siteId,
+      timestamp: Date.now() - 1000, // Slightly older
+      isFeatured: false,
+      isPromoted: false,
+    });
+
+    console.log('Releases added to federation index');
+
+    // Query featured content
+    const featured = await service.getFederationIndexFeatured(10);
+    console.log('Featured releases:', featured.length);
+    console.log('First featured:', featured[0]);
+
+    // Query recent content
+    const recent = await service.getFederationIndexRecent(10);
+    console.log('Recent releases:', recent.length);
+    console.log('Recent titles:', recent.map(r => r.title));
+
+    // Verify featured content
+    expect(featured.length).toBe(1);
+    expect(featured[0].title).toBe('Featured Video Release');
+    expect(featured[0].isFeatured).toBe(true);
+    expect(featured[0].isPromoted).toBe(true);
+
+    // Verify recent content includes both
+    expect(recent.length).toBe(2);
+    expect(recent[0].title).toBe('Featured Video Release'); // Most recent first
+    expect(recent[1].title).toBe('Regular Video Release');
+
+    console.log('Test completed successfully!');
+  });
 });

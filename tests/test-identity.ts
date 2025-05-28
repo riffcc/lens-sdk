@@ -22,6 +22,8 @@ export async function getTestPeerbit(): Promise<{ peerbit: Peerbit; publicKey: s
     directory: TEST_IDENTITY_PATH
   });
   
+  await peerbit.start();
+  
   const publicKey = peerbit.identity.publicKey.toString();
   console.log('Test identity public key:', publicKey);
   console.log('This key needs to be authorized as MEMBER or ADMIN on the target site');

@@ -515,7 +515,12 @@ export class Site extends Program<SiteArgs> {
       // Federation index for all content queries
       // IMPORTANT: Nested Programs must be opened through the parent's node
       // AND then the program's own open() method must be called
-      this.node.open(this.federationIndex).then(() => 
+      this.node.open(this.federationIndex, {
+        args: {
+          replicate: args?.federationIndexArgs?.replicate ?? true,
+          replicas: args?.federationIndexArgs?.replicas ?? { min: 1 }
+        }
+      }).then(() => 
         this.federationIndex.open()
       ),
     ]);
@@ -704,7 +709,12 @@ export class Site extends Program<SiteArgs> {
       // Federation index for all content queries
       // IMPORTANT: Nested Programs must be opened through the parent's node
       // AND then the program's own open() method must be called
-      this.node.open(this.federationIndex).then(() => 
+      this.node.open(this.federationIndex, {
+        args: {
+          replicate: args?.federationIndexArgs?.replicate ?? true,
+          replicas: args?.federationIndexArgs?.replicas ?? { min: 1 }
+        }
+      }).then(() => 
         this.federationIndex.open()
       ),
     ]);

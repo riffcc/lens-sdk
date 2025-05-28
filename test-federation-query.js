@@ -18,8 +18,16 @@ async function test() {
     console.log('Using identity:', publicKey);
     
     // Connect to bootstrap
-    await lensService.dial('/ip4/127.0.0.1/tcp/8002/ws/p2p/12D3KooWBZr8BxR4Vf9AtJ66qWMZ24gCtRuJkwLuUvNLufdSKbHn');
-    console.log('Connected to bootstrap');
+    const bootstrappers = process.env.VITE_BOOTSTRAPPERS?.split(',') || [];
+    for (const addr of bootstrappers.slice(0, 1)) {
+      try {
+        await lensService.dial(addr.trim());
+        console.log('Connected to bootstrap');
+        break;
+      } catch (err) {
+        console.warn('Failed to connect:', err.message);
+      }
+    }
     
     await new Promise(r => setTimeout(r, 2000));
     
@@ -37,9 +45,15 @@ async function test() {
     try {
       const recent = await lensService.getFederationIndexRecent(10);
       console.log('Recent entries:', recent.length);
+      recent.forEach(entry => {
+        console.log('  -', entry.title, 'CID:', entry.contentCID);
+      });
       
       const featured = await lensService.getFederationIndexFeatured(10);
-      console.log('Featured entries:', featured.length);
+      console.log('\nFeatured entries:', featured.length);
+      featured.forEach(entry => {
+        console.log('  -', entry.title, 'featured:', entry.isFeatured, 'until:', new Date(entry.featuredUntil || 0));
+      });
       
       console.log('\nFederation index is working!');
     } catch (err) {

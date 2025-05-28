@@ -62,6 +62,9 @@ export const ADMIN_SITE_ARGS: SiteArgs = {
   syncSitesArgs: {
     replicate: true, // Lens nodes participate in sync coordination
   },
+  federationIndexArgs: {
+    replicate: true, // Full replication for federation index
+  },
   membersArg: {
     replicate: true, // Full replication for access control
   },
@@ -87,6 +90,9 @@ export const DEDICATED_SITE_ARGS: SiteArgs = {
   },
   syncSitesArgs: {
     replicate: true, // Replicators manage sync coordination
+  },
+  federationIndexArgs: {
+    replicate: true, // Full replication - dedicated nodes store everything
   },
   membersArg: {
     replicate: true, // Full replication for access control

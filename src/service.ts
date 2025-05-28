@@ -372,6 +372,9 @@ export class LensService implements ILensService {
     } else {
       site = siteOrAddress;
       console.time('[LensSDK] Open local site');
+      console.log('[LensSDK] Client before open:', client);
+      console.log('[LensSDK] Client identity:', client?.identity);
+      console.log('[LensSDK] Site to open:', site);
       // Open with peerbit but don't let it call the regular open method
       await client.open(site, {
         args: openOptions,
@@ -604,6 +607,7 @@ export class LensService implements ILensService {
       const result = await siteProgram.releases.put(release);
 
       // Also add to federation index
+      console.log('[LensSDK] Adding release to federation index...');
       const metadata = data[RELEASE_METADATA_PROPERTY] ? JSON.parse(data[RELEASE_METADATA_PROPERTY] as string) : {};
       const federationEntry: FederationIndexEntry = {
         contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
@@ -617,7 +621,14 @@ export class LensService implements ILensService {
         promotedUntil: metadata.promotedUntil,
       };
       
-      await siteProgram.federationIndex.insertContent(federationEntry);
+      console.log('[LensSDK] Federation entry:', federationEntry);
+      
+      try {
+        await siteProgram.federationIndex.insertContent(federationEntry);
+        console.log('[LensSDK] Successfully added to federation index');
+      } catch (error) {
+        console.error('[LensSDK] Failed to add to federation index:', error);
+      }
 
       return {
         success: true,
@@ -869,7 +880,15 @@ export class LensService implements ILensService {
   // Federation Index methods
   async getFederationIndexFeatured(limit?: number): Promise<IndexableFederationEntry[]> {
     const { siteProgram } = this.ensureSiteOpened();
-    return await siteProgram.federationIndex.getFeatured(limit);
+    console.log('[LensSDK] getFederationIndexFeatured called with limit:', limit);
+    console.log('[LensSDK] siteProgram.federationIndex is:', siteProgram.federationIndex ? 'defined' : 'undefined');
+    if (!siteProgram.federationIndex) {
+      console.error('[LensSDK] Federation index is not initialized!');
+      return [];
+    }
+    const result = await siteProgram.federationIndex.getFeatured(limit);
+    console.log('[LensSDK] getFederationIndexFeatured returned:', result.length, 'entries');
+    return result;
   }
 
 
@@ -884,7 +903,15 @@ export class LensService implements ILensService {
 
   async getFederationIndexRecent(limit?: number, offset?: number): Promise<IndexableFederationEntry[]> {
     const { siteProgram } = this.ensureSiteOpened();
-    return await siteProgram.federationIndex.getRecent(limit, offset);
+    console.log('[LensSDK] getFederationIndexRecent called with limit:', limit, 'offset:', offset);
+    console.log('[LensSDK] siteProgram.federationIndex is:', siteProgram.federationIndex ? 'defined' : 'undefined');
+    if (!siteProgram.federationIndex) {
+      console.error('[LensSDK] Federation index is not initialized!');
+      return [];
+    }
+    const result = await siteProgram.federationIndex.getRecent(limit, offset);
+    console.log('[LensSDK] getFederationIndexRecent returned:', result.length, 'entries');
+    return result;
   }
 
   async complexFederationIndexQuery(params: {

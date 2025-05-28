@@ -10,25 +10,25 @@ import { field, variant, option, vec } from '@dao-xyz/borsh';
 @variant('federation-index-entry')
 export class FederationIndexEntry {
   @field({ type: 'string' })
-  contentCID: string; // IPFS CID - for loading the content
+  contentCID: string = ''; // IPFS CID - for loading the content
   
   @field({ type: 'string' })
-  title: string; // Display name
+  title: string = ''; // Display name
   
   @field({ type: option('string') })
   thumbnailCID?: string; // For visual display
   
   @field({ type: 'string' })
-  sourceSiteId: string; // Which site this came from (author)
+  sourceSiteId: string = ''; // Which site this came from (author)
   
   @field({ type: 'u64' })
-  timestamp: number; // When it was published
+  timestamp: number = 0; // When it was published
   
   @field({ type: 'bool' })
-  isFeatured: boolean;
+  isFeatured: boolean = false;
   
   @field({ type: 'bool' })
-  isPromoted: boolean;
+  isPromoted: boolean = false;
   
   @field({ type: option('u64') })
   featuredUntil?: number; // Timestamp when featuring expires
@@ -47,27 +47,64 @@ export class FederationIndexEntry {
     featuredUntil?: number;
     promotedUntil?: number;
   }) {
-    this.contentCID = props?.contentCID || '';
-    this.title = props?.title || '';
+    // IMPORTANT: Ensure all required fields are initialized
+    this.contentCID = props?.contentCID ?? '';
+    this.title = props?.title ?? '';
     this.thumbnailCID = props?.thumbnailCID;
-    this.sourceSiteId = props?.sourceSiteId || '';
-    this.timestamp = props?.timestamp || Date.now();
-    this.isFeatured = props?.isFeatured || false;
-    this.isPromoted = props?.isPromoted || false;
+    this.sourceSiteId = props?.sourceSiteId ?? '';
+    this.timestamp = props?.timestamp ?? Date.now();
+    this.isFeatured = props?.isFeatured ?? false;
+    this.isPromoted = props?.isPromoted ?? false;
     this.featuredUntil = props?.featuredUntil;
     this.promotedUntil = props?.promotedUntil;
   }
 }
 
 @variant('indexable-federation-entry')
-export class IndexableFederationEntry extends FederationIndexEntry {
+export class IndexableFederationEntry {
   @field({ type: 'string' })
-  id: string;
+  id: string = '';
+  
+  @field({ type: 'string' })
+  contentCID: string = ''; // IPFS CID - for loading the content
+  
+  @field({ type: 'string' })
+  title: string = ''; // Display name
+  
+  @field({ type: option('string') })
+  thumbnailCID?: string; // For visual display
+  
+  @field({ type: 'string' })
+  sourceSiteId: string = ''; // Which site this came from (author)
+  
+  @field({ type: 'u64' })
+  timestamp: number = 0; // When it was published
+  
+  @field({ type: 'bool' })
+  isFeatured: boolean = false;
+  
+  @field({ type: 'bool' })
+  isPromoted: boolean = false;
+  
+  @field({ type: option('u64') })
+  featuredUntil?: number; // Timestamp when featuring expires
+  
+  @field({ type: option('u64') })
+  promotedUntil?: number; // Timestamp when promotion expires
   
   constructor(props?: FederationIndexEntry & { id?: string }) {
-    super(props);
-    // Unique ID combines source and content
-    this.id = props?.id || `${this.sourceSiteId}:${this.contentCID}`;
+    if (props) {
+      this.contentCID = props.contentCID ?? '';
+      this.title = props.title ?? '';
+      this.thumbnailCID = props.thumbnailCID;
+      this.sourceSiteId = props.sourceSiteId ?? '';
+      this.timestamp = props.timestamp ?? Date.now();
+      this.isFeatured = props.isFeatured ?? false;
+      this.isPromoted = props.isPromoted ?? false;
+      this.featuredUntil = props.featuredUntil;
+      this.promotedUntil = props.promotedUntil;
+      this.id = props.id ?? `${this.sourceSiteId}:${this.contentCID}`;
+    }
   }
 }
 
@@ -113,9 +150,6 @@ export class PerSiteFederationIndex extends Program {
         console.log('[PerSiteFederationIndex] id resolver called for entry:', entry);
         return entry.id;
       },
-      
-      // TODO: Consider using memory index for browser stability
-      // For now, use default indexing
       
       // Access control: only we and followed sites can write
       canPerform: async (operation: any) => {
@@ -258,28 +292,11 @@ export class PerSiteFederationIndex extends Program {
     sortBy?: 'timestamp' | 'title';
     sortDirection?: 'asc' | 'desc';
   }): Promise<IndexableFederationEntry[]> {
-    // For now, return all entries and filter in memory
-    // In production, you'd want proper index searching
-    const all = await this.entries.index.search({});
-    
-    // Convert WithContext entries to IndexableFederationEntry
-    const converted = all.map(entry => {
-      const indexableEntry = new IndexableFederationEntry({
-        contentCID: entry.contentCID,
-        title: entry.title,
-        thumbnailCID: entry.thumbnailCID,
-        sourceSiteId: entry.sourceSiteId,
-        timestamp: entry.timestamp,
-        isFeatured: entry.isFeatured,
-        isPromoted: entry.isPromoted,
-        featuredUntil: entry.featuredUntil,
-        promotedUntil: entry.promotedUntil
-      });
-      return indexableEntry;
-    });
+    // Use getAllEntries which now uses iterate
+    const all = await this.getAllEntries();
     
     // Filter by query - search in title only now
-    const filtered = converted.filter(entry => 
+    const filtered = all.filter(entry => 
       entry.title.toLowerCase().includes(query.toLowerCase())
     );
     
@@ -356,23 +373,22 @@ export class PerSiteFederationIndex extends Program {
     
     try {
       // Use a simple search to get all entries
+      console.log('[PerSiteFederationIndex] Searching entries...');
       const results = await this.entries.index.search({});
       console.log('[PerSiteFederationIndex] search results:', results?.length || 0, 'entries');
       
-      // Convert WithContext<FederationIndexEntry> to IndexableFederationEntry
-      const converted = results.map(entry => {
-        return new IndexableFederationEntry({
-          contentCID: entry.contentCID,
-          title: entry.title,
-          thumbnailCID: entry.thumbnailCID,
-          sourceSiteId: entry.sourceSiteId,
-          timestamp: entry.timestamp,
-          isFeatured: entry.isFeatured,
-          isPromoted: entry.isPromoted,
-          featuredUntil: entry.featuredUntil,
-          promotedUntil: entry.promotedUntil
-        });
-      });
+      if (!results || results.length === 0) {
+        console.log('[PerSiteFederationIndex] No entries found in search');
+        return [];
+      }
+      
+      // Debug: Check the structure of the first result
+      console.log('[PerSiteFederationIndex] First result keys:', Object.keys(results[0]));
+      console.log('[PerSiteFederationIndex] First result:', results[0]);
+      
+      // The results are already IndexableFederationEntry objects with __context
+      // We can return them directly without creating new instances
+      const converted = results as IndexableFederationEntry[];
       
       console.log('[PerSiteFederationIndex] converted entries:', converted.length);
       return converted;
