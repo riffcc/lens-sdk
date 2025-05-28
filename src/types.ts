@@ -147,6 +147,7 @@ export interface ILensService {
   getFederationIndexFeatured: (limit?: number) => Promise<IndexableFederationEntry[]>;
   searchFederationIndex: (query: string, options?: SearchOptions) => Promise<IndexableFederationEntry[]>;
   getFederationIndexRecent: (limit?: number, offset?: number) => Promise<IndexableFederationEntry[]>;
+  getFederationIndexByCategory: (categoryId: string, limit?: number, offset?: number) => Promise<IndexableFederationEntry[]>;
   complexFederationIndexQuery: (params: {
     query?: string;
     sourceSiteId?: string;

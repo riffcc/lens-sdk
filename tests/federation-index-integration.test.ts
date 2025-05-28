@@ -99,6 +99,7 @@ describe('Federation Index Integration', () => {
           description: 'A test video',
           contentType: 'video',
           tags: ['test', 'demo'],
+          Cover: 'QmcD4R3Qj8jBWY73H9LQWESgonNB1AMN3of23ubjDhJVSm',
         }),
       };
       
@@ -114,9 +115,9 @@ describe('Federation Index Integration', () => {
       
       const entry = federationEntries[0];
       expect(entry.title).toBe('Test Video');
-      expect(entry.contentCid).toBe('QmTest123');
-      expect(entry.thumbnailCid).toBe('QmThumb123');
-      expect(entry.categoryId).toBe('video');
+      expect(entry.contentCID).toBe('QmTest123');
+      expect(entry.thumbnailCID).toBe('QmThumb123');
+      expect(entry.coverCID).toBe('QmcD4R3Qj8jBWY73H9LQWESgonNB1AMN3of23ubjDhJVSm');
       expect(entry.sourceSiteId).toBe(site1.address);
     });
 

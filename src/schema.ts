@@ -584,7 +584,6 @@ export class Site extends Program<SiteArgs> {
   }
 
   private async openRemainingStores(args?: SiteArgs): Promise<void> {
-    const memberCanPerform = this.members.canPerform.bind(this.members);
     const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
     
     try {

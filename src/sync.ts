@@ -2,6 +2,7 @@ import { Site, Release } from './schema';
 import type { SubscriptionData } from './types';
 import { 
   RELEASE_NAME_PROPERTY,
+  RELEASE_CATEGORY_ID_PROPERTY,
   RELEASE_CONTENT_CID_PROPERTY,
   RELEASE_THUMBNAIL_CID_PROPERTY,
   SUBSCRIPTION_SITE_ID_PROPERTY,
@@ -314,6 +315,7 @@ export class SubscriptionSyncManager {
               contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
               title: release[RELEASE_NAME_PROPERTY] || 'Untitled',
               thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
+              categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || '',
               sourceSiteId: release.federatedFrom || siteId,
               timestamp: Date.now(),
               isFeatured: false,

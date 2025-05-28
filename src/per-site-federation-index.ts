@@ -18,6 +18,12 @@ export class FederationIndexEntry {
   @field({ type: option('string') })
   thumbnailCID?: string; // For visual display
   
+  @field({ type: option('string') })
+  coverCID?: string; // Cover/banner image (from metadata)
+  
+  @field({ type: 'string' })
+  categoryId: string = ''; // Category slug (e.g., 'movie', 'music', 'documentary')
+  
   @field({ type: 'string' })
   sourceSiteId: string = ''; // Which site this came from (author)
   
@@ -40,6 +46,8 @@ export class FederationIndexEntry {
     contentCID: string;
     title: string;
     thumbnailCID?: string;
+    coverCID?: string;
+    categoryId: string;
     sourceSiteId: string;
     timestamp: number;
     isFeatured?: boolean;
@@ -51,6 +59,8 @@ export class FederationIndexEntry {
     this.contentCID = props?.contentCID ?? '';
     this.title = props?.title ?? '';
     this.thumbnailCID = props?.thumbnailCID;
+    this.coverCID = props?.coverCID;
+    this.categoryId = props?.categoryId ?? '';
     this.sourceSiteId = props?.sourceSiteId ?? '';
     this.timestamp = props?.timestamp ?? Date.now();
     this.isFeatured = props?.isFeatured ?? false;
@@ -73,6 +83,12 @@ export class IndexableFederationEntry {
   
   @field({ type: option('string') })
   thumbnailCID?: string; // For visual display
+  
+  @field({ type: option('string') })
+  coverCID?: string; // Cover/banner image (from metadata)
+  
+  @field({ type: 'string' })
+  categoryId: string = ''; // Category slug (e.g., 'movie', 'music', 'documentary')
   
   @field({ type: 'string' })
   sourceSiteId: string = ''; // Which site this came from (author)
@@ -97,6 +113,8 @@ export class IndexableFederationEntry {
       this.contentCID = props.contentCID ?? '';
       this.title = props.title ?? '';
       this.thumbnailCID = props.thumbnailCID;
+      this.coverCID = props.coverCID;
+      this.categoryId = props.categoryId ?? '';
       this.sourceSiteId = props.sourceSiteId ?? '';
       this.timestamp = props.timestamp ?? Date.now();
       this.isFeatured = props.isFeatured ?? false;
@@ -241,6 +259,8 @@ export class PerSiteFederationIndex extends Program {
       contentCID: entry.contentCID,
       title: entry.title,
       thumbnailCID: entry.thumbnailCID,
+      coverCID: entry.coverCID,
+      categoryId: entry.categoryId,
       sourceSiteId: entry.sourceSiteId,
       timestamp: entry.timestamp,
       isFeatured: entry.isFeatured,
@@ -363,6 +383,17 @@ export class PerSiteFederationIndex extends Program {
     // Sort by timestamp descending (most recent first)
     const sorted = promoted.sort((a, b) => b.timestamp - a.timestamp);
     return limit ? sorted.slice(0, limit) : sorted;
+  }
+  
+  /**
+   * Get content by category
+   */
+  async getByCategory(categoryId: string, limit?: number, offset: number = 0): Promise<IndexableFederationEntry[]> {
+    const all = await this.getAllEntries();
+    const filtered = all.filter(entry => entry.categoryId === categoryId);
+    // Sort by timestamp descending (most recent first)
+    const sorted = filtered.sort((a, b) => b.timestamp - a.timestamp);
+    return limit ? sorted.slice(offset, offset + limit) : sorted.slice(offset);
   }
   
   /**

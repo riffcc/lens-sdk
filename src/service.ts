@@ -47,6 +47,7 @@ import {
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
   RELEASE_NAME_PROPERTY,
+  RELEASE_CATEGORY_ID_PROPERTY,
   RELEASE_CONTENT_CID_PROPERTY,
   RELEASE_THUMBNAIL_CID_PROPERTY,
   RELEASE_METADATA_PROPERTY,
@@ -275,6 +276,10 @@ export class ElectronLensService implements ILensService {
 
   async getFederationIndexRecent(limit?: number, offset?: number): Promise<IndexableFederationEntry[]> {
     return window.electronLensService.getFederationIndexRecent(limit, offset);
+  }
+
+  async getFederationIndexByCategory(categoryId: string, limit?: number, offset?: number): Promise<IndexableFederationEntry[]> {
+    return window.electronLensService.getFederationIndexByCategory(categoryId, limit, offset);
   }
 
   async complexFederationIndexQuery(params: {
@@ -623,6 +628,8 @@ export class LensService implements ILensService {
         contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
         title: release[RELEASE_NAME_PROPERTY],
         thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
+        coverCID: metadata.Cover || undefined,
+        categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || '',
         sourceSiteId: await this.getSiteId(),
         timestamp: Date.now(),
         isFeatured: metadata.isFeatured || false,
@@ -673,6 +680,8 @@ export class LensService implements ILensService {
         contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
         title: release[RELEASE_NAME_PROPERTY],
         thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
+        coverCID: metadata.Cover || undefined,
+        categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || '',
         sourceSiteId: siteId,
         timestamp: Date.now(),
         isFeatured: metadata.isFeatured || false,
@@ -921,6 +930,18 @@ export class LensService implements ILensService {
     }
     const result = await siteProgram.federationIndex.getRecent(limit, offset);
     console.log('[LensSDK] getFederationIndexRecent returned:', result.length, 'entries');
+    return result;
+  }
+
+  async getFederationIndexByCategory(categoryId: string, limit?: number, offset?: number): Promise<IndexableFederationEntry[]> {
+    const { siteProgram } = this.ensureSiteOpened();
+    console.log('[LensSDK] getFederationIndexByCategory called with categoryId:', categoryId, 'limit:', limit, 'offset:', offset);
+    if (!siteProgram.federationIndex) {
+      console.error('[LensSDK] Federation index is not initialized!');
+      return [];
+    }
+    const result = await siteProgram.federationIndex.getByCategory(categoryId, limit, offset);
+    console.log('[LensSDK] getFederationIndexByCategory returned:', result.length, 'entries');
     return result;
   }
 
