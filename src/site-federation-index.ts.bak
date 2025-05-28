@@ -1,0 +1,261 @@
+import { variant, field, option } from '@dao-xyz/borsh';
+import { Program } from '@peerbit/program';
+import { Documents, SearchRequest, StringMatch } from '@peerbit/document';
+import { PublicSignKey } from '@peerbit/crypto';
+import { IdentityAccessController, Access, AccessType } from '@peerbit/document';
+
+/**
+ * Lightweight index entry pointing to content in other sites
+ * This is stored in the local site's federation index
+ */
+@variant('indexed-content-pointer')
+export class IndexedContentPointer {
+  @field({ type: 'string' })
+  contentCid: string;
+
+  @field({ type: 'string' })
+  title: string;
+
+  @field({ type: 'string' })
+  sourceSiteId: string;
+
+  @field({ type: 'string' })
+  sourceSiteName: string;
+
+  @field({ type: 'u64' })
+  federatedAt: number;
+
+  @field({ type: option('string') })
+  description?: string;
+
+  @field({ type: option('string') })
+  contentType?: string;
+
+  @field({ type: option('u64') })
+  originalCreatedAt?: number;
+
+  @field({ type: option('string') })
+  originalReleaseId?: string;
+
+  constructor(props?: {
+    contentCid: string;
+    title: string;
+    sourceSiteId: string;
+    sourceSiteName: string;
+    federatedAt: number;
+    description?: string;
+    contentType?: string;
+    originalCreatedAt?: number;
+    originalReleaseId?: string;
+  }) {
+    if (props) {
+      this.contentCid = props.contentCid;
+      this.title = props.title;
+      this.sourceSiteId = props.sourceSiteId;
+      this.sourceSiteName = props.sourceSiteName;
+      this.federatedAt = props.federatedAt;
+      this.description = props.description;
+      this.contentType = props.contentType;
+      this.originalCreatedAt = props.originalCreatedAt;
+      this.originalReleaseId = props.originalReleaseId;
+    }
+  }
+}
+
+@variant('indexable-content-pointer')
+export class IndexableContentPointer extends IndexedContentPointer {
+  @field({ type: 'string' })
+  id: string;
+
+  constructor(props?: IndexedContentPointer & { id?: string }) {
+    super(props);
+    if (props) {
+      this.id = props.id || `${this.sourceSiteId}-${this.contentCid}-${this.federatedAt}`;
+    }
+  }
+}
+
+/**
+ * Site Federation Index
+ * 
+ * This index is owned by a single site and contains pointers to content
+ * from all sites it follows. Each followed site has delegated write access
+ * to add their content to this index.
+ * 
+ * Key differences from Federation Store:
+ * - Index is for discovery and search across all followed sites
+ * - Lighter weight - just pointers, not full content
+ * - Automatically grants write to sites when following them
+ * - Provides unified search across all federated content
+ */
+@variant('site-federation-index')
+export class SiteFederationIndex extends Program {
+  @field({ type: Documents })
+  contentIndex: Documents<IndexedContentPointer, IndexableContentPointer>;
+
+  @field({ type: IdentityAccessController })
+  indexWriters: IdentityAccessController;
+
+  async open(): Promise<void> {
+    await this.contentIndex.open({
+      type: IndexableContentPointer,
+      index: {
+        fields: (obj) => ({
+          title: obj.title,
+          sourceSiteName: obj.sourceSiteName,
+          contentType: obj.contentType || '',
+          sourceSiteId: obj.sourceSiteId,
+        })
+      },
+      canPerform: async (operation, entry) => {
+        // Owner can always write
+        if (entry.context.identity.equals(this.node.identity.publicKey)) {
+          return true;
+        }
+
+        // Check if the writer has permission
+        const hasPermission = await this.hasIndexWritePermission(entry.context.identity);
+        if (!hasPermission) {
+          return false;
+        }
+
+        // Writers can only add content from their own site
+        if (operation.type === 'put') {
+          const pointer = operation.value as IndexableContentPointer;
+          // The sourceSiteId should match the writer's site
+          // In a real implementation, we'd need a way to verify site ownership
+          return true; // For now, trust that sites only write their own content
+        }
+
+        return false;
+      }
+    });
+
+    await this.indexWriters.open({
+      canPerform: async (operation, entry) => {
+        // Only owner can manage access
+        return entry.context.identity.equals(this.node.identity.publicKey);
+      }
+    });
+  }
+
+  /**
+   * Grant index write permission to a site we're following
+   */
+  async grantIndexWritePermission(sitePublicKey: PublicSignKey): Promise<void> {
+    const access = new Access({
+      accessCondition: {
+        publicKey: sitePublicKey,
+      },
+      accessTypes: [AccessType.Write],
+    });
+    
+    await this.indexWriters.access.put(access);
+  }
+
+  /**
+   * Revoke index write permission from a site
+   */
+  async revokeIndexWritePermission(sitePublicKey: PublicSignKey): Promise<void> {
+    const accesses = await this.indexWriters.access.values.toArray();
+    for (const access of accesses) {
+      if (access.accessCondition.publicKey?.equals(sitePublicKey)) {
+        await this.indexWriters.access.del(access.id);
+      }
+    }
+  }
+
+  /**
+   * Check if a site has index write permission
+   */
+  async hasIndexWritePermission(publicKey: PublicSignKey): Promise<boolean> {
+    const accesses = await this.indexWriters.access.values.toArray();
+    return accesses.some(access => 
+      access.accessCondition.publicKey?.equals(publicKey) &&
+      access.accessTypes.includes(AccessType.Write)
+    );
+  }
+
+  /**
+   * Add content to the index (for followed sites to call)
+   */
+  async indexContent(pointer: IndexedContentPointer): Promise<void> {
+    const indexable = new IndexableContentPointer(pointer);
+    await this.contentIndex.put(indexable);
+  }
+
+  /**
+   * Remove content from the index
+   */
+  async removeContent(contentId: string): Promise<void> {
+    await this.contentIndex.del(contentId);
+  }
+
+  /**
+   * Search across all federated content
+   */
+  async searchContent(query: string, options?: {
+    sourceSiteId?: string;
+    contentType?: string;
+    limit?: number;
+  }): Promise<IndexableContentPointer[]> {
+    const searchRequests: SearchRequest[] = [
+      new SearchRequest({
+        query: ['title'],
+        value: query
+      })
+    ];
+
+    if (options?.sourceSiteId) {
+      searchRequests.push(
+        new SearchRequest({
+          query: ['sourceSiteId'],
+          value: options.sourceSiteId,
+          method: StringMatch.Exact
+        })
+      );
+    }
+
+    if (options?.contentType) {
+      searchRequests.push(
+        new SearchRequest({
+          query: ['contentType'],
+          value: options.contentType,
+          method: StringMatch.Exact
+        })
+      );
+    }
+
+    const results = await this.contentIndex.index.search(searchRequests, {
+      limit: options?.limit || 100
+    });
+
+    return results;
+  }
+
+  /**
+   * Get all indexed content from a specific site
+   */
+  async getContentFromSite(sourceSiteId: string): Promise<IndexableContentPointer[]> {
+    const results = await this.contentIndex.index.search(
+      new SearchRequest({
+        query: ['sourceSiteId'],
+        value: sourceSiteId,
+        method: StringMatch.Exact
+      })
+    );
+
+    return results;
+  }
+
+  /**
+   * Get recently federated content
+   */
+  async getRecentContent(limit: number = 50): Promise<IndexableContentPointer[]> {
+    // This would ideally use a sort by federatedAt, but for now we'll get all and sort
+    const all = await this.contentIndex.values.toArray();
+    return all
+      .sort((a, b) => b.federatedAt - a.federatedAt)
+      .slice(0, limit);
+  }
+}

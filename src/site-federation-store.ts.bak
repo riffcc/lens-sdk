@@ -1,0 +1,201 @@
+import { Program } from '@peerbit/program';
+import { Documents, SearchRequest } from '@peerbit/document';
+import { field, variant } from '@dao-xyz/borsh';
+import { IdentityAccessController, PublicSignKey, Access, AccessType } from '@peerbit/access-control';
+import { v4 as uuid } from 'uuid';
+
+/**
+ * FederatedContentPointer - Points to content that this site has chosen to federate
+ * Can be written by the site owner or by sites that have been granted permission
+ */
+@variant('federated-content-pointer')
+export class FederatedContentPointer {
+  @field({ type: 'string' })
+  id: string;
+  
+  @field({ type: 'string' })
+  contentId: string; // The actual content ID in the source site
+  
+  @field({ type: 'string' })
+  sourceSiteId: string; // The site that owns this content
+  
+  @field({ type: 'string' })
+  federatedBySiteId: string; // The site that federated this content (might be different from source)
+  
+  @field({ type: 'string' })
+  contentType: 'release' | 'featured' | 'category';
+  
+  @field({ type: 'string' })
+  name: string;
+  
+  @field({ type: 'string' })
+  categoryId: string;
+  
+  @field({ type: 'u64' })
+  timestamp: bigint;
+  
+  constructor(props?: {
+    contentId: string;
+    sourceSiteId: string;
+    federatedBySiteId: string;
+    contentType: 'release' | 'featured' | 'category';
+    name: string;
+    categoryId: string;
+  }) {
+    if (props) {
+      this.id = uuid();
+      this.contentId = props.contentId;
+      this.sourceSiteId = props.sourceSiteId;
+      this.federatedBySiteId = props.federatedBySiteId;
+      this.contentType = props.contentType;
+      this.name = props.name;
+      this.categoryId = props.categoryId;
+      this.timestamp = BigInt(Date.now());
+    }
+  }
+}
+
+// Indexable version for search
+export class IndexableFederatedContentPointer {
+  @field({ type: 'string' })
+  id: string;
+  
+  @field({ type: 'string' })
+  contentId: string;
+  
+  @field({ type: 'string' })
+  sourceSiteId: string;
+  
+  @field({ type: 'string' })
+  federatedBySiteId: string;
+  
+  @field({ type: 'string' })
+  contentType: string;
+  
+  @field({ type: 'string' })
+  name: string;
+  
+  @field({ type: 'string' })
+  categoryId: string;
+  
+  @field({ type: 'u64' })
+  timestamp: bigint;
+  
+  @field({ type: 'u64' })
+  created: bigint;
+  
+  @field({ type: 'u64' })
+  modified: bigint;
+  
+  @field({ type: Uint8Array })
+  author: Uint8Array;
+  
+  constructor(
+    pointer: FederatedContentPointer,
+    created: bigint,
+    modified: bigint,
+    author: PublicSignKey,
+  ) {
+    this.id = pointer.id;
+    this.contentId = pointer.contentId;
+    this.sourceSiteId = pointer.sourceSiteId;
+    this.federatedBySiteId = pointer.federatedBySiteId;
+    this.contentType = pointer.contentType;
+    this.name = pointer.name;
+    this.categoryId = pointer.categoryId;
+    this.timestamp = pointer.timestamp;
+    this.created = created;
+    this.modified = modified;
+    this.author = author.bytes;
+  }
+}
+
+/**
+ * SiteFederationStore - Each site has its own federation store
+ * Only the site owner and explicitly trusted sites can write to it
+ */
+@variant('site-federation-store')
+export class SiteFederationStore extends Program {
+  @field({ type: Documents })
+  federatedContent: Documents<FederatedContentPointer, IndexableFederatedContentPointer>;
+  
+  @field({ type: IdentityAccessController })
+  trustedFederators: IdentityAccessController;
+  
+  constructor(siteOwner: PublicSignKey) {
+    super();
+    this.federatedContent = new Documents();
+    this.trustedFederators = new IdentityAccessController({ 
+      rootTrust: siteOwner 
+    });
+  }
+  
+  async open(): Promise<void> {
+    // First open the access controller
+    await this.trustedFederators.open({
+      replicate: true,
+    });
+    
+    // Then open the federated content store with access control
+    await this.federatedContent.open({
+      type: FederatedContentPointer,
+      replicate: true, // Replicate federated content
+      canPerform: (props) => {
+        // Only trusted federators can write
+        return this.trustedFederators.canPerform(props);
+      },
+      index: {
+        canRead: () => true, // Anyone can read federated content
+        type: IndexableFederatedContentPointer,
+        transform: async (pointer, ctx) => {
+          return new IndexableFederatedContentPointer(
+            pointer,
+            ctx.created,
+            ctx.modified,
+            ctx.author,
+          );
+        },
+      },
+    });
+  }
+  
+  /**
+   * Grant federation write permission to another site
+   */
+  async grantFederationPermission(sitePublicKey: PublicSignKey): Promise<void> {
+    const access = new Access({
+      accessCondition: {
+        publicKey: sitePublicKey,
+      },
+      accessTypes: [AccessType.Write],
+    });
+    
+    await this.trustedFederators.access.put(access);
+  }
+  
+  /**
+   * Revoke federation write permission from a site
+   */
+  async revokeFederationPermission(sitePublicKey: PublicSignKey): Promise<void> {
+    // Find and remove the access entry
+    const accesses = await this.trustedFederators.access.index.search(
+      new SearchRequest({ fetch: 1000 })
+    );
+    
+    for (const access of accesses) {
+      if (access.accessCondition.publicKey?.equals(sitePublicKey)) {
+        await this.trustedFederators.access.del(access.id);
+      }
+    }
+  }
+  
+  /**
+   * Check if a site has federation permission
+   */
+  async hasFederationPermission(sitePublicKey: PublicSignKey): Promise<boolean> {
+    return this.trustedFederators.canPerform({
+      type: 'write',
+      publicKey: sitePublicKey,
+    });
+  }
+}

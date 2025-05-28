@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Federation Graph Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        #graph {
+            width: 100%;
+            height: 600px;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .node {
+            cursor: pointer;
+        }
+        
+        .node circle {
+            stroke: #333;
+            stroke-width: 2px;
+        }
+        
+        .node text {
+            font-size: 12px;
+            text-anchor: middle;
+        }
+        
+        .link {
+            fill: none;
+            stroke: #999;
+            stroke-width: 2px;
+            marker-end: url(#arrowhead);
+        }
+        
+        .link.recursive {
+            stroke: #4CAF50;
+            stroke-width: 3px;
+        }
+        
+        .link.mutual {
+            stroke: #2196F3;
+        }
+        
+        #info {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .legend {
+            margin-top: 20px;
+        }
+        
+        .legend-item {
+            display: inline-block;
+            margin-right: 20px;
+        }
+        
+        .legend-line {
+            display: inline-block;
+            width: 30px;
+            height: 3px;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        
+        .content-list {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+        
+        .content-item {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        
+        .content-item.original {
+            color: #333;
+        }
+        
+        .content-item.federated {
+            color: #666;
+            font-style: italic;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .stat-box {
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>Federation Graph Visualization</h1>
+    
+    <div id="graph"></div>
+    
+    <div class="legend">
+        <h3>Node Colors:</h3>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #4CAF50; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+            Original content only
+        </div>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #2196F3; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+            Federated content only
+        </div>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #FF9800; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+            Mixed (original + federated)
+        </div>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #f44336; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+            No content
+        </div>
+        <h3 style="margin-top: 15px;">Link Types:</h3>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #999;"></span>
+            One-way subscription
+        </div>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #2196F3;"></span>
+            Mutual subscription
+        </div>
+    </div>
+    
+    <div id="info">
+        <h2>Network Statistics</h2>
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-label">Total Nodes</div>
+                <div class="stat-value" id="total-nodes">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Total Subscriptions</div>
+                <div class="stat-value" id="total-subscriptions">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Total Content</div>
+                <div class="stat-value" id="total-content">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Query Success Rate</div>
+                <div class="stat-value" id="query-rate">0%</div>
+            </div>
+        </div>
+        
+        <h3>Click on a node to see its details</h3>
+        <div id="node-details"></div>
+    </div>
+
+    <script>
+        // The test will inject the graph data here
+        const graphData = {
+  "nodes": [
+    {
+      "id": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc",
+      "name": "Source 1",
+      "releases": [
+        {
+          "id": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc:QmSource1Content",
+          "name": "Unique content from Source 1"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC",
+      "name": "Source 2",
+      "releases": [
+        {
+          "id": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC:QmSource2Content",
+          "name": "Unique content from Source 2"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP",
+      "name": "Source 3",
+      "releases": [
+        {
+          "id": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP:QmSource3Content",
+          "name": "Unique content from Source 3"
+        }
+      ]
+    },
+    {
+      "id": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED",
+      "name": "Source 4",
+      "releases": [
+        {
+          "id": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED:QmSource4Content",
+          "name": "Unique content from Source 4"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd",
+      "name": "Source 5",
+      "releases": [
+        {
+          "id": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd:QmSource5Content",
+          "name": "Unique content from Source 5"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhY8NeBoFJeVF3i2rGAbijfkcpnWKMvuWzkBkokakNi2pD",
+      "name": "Follower 1",
+      "releases": [
+        {
+          "id": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC:QmSource2Content",
+          "name": "Unique content from Source 2",
+          "federatedFrom": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC"
+        },
+        {
+          "id": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc:QmSource1Content",
+          "name": "Unique content from Source 1",
+          "federatedFrom": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhb2S8D7xofpEvyAzPPfh2FWSFPh1wnD29jPL7FnWXMuH5",
+      "name": "Follower 2",
+      "releases": [
+        {
+          "id": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP:QmSource3Content",
+          "name": "Unique content from Source 3",
+          "federatedFrom": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP"
+        },
+        {
+          "id": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC:QmSource2Content",
+          "name": "Unique content from Source 2",
+          "federatedFrom": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhiSg4YbrkAMfjyuprs9Ck1zAZQmgMzx4Mrcxqz2xg9KEz",
+      "name": "Follower 3",
+      "releases": [
+        {
+          "id": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED:QmSource4Content",
+          "name": "Unique content from Source 4",
+          "federatedFrom": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED"
+        },
+        {
+          "id": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP:QmSource3Content",
+          "name": "Unique content from Source 3",
+          "federatedFrom": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhckkEsHgaNTDHxbjk5WhxAXmY3QXNyTYafiRmFx7E7nTK",
+      "name": "Follower 4",
+      "releases": [
+        {
+          "id": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd:QmSource5Content",
+          "name": "Unique content from Source 5",
+          "federatedFrom": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd"
+        },
+        {
+          "id": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED:QmSource4Content",
+          "name": "Unique content from Source 4",
+          "federatedFrom": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhZAkrSfGtqvmQy57NdFAsCNaM6FU2P7pDynbbYitpCdhb",
+      "name": "Follower 5",
+      "releases": [
+        {
+          "id": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd:QmSource5Content",
+          "name": "Unique content from Source 5",
+          "federatedFrom": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd"
+        },
+        {
+          "id": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc:QmSource1Content",
+          "name": "Unique content from Source 1",
+          "federatedFrom": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhnqt9PmJVfLg6YKnczKQxbHVPkyTCrwqKiPeAyfbkPveR",
+      "name": "Follower 6",
+      "releases": [
+        {
+          "id": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd:QmSource5Content",
+          "name": "Unique content from Source 5",
+          "federatedFrom": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd"
+        },
+        {
+          "id": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP:QmSource3Content",
+          "name": "Unique content from Source 3",
+          "federatedFrom": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP"
+        },
+        {
+          "id": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc:QmSource1Content",
+          "name": "Unique content from Source 1",
+          "federatedFrom": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhZvtFMFmj1TKRN9MhbNfeHZ236oBkEUhS2SDnF9c8hryF",
+      "name": "Follower 7",
+      "releases": [
+        {
+          "id": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED:QmSource4Content",
+          "name": "Unique content from Source 4",
+          "federatedFrom": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED"
+        },
+        {
+          "id": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC:QmSource2Content",
+          "name": "Unique content from Source 2",
+          "federatedFrom": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhhJNscvKaNaaW8kBbwhaf8RwWuJP5RF3iArgE8Nm5vRBj",
+      "name": "Follower 8",
+      "releases": [
+        {
+          "id": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP:QmSource3Content",
+          "name": "Unique content from Source 3",
+          "federatedFrom": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP"
+        },
+        {
+          "id": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC:QmSource2Content",
+          "name": "Unique content from Source 2",
+          "federatedFrom": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC"
+        },
+        {
+          "id": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc:QmSource1Content",
+          "name": "Unique content from Source 1",
+          "federatedFrom": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhdds5KET9YAPoRJkLtGnanhcqwDDh1VSnS6ydagDJCVDt",
+      "name": "Follower 9",
+      "releases": [
+        {
+          "id": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd:QmSource5Content",
+          "name": "Unique content from Source 5",
+          "federatedFrom": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd"
+        },
+        {
+          "id": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED:QmSource4Content",
+          "name": "Unique content from Source 4",
+          "federatedFrom": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED"
+        },
+        {
+          "id": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP:QmSource3Content",
+          "name": "Unique content from Source 3",
+          "federatedFrom": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP"
+        }
+      ]
+    },
+    {
+      "id": "zb2rhn2kCTTShQuas1DQeEckj3QNJFXqf9SUGFF9QhsHsEqBK",
+      "name": "Follower 10",
+      "releases": [
+        {
+          "id": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd:QmSource5Content",
+          "name": "Unique content from Source 5",
+          "federatedFrom": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd"
+        },
+        {
+          "id": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED:QmSource4Content",
+          "name": "Unique content from Source 4",
+          "federatedFrom": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED"
+        },
+        {
+          "id": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP:QmSource3Content",
+          "name": "Unique content from Source 3",
+          "federatedFrom": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP"
+        },
+        {
+          "id": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC:QmSource2Content",
+          "name": "Unique content from Source 2",
+          "federatedFrom": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC"
+        },
+        {
+          "id": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc:QmSource1Content",
+          "name": "Unique content from Source 1",
+          "federatedFrom": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "source": "zb2rhY8NeBoFJeVF3i2rGAbijfkcpnWKMvuWzkBkokakNi2pD",
+      "target": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhY8NeBoFJeVF3i2rGAbijfkcpnWKMvuWzkBkokakNi2pD",
+      "target": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhb2S8D7xofpEvyAzPPfh2FWSFPh1wnD29jPL7FnWXMuH5",
+      "target": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhb2S8D7xofpEvyAzPPfh2FWSFPh1wnD29jPL7FnWXMuH5",
+      "target": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhiSg4YbrkAMfjyuprs9Ck1zAZQmgMzx4Mrcxqz2xg9KEz",
+      "target": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhiSg4YbrkAMfjyuprs9Ck1zAZQmgMzx4Mrcxqz2xg9KEz",
+      "target": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhckkEsHgaNTDHxbjk5WhxAXmY3QXNyTYafiRmFx7E7nTK",
+      "target": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhckkEsHgaNTDHxbjk5WhxAXmY3QXNyTYafiRmFx7E7nTK",
+      "target": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhZAkrSfGtqvmQy57NdFAsCNaM6FU2P7pDynbbYitpCdhb",
+      "target": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhZAkrSfGtqvmQy57NdFAsCNaM6FU2P7pDynbbYitpCdhb",
+      "target": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhnqt9PmJVfLg6YKnczKQxbHVPkyTCrwqKiPeAyfbkPveR",
+      "target": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhnqt9PmJVfLg6YKnczKQxbHVPkyTCrwqKiPeAyfbkPveR",
+      "target": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhnqt9PmJVfLg6YKnczKQxbHVPkyTCrwqKiPeAyfbkPveR",
+      "target": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhZvtFMFmj1TKRN9MhbNfeHZ236oBkEUhS2SDnF9c8hryF",
+      "target": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhZvtFMFmj1TKRN9MhbNfeHZ236oBkEUhS2SDnF9c8hryF",
+      "target": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhhJNscvKaNaaW8kBbwhaf8RwWuJP5RF3iArgE8Nm5vRBj",
+      "target": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhhJNscvKaNaaW8kBbwhaf8RwWuJP5RF3iArgE8Nm5vRBj",
+      "target": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhhJNscvKaNaaW8kBbwhaf8RwWuJP5RF3iArgE8Nm5vRBj",
+      "target": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhdds5KET9YAPoRJkLtGnanhcqwDDh1VSnS6ydagDJCVDt",
+      "target": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhdds5KET9YAPoRJkLtGnanhcqwDDh1VSnS6ydagDJCVDt",
+      "target": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhdds5KET9YAPoRJkLtGnanhcqwDDh1VSnS6ydagDJCVDt",
+      "target": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhn2kCTTShQuas1DQeEckj3QNJFXqf9SUGFF9QhsHsEqBK",
+      "target": "zb2rhXWkq4rMquHvtRbq8vRdn3RPpq1trLWDaZ8QpLfxb63jc",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhn2kCTTShQuas1DQeEckj3QNJFXqf9SUGFF9QhsHsEqBK",
+      "target": "zb2rhXv2yDHa9ZzStvfDxm5r8xtLRwnQmyUKitMxEJKC6KpsC",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhn2kCTTShQuas1DQeEckj3QNJFXqf9SUGFF9QhsHsEqBK",
+      "target": "zb2rhnPr4r6UVLsXWPJHYxgoYbehCrZtYVzs5nnnQVMDL5HoP",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhn2kCTTShQuas1DQeEckj3QNJFXqf9SUGFF9QhsHsEqBK",
+      "target": "zb2rha1R4Sv2vXxtP2NjEP8WNQCmKEUoBkmeNzS4SnQ7PqtED",
+      "recursive": false,
+      "mutual": false
+    },
+    {
+      "source": "zb2rhn2kCTTShQuas1DQeEckj3QNJFXqf9SUGFF9QhsHsEqBK",
+      "target": "zb2rhdbZKPkxxM9WmLyY6NfXCv9YUC36Uv3cpjSxC2gS5b7cd",
+      "recursive": false,
+      "mutual": false
+    }
+  ],
+  "timestamp": "2025-05-27T18:08:27.523Z",
+  "testName": "5-to-10-complex",
+  "querySuccessRate": 100,
+  "searchQuery": "content",
+  "searchResults": {
+    "query": "content",
+    "results": 31,
+    "crossSiteResults": 26
+  }
+};
+        
+        // Set up dimensions
+        const width = document.getElementById('graph').clientWidth;
+        const height = 600;
+        
+        // Create SVG
+        const svg = d3.select("#graph")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+        
+        // Add arrow marker definition
+        svg.append("defs").append("marker")
+            .attr("id", "arrowhead")
+            .attr("viewBox", "-0 -5 10 10")
+            .attr("refX", 25)
+            .attr("refY", 0)
+            .attr("orient", "auto")
+            .attr("markerWidth", 8)
+            .attr("markerHeight", 8)
+            .append("svg:path")
+            .attr("d", "M 0,-5 L 10,0 L 0,5")
+            .attr("fill", "#999");
+        
+        // Create force simulation
+        const simulation = d3.forceSimulation(graphData.nodes)
+            .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(150))
+            .force("charge", d3.forceManyBody().strength(-500))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(40));
+        
+        // Create links
+        const link = svg.append("g")
+            .selectAll("line")
+            .data(graphData.links)
+            .enter().append("line")
+            .attr("class", d => {
+                let classes = "link";
+                if (d.recursive) classes += " recursive";
+                if (d.mutual) classes += " mutual";
+                return classes;
+            });
+        
+        // Create nodes
+        const node = svg.append("g")
+            .selectAll("g")
+            .data(graphData.nodes)
+            .enter().append("g")
+            .attr("class", "node")
+            .call(d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended));
+        
+        // Add circles to nodes with proper coloring
+        node.append("circle")
+            .attr("r", 20)
+            .attr("fill", d => {
+                const contentCount = d.releases ? d.releases.length : 0;
+                const originalCount = d.releases ? d.releases.filter(r => !r.federatedFrom).length : 0;
+                const federatedCount = contentCount - originalCount;
+                
+                // Green: Has original content
+                // Blue: Only federated content
+                // Orange: Mixed (both original and federated)
+                // Red: No content
+                if (originalCount > 0 && federatedCount > 0) return "#FF9800"; // Orange for mixed
+                if (originalCount > 0) return "#4CAF50"; // Green for original
+                if (federatedCount > 0) return "#2196F3"; // Blue for federated only
+                return "#f44336"; // Red for no content
+            })
+            .attr("stroke", "#333")
+            .attr("stroke-width", 2);
+        
+        // Add labels to nodes
+        node.append("text")
+            .attr("dy", ".35em")
+            .text(d => d.name);
+        
+        // Add content count labels
+        node.append("text")
+            .attr("dy", "2em")
+            .attr("font-size", "10px")
+            .text(d => d.releases ? d.releases.length : 0);
+        
+        // Click handler for nodes
+        node.on("click", function(event, d) {
+            showNodeDetails(d);
+        });
+        
+        // Update positions on simulation tick
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+            
+            node
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+        
+        // Drag functions
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+        
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+        
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+        
+        // Show node details
+        function showNodeDetails(node) {
+            let html = `<h3>${node.name}</h3>`;
+            html += `<p><strong>Site ID:</strong> ${node.id}</p>`;
+            
+            // Show subscriptions
+            const subscriptions = graphData.links.filter(l => l.source.id === node.id || l.source === node.id);
+            if (subscriptions.length > 0) {
+                html += `<h4>Subscriptions (${subscriptions.length}):</h4><ul>`;
+                subscriptions.forEach(sub => {
+                    const targetNode = graphData.nodes.find(n => n.id === (sub.target.id || sub.target));
+                    html += `<li>${targetNode.name} ${sub.recursive ? '(recursive)' : '(non-recursive)'}</li>`;
+                });
+                html += `</ul>`;
+            }
+            
+            // Show content
+            if (node.releases && node.releases.length > 0) {
+                html += `<h4>Content (${node.releases.length}):</h4>`;
+                html += `<div class="content-list">`;
+                node.releases.forEach(release => {
+                    const cssClass = release.federatedFrom ? 'federated' : 'original';
+                    const source = release.federatedFrom ? ` (from ${release.federatedFrom.slice(0, 8)}...)` : ' (original)';
+                    html += `<div class="content-item ${cssClass}">${release.name}${source}</div>`;
+                });
+                html += `</div>`;
+            }
+            
+            document.getElementById('node-details').innerHTML = html;
+        }
+        
+        // Update statistics
+        document.getElementById('total-nodes').textContent = graphData.nodes.length;
+        document.getElementById('total-subscriptions').textContent = graphData.links.length;
+        
+        const totalContent = graphData.nodes.reduce((sum, node) => 
+            sum + (node.releases ? node.releases.length : 0), 0);
+        document.getElementById('total-content').textContent = totalContent;
+        
+        // Calculate query success rate
+        const querySuccessRate = graphData.querySuccessRate || 0;
+        document.getElementById('query-rate').textContent = querySuccessRate + '%';
+        
+        // Show search results if available
+        if (graphData.searchResults) {
+            const searchInfo = document.createElement('div');
+            searchInfo.className = 'stat-box';
+            searchInfo.innerHTML = `
+                <div class="stat-label">Search Query: "${graphData.searchQuery || 'N/A'}"</div>
+                <div class="stat-value">${graphData.searchResults.results} results</div>
+                <div style="font-size: 14px; color: #666;">${graphData.searchResults.crossSiteResults} from other sites</div>
+            `;
+            document.querySelector('.stats').appendChild(searchInfo);
+        }
+    </script>
+</body>
+</html>

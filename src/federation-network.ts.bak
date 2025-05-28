@@ -1,0 +1,247 @@
+import { Program } from '@peerbit/program';
+import { Documents, SearchRequest } from '@peerbit/document';
+import { field, variant } from '@dao-xyz/borsh';
+import { PublicSignKey } from '@peerbit/crypto';
+import { v4 as uuid } from 'uuid';
+
+/**
+ * ContentPointer - A lightweight reference to content stored in other sites
+ * This allows us to index content without storing it all locally
+ */
+@variant('content-pointer')
+export class ContentPointer {
+  @field({ type: 'string' })
+  id: string;
+  
+  @field({ type: 'string' })
+  contentId: string; // The actual content ID in the source site
+  
+  @field({ type: 'string' })
+  sourceSiteId: string;
+  
+  @field({ type: 'string' })
+  contentType: 'release' | 'featured' | 'category';
+  
+  @field({ type: 'string' })
+  name: string;
+  
+  @field({ type: 'string' })
+  categoryId: string;
+  
+  @field({ type: 'u64' })
+  timestamp: bigint;
+  
+  constructor(props?: {
+    contentId: string;
+    sourceSiteId: string;
+    contentType: 'release' | 'featured' | 'category';
+    name: string;
+    categoryId: string;
+  }) {
+    if (props) {
+      this.id = uuid();
+      this.contentId = props.contentId;
+      this.sourceSiteId = props.sourceSiteId;
+      this.contentType = props.contentType;
+      this.name = props.name;
+      this.categoryId = props.categoryId;
+      this.timestamp = BigInt(Date.now());
+    }
+  }
+}
+
+@variant('subscription-record') 
+export class SubscriptionRecord {
+  @field({ type: 'string' })
+  id: string;
+  
+  @field({ type: 'string' })
+  subscriberSiteId: string;
+  
+  @field({ type: 'string' })
+  targetSiteId: string;
+  
+  @field({ type: 'string' })
+  siteName: string;
+  
+  @field({ type: 'bool' })
+  recursive: boolean;
+  
+  @field({ type: 'u64' })
+  timestamp: bigint;
+  
+  constructor(props?: {
+    subscriberSiteId: string;
+    targetSiteId: string;
+    siteName: string;
+    recursive: boolean;
+  }) {
+    if (props) {
+      this.id = uuid();
+      this.subscriberSiteId = props.subscriberSiteId;
+      this.targetSiteId = props.targetSiteId;
+      this.siteName = props.siteName;
+      this.recursive = props.recursive;
+      this.timestamp = BigInt(Date.now());
+    }
+  }
+}
+
+// Indexable versions for search
+export class IndexableContentPointer {
+  @field({ type: 'string' })
+  id: string;
+  
+  @field({ type: 'string' })
+  contentId: string;
+  
+  @field({ type: 'string' })
+  sourceSiteId: string;
+  
+  @field({ type: 'string' })
+  contentType: string;
+  
+  @field({ type: 'string' })
+  name: string;
+  
+  @field({ type: 'string' })
+  categoryId: string;
+  
+  @field({ type: 'u64' })
+  timestamp: bigint;
+  
+  @field({ type: 'u64' })
+  created: bigint;
+  
+  @field({ type: 'u64' })
+  modified: bigint;
+  
+  @field({ type: Uint8Array })
+  author: Uint8Array;
+  
+  constructor(
+    pointer: ContentPointer,
+    created: bigint,
+    modified: bigint,
+    author?: PublicSignKey,
+  ) {
+    this.id = pointer.id;
+    this.contentId = pointer.contentId;
+    this.sourceSiteId = pointer.sourceSiteId;
+    this.contentType = pointer.contentType;
+    this.name = pointer.name;
+    this.categoryId = pointer.categoryId;
+    this.timestamp = pointer.timestamp;
+    this.created = created;
+    this.modified = modified;
+    this.author = author?.bytes || new Uint8Array(32); // Default to empty bytes if no author
+  }
+}
+
+export class IndexableSubscriptionRecord {
+  @field({ type: 'string' })
+  id: string;
+  
+  @field({ type: 'string' })
+  subscriberSiteId: string;
+  
+  @field({ type: 'string' })
+  targetSiteId: string;
+  
+  @field({ type: 'u64' })
+  created: bigint;
+  
+  @field({ type: 'u64' })
+  modified: bigint;
+  
+  @field({ type: Uint8Array })
+  author: Uint8Array;
+  
+  constructor(
+    record: SubscriptionRecord,
+    created: bigint,
+    modified: bigint,
+    author?: PublicSignKey,
+  ) {
+    this.id = record.id;
+    this.subscriberSiteId = record.subscriberSiteId;
+    this.targetSiteId = record.targetSiteId;
+    this.created = created;
+    this.modified = modified;
+    this.author = author?.bytes || new Uint8Array(32); // Default to empty bytes if no author
+  }
+}
+
+/**
+ * FederationNetwork - A shared, sharded index of federated content
+ * Uses Peerbit's adaptive sharding to scale to thousands of sites
+ */
+@variant('federation-network')
+export class FederationNetwork extends Program {
+  @field({ type: Documents })
+  subscriptions: Documents<SubscriptionRecord, IndexableSubscriptionRecord>;
+  
+  @field({ type: Documents })
+  contentIndex: Documents<ContentPointer, IndexableContentPointer>;
+  
+  constructor() {
+    super();
+    this.subscriptions = new Documents();
+    this.contentIndex = new Documents();
+  }
+  
+  async open(): Promise<void> {
+    await Promise.all([
+      // Subscriptions can be fully replicated as they're small
+      this.subscriptions.open({
+        type: SubscriptionRecord,
+        replicate: true,
+        canPerform: () => true, // Anyone can write their subscriptions
+        index: {
+          canRead: () => true,
+          type: IndexableSubscriptionRecord,
+          transform: async (record, ctx) => {
+            return new IndexableSubscriptionRecord(
+              record,
+              ctx.created,
+              ctx.modified,
+              ctx.author,
+            );
+          },
+        },
+      }),
+      
+      // Content index uses adaptive sharding based on resources
+      this.contentIndex.open({
+        type: ContentPointer,
+        replicate: {
+          factor: 0.1, // Start with 10% replication
+          // From SharedLog docs: PID controller will automatically adjust
+          // based on memory and CPU usage
+          offset: 0.5, // Target 50% resource utilization
+        },
+        canPerform: () => true, // Sites can index their own content
+        index: {
+          canRead: () => true,
+          type: IndexableContentPointer,
+          transform: async (pointer, ctx) => {
+            return new IndexableContentPointer(
+              pointer,
+              ctx.created,
+              ctx.modified,
+              ctx.author,
+            );
+          },
+          // From indexing docs: remote queries benefit from caching
+          cache: {
+            query: {
+              strategy: 'auto',
+              maxSize: 10000,
+              keepAlive: 60000, // 1 minute
+            },
+          },
+        },
+      }),
+    ]);
+  }
+}

@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Federation Graph Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        #graph {
+            width: 100%;
+            height: 600px;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .node {
+            cursor: pointer;
+        }
+        
+        .node circle {
+            stroke: #333;
+            stroke-width: 2px;
+        }
+        
+        .node text {
+            font-size: 12px;
+            text-anchor: middle;
+        }
+        
+        .link {
+            fill: none;
+            stroke: #999;
+            stroke-width: 2px;
+            marker-end: url(#arrowhead);
+        }
+        
+        .link.recursive {
+            stroke: #4CAF50;
+            stroke-width: 3px;
+        }
+        
+        .link.mutual {
+            stroke: #2196F3;
+        }
+        
+        #info {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .legend {
+            margin-top: 20px;
+        }
+        
+        .legend-item {
+            display: inline-block;
+            margin-right: 20px;
+        }
+        
+        .legend-line {
+            display: inline-block;
+            width: 30px;
+            height: 3px;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        
+        .content-list {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+        
+        .content-item {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        
+        .content-item.original {
+            color: #333;
+        }
+        
+        .content-item.federated {
+            color: #666;
+            font-style: italic;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .stat-box {
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>Federation Graph Visualization (Sampled 100 of 106 nodes)</h1>
+    
+    <div id="graph"></div>
+    
+    <div class="legend">
+        <h3>Node Colors:</h3>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #4CAF50; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+            Original content only
+        </div>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #2196F3; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+            Federated content only
+        </div>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #FF9800; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+            Mixed (original + federated)
+        </div>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #9C27B0; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+            Follows only (no content)
+        </div>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #f44336; width: 20px; height: 20px; border-radius: 50%; display: inline-block;"></span>
+            Empty (no content, no follows)
+        </div>
+        <h3 style="margin-top: 15px;">Link Types:</h3>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #999;"></span>
+            One-way subscription
+        </div>
+        <div class="legend-item">
+            <span class="legend-line" style="background-color: #2196F3;"></span>
+            Mutual subscription
+        </div>
+    </div>
+    
+    <div id="info">
+        <h2>Network Statistics</h2>
+        <div style="margin-bottom: 15px;">
+            <button onclick="resetZoom()" style="padding: 5px 10px; margin-right: 5px;">Reset Zoom</button>
+            <button onclick="zoomIn()" style="padding: 5px 10px; margin-right: 5px;">Zoom In</button>
+            <button onclick="zoomOut()" style="padding: 5px 10px;">Zoom Out</button>
+            <small style="margin-left: 10px;">Use mouse wheel to zoom, drag to pan</small>
+        </div>
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-label">Total Nodes</div>
+                <div class="stat-value" id="total-nodes">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Total Subscriptions</div>
+                <div class="stat-value" id="total-subscriptions">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Total Content</div>
+                <div class="stat-value" id="total-content">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Query Success Rate</div>
+                <div class="stat-value" id="query-rate">0%</div>
+            </div>
+        </div>
+        
+        <h3>Click on a node to see its details</h3>
+        <div id="node-details"></div>
+    </div>
+
+    <script>
+        // The test will inject the graph data here
+        const graphData = {
+  "nodes": [
+    {
+      "id": "zb2rhjhRK539t55jNo9H3bsM2ToMBigMB8YDmFA8zSWWL3Loj",
+      "name": "Creator 9",
+      "releases": []
+    },
+    {
+      "id": "zb2rhkBSAoAQmgdSBBG2vrVpzuxQPBAJwVhMgqkWZ9pR799qz",
+      "name": "Creator 7",
+      "releases": []
+    },
+    {
+      "id": "zb2rheVLpD1oJGN1fgx371EZovoCukqVDFSHkYbajF6wvWBHd",
+      "name": "Creator 39",
+      "releases": []
+    },
+    {
+      "id": "zb2rhahTMtrWbRWxpSty338ks9HzPaNPQ2ECNDceLrRWH77kg",
+      "name": "Creator 31",
+      "releases": []
+    },
+    {
+      "id": "zb2rhmCwcnnKg2n7PWii8964PVmjHxs27ErYBLGjKithxJyAz",
+      "name": "Creator 53",
+      "releases": []
+    },
+    {
+      "id": "zb2rhYczmPpUWuTEdcknXaGak1KfXhL2nMxyNToTysE3UCijz",
+      "name": "Creator 48",
+      "releases": []
+    },
+    {
+      "id": "zb2rhXMpcPUDNWe8Eox9Gp24CTB7b5hj3jonPaGBfR8MDUZN3",
+      "name": "Creator 30",
+      "releases": []
+    },
+    {
+      "id": "zb2rhiLEM4kuFnf3cFL2gV9PnkjZyj1RLRPcexFKGmDqRC2qJ",
+      "name": "Creator 56",
+      "releases": []
+    },
+    {
+      "id": "zb2rhd5QfnFAaGbQwFfmtrCozLVEsUzgwp7a8MTYENsmgPK1v",
+      "name": "Creator 47",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZSKYJvUKdyApNAVk8wVwyoMuu2AcvUh8AkY2fyZrcNXN",
+      "name": "Mega Hub",
+      "releases": []
+    },
+    {
+      "id": "zb2rhmshM3eQma4qPvmaFog7o1MKZeM6Qfh1Ra7PHV9kjWToc",
+      "name": "Creator 57",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZgx8G1CApc2mwD4PDYw1SsDZszaMjsPx3h85ajPKwG77",
+      "name": "Creator 29",
+      "releases": []
+    },
+    {
+      "id": "zb2rheEtFuyAEQ3xwhpDB7g9uGxsLH7rW1e1ZTPTkrT5ToDxn",
+      "name": "Creator 20",
+      "releases": []
+    },
+    {
+      "id": "zb2rhkLjCNRTEWH55VoXtvqjNJeULNHMY8PHVKTwx84SvTqN3",
+      "name": "Creator 63",
+      "releases": []
+    },
+    {
+      "id": "zb2rhda1iNbnu8qYVmRwBzqC9UG22wbd1C1WEg82CPUpxeD4t",
+      "name": "Creator 3",
+      "releases": []
+    },
+    {
+      "id": "zb2rhfrxq9N1krCRKzhWtNdNinmncqfwRfBdJc9LB4B6P3YSe",
+      "name": "Creator 59",
+      "releases": []
+    },
+    {
+      "id": "zb2rhXieUwrqm8rC71va7HyvXkiVHzdUk9FRoTDUjG3kwADYH",
+      "name": "Creator 65",
+      "releases": []
+    },
+    {
+      "id": "zb2rhXaQwZVBCTUsFuu5Sw3iEfoBmGZfjxJ5KciRRscAirr5m",
+      "name": "Creator 87",
+      "releases": []
+    },
+    {
+      "id": "zb2rhcu3oi21xcSg43pBSS8xMaQSAKyhpn6vf9zzsoAKzrqSt",
+      "name": "Creator 79",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZzGQcCBKGdmMitJZDgapH2XDRQBpT6NLPNuPqio4wMLH",
+      "name": "Creator 70",
+      "releases": []
+    },
+    {
+      "id": "zb2rhijNB9Mqkkm5peU2ps7NN9p2G6dAPmyriu8X2TbFS5BC7",
+      "name": "Creator 42",
+      "releases": []
+    },
+    {
+      "id": "zb2rhbAW5uqoxkPXpSNUxNeEUjs8xShs2678HoWkZBEzhJkeS",
+      "name": "Creator 21",
+      "releases": []
+    },
+    {
+      "id": "zb2rhcBiWFCVHboz2GnzEPUqXHQ7UVhR4S5YNRn6k2nDomZhA",
+      "name": "Creator 8",
+      "releases": []
+    },
+    {
+      "id": "zb2rhgoomoU9GjorMhcjvthirqdnrmKJCzRJiRYh5qYr6KCkJ",
+      "name": "Regional Hub 3",
+      "releases": []
+    },
+    {
+      "id": "zb2rho93vs8DC11CHPGHueKbHqtVqAVjZjtuBfBksGPfDdfqS",
+      "name": "Creator 45",
+      "releases": []
+    },
+    {
+      "id": "zb2rhhAtGBasnQqcH1FDJJZp3b8HbZssh1mT35NUJUGDdmveo",
+      "name": "Creator 51",
+      "releases": []
+    },
+    {
+      "id": "zb2rhXL9m5pHd4Ayy4tuT19sr3SYK5eRgYMr7HTDHTTuAeQEy",
+      "name": "Creator 67",
+      "releases": []
+    },
+    {
+      "id": "zb2rhoLNcPwFEkyqscmQncvBf3vKEMTFnuAnRgUfYCSAjG2sp",
+      "name": "Creator 68",
+      "releases": []
+    },
+    {
+      "id": "zb2rhe1odNZKfqfmcXTzVNZqse8FWzqruS3KH2uoMrGXotPwE",
+      "name": "Creator 6",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZ2NNvgFTgibFmYN88ezpYFa3n5befAcWgZexKFHkfZC3",
+      "name": "Creator 97",
+      "releases": []
+    },
+    {
+      "id": "zb2rhfEeraByNJtD4RbcdznJuLG3cvB4pAoyX9UNU9PZDM7Xg",
+      "name": "Creator 100",
+      "releases": []
+    },
+    {
+      "id": "zb2rhnFGiwGPBrNW9G5fG6HDahis5mFihYZn3MeFbefGswbBJ",
+      "name": "Creator 34",
+      "releases": []
+    },
+    {
+      "id": "zb2rhcQdifgGKwptigEGHzo7WtJY2vZqMdfLag1rpr5QvEYfV",
+      "name": "Creator 24",
+      "releases": []
+    },
+    {
+      "id": "zb2rhXVhESRtXA4SYgna7JQx4wrsU3sainDK8aP1BQerhpYLo",
+      "name": "Creator 64",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZV3RX8DhDXqvhPKfRr3uTHWJjQ25qATZXbNEu85bKGBs",
+      "name": "Creator 83",
+      "releases": []
+    },
+    {
+      "id": "zb2rhXST8KbNrH6R8vE8w4EJAZJu1xrdsq67FPP4iLjpngexM",
+      "name": "Creator 60",
+      "releases": []
+    },
+    {
+      "id": "zb2rhdeQqyjGXqkKWp2g2CuUDAPdhL3zmk4FWkLgD8jVhtY9V",
+      "name": "Creator 27",
+      "releases": []
+    },
+    {
+      "id": "zb2rhcEuPw82dNqZr6dhQ2EtwodQKRqriFUDAu2uFpJD8Dau8",
+      "name": "Creator 93",
+      "releases": []
+    },
+    {
+      "id": "zb2rhhodcJFhYZTLCp7AjuHxyXFEATSXaZc1Zro17WTFEKmb9",
+      "name": "Creator 89",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZnAmG1NZAaq7ckGmzWvwXF5VuokM4SXo5TjqzeWqCNFi",
+      "name": "Curator Network",
+      "releases": []
+    },
+    {
+      "id": "zb2rhaGR3BNKBBJdK37VokHvEktdghtKkDJP9z4qMkQCgbuGn",
+      "name": "Creator 36",
+      "releases": []
+    },
+    {
+      "id": "zb2rhcFosgWFJnh5WW6qEpY1XyFMLHwENpx3JX7nDReYtuXx5",
+      "name": "Creator 94",
+      "releases": []
+    },
+    {
+      "id": "zb2rhY4xxADQyhvyULviYu3XD759yCtDUK8HWpfQQSRq9r7Ay",
+      "name": "Creator 61",
+      "releases": []
+    },
+    {
+      "id": "zb2rhibbCSf4Z8aRdbPXvG8wNcMsfXQ2AQYtLQwtNZg7bgXs9",
+      "name": "Creator 23",
+      "releases": []
+    },
+    {
+      "id": "zb2rhXjFUiNXgVH1JDGVW9MMsAPWDKef1XmfxE5veq4Mmn4gH",
+      "name": "Creator 91",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZMLyCSrof1j4Amm1aPnV64ZMpSQY2guypTd2SjvZU6ij",
+      "name": "Creator 12",
+      "releases": []
+    },
+    {
+      "id": "zb2rhgsZBTY5cLjVmbw9PHy3HV3MqCWonnD3HC6RMUW5g7WT6",
+      "name": "Creator 17",
+      "releases": []
+    },
+    {
+      "id": "zb2rhaG4UmEAJjxPjtTktwfr2vwnF8SuZvCM6kEwmFe5XPxvu",
+      "name": "Creator 22",
+      "releases": []
+    },
+    {
+      "id": "zb2rhisjK1f1xhtnMy4nqTL7fvsfkYBBdhbAgKDF2M66FFrb8",
+      "name": "Creator 84",
+      "releases": []
+    },
+    {
+      "id": "zb2rhekJwdyL5gmUDE4ZPUfWLFWJmY97pizGG1pJ6qKjf7WNA",
+      "name": "Creator 76",
+      "releases": []
+    },
+    {
+      "id": "zb2rhYRqY2dxHCzQ7aRnbuSfqwPRYUzumpRKkXhUUwvBkUf3k",
+      "name": "Creator 37",
+      "releases": []
+    },
+    {
+      "id": "zb2rhjg48kfe8R3rPT2FvdphHyrWEn6N8MepAGjEDct1YxSU3",
+      "name": "Creator 38",
+      "releases": []
+    },
+    {
+      "id": "zb2rhf4QgWNdAXnooYActi6wFhbnrx9K5L5XSju9vnHqRkxKu",
+      "name": "Creator 26",
+      "releases": []
+    },
+    {
+      "id": "zb2rhfgEK2jqUnjLTrtkj8YhAyfoNh7CGvZnpKsEtGSkP3572",
+      "name": "Creator 4",
+      "releases": []
+    },
+    {
+      "id": "zb2rhkXAHDZq8Byg7UXDJPxABFHSoMueLgfyHFVYmNTXj7ghW",
+      "name": "Creator 16",
+      "releases": []
+    },
+    {
+      "id": "zb2rhkvq3uL22PAjRNX6aEgBCCexmAMn8aT2BWsYJyisXHaqH",
+      "name": "Creator 2",
+      "releases": []
+    },
+    {
+      "id": "zb2rhbLwBhqd4kzBy8fmmdmAnaLAWFqx6Ay5qxxNn3bh4tiXT",
+      "name": "Creator 69",
+      "releases": []
+    },
+    {
+      "id": "zb2rhnZ8MhdNbFv6v2G4cKeAwYjX6U3YgVQtzaJvSKwH7PG3h",
+      "name": "Creator 1",
+      "releases": []
+    },
+    {
+      "id": "zb2rhkfuA8CtuXm4iD2efFCzfLzWs9HdLE2MF468Qw7HBYpfr",
+      "name": "Creator 71",
+      "releases": []
+    },
+    {
+      "id": "zb2rhbFrsD5FQw1gdq3drxoqBp5PAxsGBUxuX4ND15QZ5esc7",
+      "name": "Creator 28",
+      "releases": []
+    },
+    {
+      "id": "zb2rhYtjqzqrworiNE8qHraZ3syfJZRYrWSQXVyJYg5MZ3gqb",
+      "name": "Creator 44",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZLujJMmT7TSNFpsyhaLVrxmcVxUSiFA3NnqjHuTCVPrB",
+      "name": "Creator 77",
+      "releases": []
+    },
+    {
+      "id": "zb2rhiSz7xWyZ9LhLHVu8emFQQZMAwA9BT8hM96vWRAtsFeM3",
+      "name": "Creator 90",
+      "releases": []
+    },
+    {
+      "id": "zb2rhomRspt7UxaxMY62HF4w7ounZccTpBFS154GrzVxYYDoP",
+      "name": "Creator 55",
+      "releases": []
+    },
+    {
+      "id": "zb2rhg46jBzrtpud3WXWnEU2M2xnfUcGu3RSxAQ33W7M41Dwp",
+      "name": "Creator 11",
+      "releases": []
+    },
+    {
+      "id": "zb2rhkPpcDwdbWPJqt1ZeRGmPk2cR8xKanhtzZ9cpHLtF7hvQ",
+      "name": "Creator 50",
+      "releases": []
+    },
+    {
+      "id": "zb2rhmzWMEpbCqGJqGUuDxcnV3Vy2FYRQrf1HKz5bBrqxJUzk",
+      "name": "Creator 43",
+      "releases": []
+    },
+    {
+      "id": "zb2rhdScj1CFs2uVfg9ZTYM2YR5T55uUSqPiqXkzysbjkniTq",
+      "name": "Creator 40",
+      "releases": []
+    },
+    {
+      "id": "zb2rhg95NyG8NBt56Dpvwz5C7aU5S7mZdYpH3EKAkvxGYD1Kg",
+      "name": "Creator 52",
+      "releases": []
+    },
+    {
+      "id": "zb2rhoXbhrT12T7mB2xPvUiia9XPng46AANgxEyHieZFJKrrF",
+      "name": "Creator 54",
+      "releases": []
+    },
+    {
+      "id": "zb2rhofbw8tz38swDq6fgsTjN8RGmTgbRm5NpM9KiGwmAv7ua",
+      "name": "Creator 82",
+      "releases": []
+    },
+    {
+      "id": "zb2rhgPxrDCuELTBnrXy4vnkhoiiucotZHQ3GumLruKCw31vD",
+      "name": "Creator 95",
+      "releases": []
+    },
+    {
+      "id": "zb2rhf54PkUW74L5agzrZoUwrTCpYnBFFTy1NLYwbsNRnGnho",
+      "name": "Creator 85",
+      "releases": []
+    },
+    {
+      "id": "zb2rhYkMHxY5i5yRbAX1Um1b3CfmtNQ63LR6AZB81K4QVTsMs",
+      "name": "Creator 33",
+      "releases": []
+    },
+    {
+      "id": "zb2rhhMbgmLQwSQtUBn4nxRDcDCRQJVAhr5HoLHCkXToahZJi",
+      "name": "Creator 96",
+      "releases": []
+    },
+    {
+      "id": "zb2rhon1SCMQGFY9baLWyGWKLk8A11B14iLv1p2SojiYVzTTy",
+      "name": "Creator 72",
+      "releases": []
+    },
+    {
+      "id": "zb2rhh6bmyTEw2VJ7dAgsRSLoqCXX6AuSLVht3B2C2RjRgNCB",
+      "name": "Creator 78",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZE4knUoUFQAxzgB4DJigxd2Wa1xEdTmJfCfQRAmH6v8K",
+      "name": "Creator 5",
+      "releases": []
+    },
+    {
+      "id": "zb2rhkURW7CKPFy5Ee93HFnfyHKjW6MuASBopKkVS1agrXK8q",
+      "name": "Creator 10",
+      "releases": []
+    },
+    {
+      "id": "zb2rhhicw6u3vDb5ps62zWD6g3mMjoHe8y11LNmnxwVv9aofk",
+      "name": "Creator 41",
+      "releases": []
+    },
+    {
+      "id": "zb2rhiZdxquvrm8Yvd1RgFcGMcCzihntzMmAkY9GWq3BxGNCj",
+      "name": "Creator 35",
+      "releases": []
+    },
+    {
+      "id": "zb2rhWgchoGJocksS6gXb6Z7ioHwuqJyhAYmRp1uSqaBu2XcA",
+      "name": "Creator 32",
+      "releases": []
+    },
+    {
+      "id": "zb2rhjVaKfEyc7aU35NiQTYnPLPWwJSJAK9Uo12qLvKaSkpdf",
+      "name": "Creator 13",
+      "releases": []
+    },
+    {
+      "id": "zb2rhdnKyXhdfQ2V24BaRJ5ncSTW81LUKy9ZUgYaZQAxbXpyX",
+      "name": "Creator 92",
+      "releases": []
+    },
+    {
+      "id": "zb2rhb97uASkm2n7TD5GAktDhP2tMLp9zBMUEg2oubmmna9px",
+      "name": "Creator 18",
+      "releases": []
+    },
+    {
+      "id": "zb2rhnsaXwViZLxk1sDqWv9dRUGhEnawUP5UPGZrGsdHQhNfZ",
+      "name": "Creator 15",
+      "releases": []
+    },
+    {
+      "id": "zb2rheWGwDwR6AcauDxwF6QKdAZD4VDJTr117RGT9U3GxD912",
+      "name": "Creator 73",
+      "releases": []
+    },
+    {
+      "id": "zb2rhk1eguu2cdYk9MogYsgGNh2agxyMNbFSgH2nPwTiYeXZA",
+      "name": "Creator 19",
+      "releases": []
+    },
+    {
+      "id": "zb2rhdyP77zpN83RbmmagfMMfWEvLGAJarD6FLcqeozzAesnN",
+      "name": "Creator 14",
+      "releases": []
+    },
+    {
+      "id": "zb2rheRnr6iqWptsq3s8yCrm2th5GMm3ycLhXEHNZyHPwogj2",
+      "name": "Archive Node",
+      "releases": []
+    },
+    {
+      "id": "zb2rhY7W43ViLpEadUgvWaDmx9jo7617MBVuzyXHb4d7eMskB",
+      "name": "Creator 49",
+      "releases": []
+    },
+    {
+      "id": "zb2rhn8vUfRqxPKwJubFw3pk3XgquShMeB5vByKLbGE4yqz8J",
+      "name": "Creator 75",
+      "releases": []
+    },
+    {
+      "id": "zb2rhbthxH2LkCB2NG7EHwVqndx4Ckbsvv4tw49wuKYNZnVJC",
+      "name": "Creator 74",
+      "releases": []
+    },
+    {
+      "id": "zb2rhZF9j9M72TDKkUJnDomTUkpaGZHi9LKRReQX8dpcBkQEm",
+      "name": "Creator 46",
+      "releases": []
+    },
+    {
+      "id": "zb2rhcnUEwZFrxeNfndq7wDSS8MWDGDNZmtCdeGGzeWc34XSp",
+      "name": "Creator 86",
+      "releases": []
+    },
+    {
+      "id": "zb2rhgbVT8RpsySCWRAjZMrtuLjaGiGcL1ojmoapuvtnMUwzH",
+      "name": "Creator 81",
+      "releases": []
+    },
+    {
+      "id": "zb2rhnRvavx7AyaHwEgKUaSbNGLTzeTNRWVA5Qrstm3q4zdyt",
+      "name": "Creator 80",
+      "releases": []
+    },
+    {
+      "id": "zb2rhnmedK3Ro8nRmvAHz5NrzdzfGJmdqS3UTkuMvKKb46n3M",
+      "name": "Creator 66",
+      "releases": []
+    },
+    {
+      "id": "zb2rhkY8tKbCuM7Ky3xhopU9MANkz74jF7dDPT7Uuf4jqt76d",
+      "name": "Regional Hub 2",
+      "releases": []
+    },
+    {
+      "id": "zb2rhiaHv2My6bCbnu5b4J3XBqJRNo25QGePuessDPbedfHBa",
+      "name": "Creator 98",
+      "releases": []
+    }
+  ],
+  "links": [],
+  "timestamp": "2025-05-27T20:00:50.101Z",
+  "testName": "initial-network",
+  "querySuccessRate": 0
+};
+        
+        // Set up dimensions
+        const width = document.getElementById('graph').clientWidth;
+        const height = 600;
+        
+        // Create SVG with zoom support
+        const svg = d3.select("#graph")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+        
+        // Create a group for zoom transformations
+        const g = svg.append("g");
+        
+        // Add zoom behavior
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 10]) // Min and max zoom levels
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+        
+        // Apply zoom to svg
+        svg.call(zoom);
+        
+        // Add arrow marker definition
+        svg.append("defs").append("marker")
+            .attr("id", "arrowhead")
+            .attr("viewBox", "-0 -5 10 10")
+            .attr("refX", 25)
+            .attr("refY", 0)
+            .attr("orient", "auto")
+            .attr("markerWidth", 8)
+            .attr("markerHeight", 8)
+            .append("svg:path")
+            .attr("d", "M 0,-5 L 10,0 L 0,5")
+            .attr("fill", "#999");
+        
+        // Create force simulation
+        const simulation = d3.forceSimulation(graphData.nodes)
+            .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(150))
+            .force("charge", d3.forceManyBody().strength(-500))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(40));
+        
+        // Create links
+        const link = g.append("g")
+            .selectAll("line")
+            .data(graphData.links)
+            .enter().append("line")
+            .attr("class", d => {
+                let classes = "link";
+                if (d.recursive) classes += " recursive";
+                if (d.mutual) classes += " mutual";
+                return classes;
+            });
+        
+        // Create nodes
+        const node = g.append("g")
+            .selectAll("g")
+            .data(graphData.nodes)
+            .enter().append("g")
+            .attr("class", "node")
+            .call(d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended));
+        
+        // Add circles to nodes with proper coloring
+        node.append("circle")
+            .attr("r", 20)
+            .attr("fill", d => {
+                const contentCount = d.releases ? d.releases.length : 0;
+                const originalCount = d.releases ? d.releases.filter(r => !r.federatedFrom).length : 0;
+                const federatedCount = contentCount - originalCount;
+                
+                // Check if node has outgoing subscriptions (follows others)
+                const hasFollows = graphData.links.some(l => 
+                    (l.source.id === d.id || l.source === d.id)
+                );
+                
+                // Green: Has original content
+                // Blue: Only federated content
+                // Orange: Mixed (both original and federated)
+                // Purple: No content but follows others
+                // Red: No content and no follows (truly empty)
+                if (originalCount > 0 && federatedCount > 0) return "#FF9800"; // Orange for mixed
+                if (originalCount > 0) return "#4CAF50"; // Green for original
+                if (federatedCount > 0) return "#2196F3"; // Blue for federated only
+                if (hasFollows) return "#9C27B0"; // Purple for follows only
+                return "#f44336"; // Red for truly empty (no content, no follows)
+            })
+            .attr("stroke", "#333")
+            .attr("stroke-width", 2);
+        
+        // Add labels to nodes
+        node.append("text")
+            .attr("dy", ".35em")
+            .text(d => d.name);
+        
+        // Add content count labels
+        node.append("text")
+            .attr("dy", "2em")
+            .attr("font-size", "10px")
+            .text(d => d.releases ? d.releases.length : 0);
+        
+        // Click handler for nodes
+        node.on("click", function(event, d) {
+            showNodeDetails(d);
+        });
+        
+        // Update positions on simulation tick
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+            
+            node
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+        
+        // Drag functions
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+        
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+        
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+        
+        // Show node details
+        function showNodeDetails(node) {
+            let html = `<h3>${node.name}</h3>`;
+            html += `<p><strong>Site ID:</strong> ${node.id}</p>`;
+            
+            // Show subscriptions
+            const subscriptions = graphData.links.filter(l => l.source.id === node.id || l.source === node.id);
+            if (subscriptions.length > 0) {
+                html += `<h4>Subscriptions (${subscriptions.length}):</h4><ul>`;
+                subscriptions.forEach(sub => {
+                    const targetNode = graphData.nodes.find(n => n.id === (sub.target.id || sub.target));
+                    html += `<li>${targetNode.name} ${sub.recursive ? '(recursive)' : '(non-recursive)'}</li>`;
+                });
+                html += `</ul>`;
+            }
+            
+            // Show content
+            if (node.releases && node.releases.length > 0) {
+                html += `<h4>Content (${node.releases.length}):</h4>`;
+                html += `<div class="content-list">`;
+                node.releases.forEach(release => {
+                    const cssClass = release.federatedFrom ? 'federated' : 'original';
+                    const source = release.federatedFrom ? ` (from ${release.federatedFrom.slice(0, 8)}...)` : ' (original)';
+                    html += `<div class="content-item ${cssClass}">${release.name}${source}</div>`;
+                });
+                html += `</div>`;
+            }
+            
+            document.getElementById('node-details').innerHTML = html;
+        }
+        
+        // Update statistics
+        document.getElementById('total-nodes').textContent = graphData.nodes.length;
+        document.getElementById('total-subscriptions').textContent = graphData.links.length;
+        
+        const totalContent = graphData.nodes.reduce((sum, node) => 
+            sum + (node.releases ? node.releases.length : 0), 0);
+        document.getElementById('total-content').textContent = totalContent;
+        
+        // Calculate query success rate
+        const querySuccessRate = graphData.querySuccessRate || 0;
+        document.getElementById('query-rate').textContent = querySuccessRate + '%';
+        
+        // Show search results if available
+        if (graphData.searchResults) {
+            const searchInfo = document.createElement('div');
+            searchInfo.className = 'stat-box';
+            searchInfo.innerHTML = `
+                <div class="stat-label">Search Query: "${graphData.searchQuery || 'N/A'}"</div>
+                <div class="stat-value">${graphData.searchResults.results} results</div>
+                <div style="font-size: 14px; color: #666;">${graphData.searchResults.crossSiteResults} from other sites</div>
+            `;
+            document.querySelector('.stats').appendChild(searchInfo);
+        }
+        
+        // Show query performance if available
+        if (graphData.queryPerformance) {
+            const perfInfo = document.createElement('div');
+            perfInfo.className = 'stat-box';
+            perfInfo.innerHTML = `
+                <div class="stat-label">Query Performance (${graphData.queryPerformance.queries} queries)</div>
+                <div class="stat-value">${graphData.queryPerformance.avgTime}ms avg</div>
+                <div style="font-size: 14px; color: #666;">
+                    Min: ${graphData.queryPerformance.minTime}ms, Max: ${graphData.queryPerformance.maxTime}ms
+                </div>
+            `;
+            document.querySelector('.stats').appendChild(perfInfo);
+        }
+        
+        // Zoom control functions
+        function zoomIn() {
+            svg.transition().duration(500).call(zoom.scaleBy, 1.5);
+        }
+        
+        function zoomOut() {
+            svg.transition().duration(500).call(zoom.scaleBy, 0.67);
+        }
+        
+        function resetZoom() {
+            svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+        }
+    </script>
+</body>
+</html>

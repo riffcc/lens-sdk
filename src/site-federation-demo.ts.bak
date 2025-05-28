@@ -1,0 +1,188 @@
+import { Program } from '@peerbit/program';
+import { Documents, SearchRequest } from '@peerbit/document';
+import { field, variant, option, vec } from '@dao-xyz/borsh';
+import { PublicSignKey } from '@peerbit/crypto';
+
+/**
+ * Simple demonstration of per-site federation architecture
+ * 
+ * This demonstrates the key concepts without complex access control:
+ * 1. Each site has its own federation store
+ * 2. Sites can add content they want to federate
+ * 3. Content can be searched efficiently
+ * 4. Clear ownership boundaries
+ */
+
+@variant('demo-federated-content')
+export class DemoFederatedContent {
+  @field({ type: 'string' })
+  contentCid: string;
+  
+  @field({ type: 'string' })
+  title: string;
+  
+  @field({ type: 'string' })
+  sourceSiteId: string;
+  
+  @field({ type: 'string' })
+  sourceSiteName: string;
+  
+  @field({ type: 'u64' })
+  federatedAt: number;
+  
+  @field({ type: option('string') })
+  contentType?: string;
+  
+  constructor(props?: {
+    contentCid: string;
+    title: string;
+    sourceSiteId: string;
+    sourceSiteName: string;
+    federatedAt: number;
+    contentType?: string;
+  }) {
+    if (props) {
+      this.contentCid = props.contentCid;
+      this.title = props.title;
+      this.sourceSiteId = props.sourceSiteId;
+      this.sourceSiteName = props.sourceSiteName;
+      this.federatedAt = props.federatedAt;
+      this.contentType = props.contentType;
+    }
+  }
+}
+
+@variant('indexable-demo-content')
+export class IndexableDemoContent extends DemoFederatedContent {
+  @field({ type: 'string' })
+  id: string;
+  
+  constructor(props?: DemoFederatedContent & { id?: string }) {
+    super(props);
+    if (props) {
+      this.id = props.id || `${this.sourceSiteId}-${this.contentCid}`;
+    }
+  }
+}
+
+/**
+ * Demo Site Federation Store
+ * 
+ * In a real implementation, this would have:
+ * - IdentityAccessController for trust management
+ * - Delegated write permissions for followed sites
+ * - Revocation mechanisms
+ * 
+ * For now, we demonstrate the core concept of per-site stores
+ */
+@variant('demo-site-federation')
+export class DemoSiteFederation extends Program {
+  @field({ type: Documents })
+  federatedContent: Documents<DemoFederatedContent, IndexableDemoContent>;
+  
+  @field({ type: 'string' })
+  siteName: string;
+  
+  @field({ type: vec('string') })
+  trustedSites: string[];
+  
+  constructor(siteName?: string) {
+    super();
+    this.federatedContent = new Documents();
+    this.siteName = siteName || 'Unnamed Site';
+    this.trustedSites = [];
+  }
+  
+  async open(): Promise<void> {
+    await this.federatedContent.open({
+      type: IndexableDemoContent,
+      replicate: true,
+      index: {
+        fields: (obj) => ({
+          title: obj.title,
+          sourceSiteName: obj.sourceSiteName,
+          contentType: obj.contentType || '',
+          sourceSiteId: obj.sourceSiteId,
+        })
+      }
+    });
+  }
+  
+  /**
+   * Add a site to the trusted list (simplified version)
+   */
+  async trustSite(siteId: string): Promise<void> {
+    if (!this.trustedSites.includes(siteId)) {
+      this.trustedSites.push(siteId);
+    }
+  }
+  
+  /**
+   * Remove a site from the trusted list
+   */
+  async untrustSite(siteId: string): Promise<void> {
+    const index = this.trustedSites.indexOf(siteId);
+    if (index > -1) {
+      this.trustedSites.splice(index, 1);
+    }
+  }
+  
+  /**
+   * Check if a site is trusted
+   */
+  isTrusted(siteId: string): boolean {
+    return this.trustedSites.includes(siteId);
+  }
+  
+  /**
+   * Add federated content (in real implementation, would check permissions)
+   */
+  async addFederatedContent(content: DemoFederatedContent): Promise<void> {
+    const indexable = new IndexableDemoContent(content);
+    await this.federatedContent.put(indexable);
+  }
+  
+  /**
+   * Search federated content
+   */
+  async searchContent(query: string, options?: {
+    sourceSiteId?: string;
+    contentType?: string;
+  }): Promise<IndexableDemoContent[]> {
+    const searchRequests: SearchRequest[] = [];
+    
+    if (query) {
+      searchRequests.push(
+        new SearchRequest({
+          query: ['title'],
+          value: query
+        })
+      );
+    }
+    
+    if (options?.sourceSiteId) {
+      searchRequests.push(
+        new SearchRequest({
+          query: ['sourceSiteId'],
+          value: options.sourceSiteId
+        })
+      );
+    }
+    
+    if (options?.contentType) {
+      searchRequests.push(
+        new SearchRequest({
+          query: ['contentType'],
+          value: options.contentType
+        })
+      );
+    }
+    
+    if (searchRequests.length === 0) {
+      // Return all if no search criteria
+      return await this.federatedContent.values.toArray();
+    }
+    
+    return await this.federatedContent.index.search(searchRequests);
+  }
+}

@@ -1,0 +1,158 @@
+import { Program } from '@peerbit/program';
+import { Documents, SearchRequest } from '@peerbit/document';
+import { field, variant, option } from '@dao-xyz/borsh';
+import { IdentityAccessController } from '@peerbit/identity-access-controller';
+import { PublicSignKey } from '@peerbit/crypto';
+import { v4 as uuid } from 'uuid';
+
+/**
+ * FederatedContentPointer - Points to content that this site has chosen to federate
+ * Can be written by the site owner or by sites that have been granted permission
+ */
+@variant('federated-content-pointer')
+export class FederatedContentPointer {
+  @field({ type: 'string' })
+  contentCid: string;
+  
+  @field({ type: 'string' })
+  title: string;
+  
+  @field({ type: 'string' })
+  sourceSiteId: string;
+  
+  @field({ type: 'string' })
+  sourceSiteName: string;
+  
+  @field({ type: 'u64' })
+  federatedAt: number;
+  
+  @field({ type: option('string') })
+  description?: string;
+  
+  @field({ type: option('string') })
+  contentType?: string;
+  
+  constructor(props?: {
+    contentCid: string;
+    title: string;
+    sourceSiteId: string;
+    sourceSiteName: string;
+    federatedAt: number;
+    description?: string;
+    contentType?: string;
+  }) {
+    if (props) {
+      this.contentCid = props.contentCid;
+      this.title = props.title;
+      this.sourceSiteId = props.sourceSiteId;
+      this.sourceSiteName = props.sourceSiteName;
+      this.federatedAt = props.federatedAt;
+      this.description = props.description;
+      this.contentType = props.contentType;
+    }
+  }
+}
+
+@variant('indexable-federated-content')
+export class IndexableFederatedContent extends FederatedContentPointer {
+  @field({ type: 'string' })
+  id: string;
+  
+  constructor(props?: FederatedContentPointer & { id?: string }) {
+    super(props);
+    if (props) {
+      this.id = props.id || `${this.sourceSiteId}-${this.contentCid}-${this.federatedAt}`;
+    }
+  }
+}
+
+/**
+ * SiteFederationStore - Each site has its own federation store
+ * Only the site owner and explicitly trusted sites can write to it
+ */
+@variant('site-federation-store')
+export class SiteFederationStore extends Program {
+  @field({ type: Documents })
+  federatedContent: Documents<FederatedContentPointer, IndexableFederatedContent>;
+  
+  @field({ type: IdentityAccessController })
+  trustedFederators: IdentityAccessController;
+  
+  constructor(siteOwnerPublicKey?: PublicSignKey) {
+    super();
+    this.federatedContent = new Documents();
+    if (siteOwnerPublicKey) {
+      this.trustedFederators = new IdentityAccessController({ 
+        rootTrust: siteOwnerPublicKey 
+      });
+    } else {
+      this.trustedFederators = new IdentityAccessController();
+    }
+  }
+  
+  async open(): Promise<void> {
+    // Set up the root trust if not already set
+    if (!this.trustedFederators.rootTrust) {
+      this.trustedFederators = new IdentityAccessController({
+        rootTrust: this.node.identity.publicKey
+      });
+    }
+    
+    // First open the access controller
+    await this.trustedFederators.open({
+      replicate: true,
+    });
+    
+    // Then open the federated content store with access control
+    await this.federatedContent.open({
+      type: IndexableFederatedContent,
+      replicate: true,
+      canPerform: async (operation, context) => {
+        // Check if the operation is from a trusted federator
+        return this.trustedFederators.canPerform(operation, context);
+      },
+      index: {
+        fields: (obj) => ({
+          title: obj.title,
+          sourceSiteName: obj.sourceSiteName,
+          contentType: obj.contentType || '',
+          sourceSiteId: obj.sourceSiteId,
+        })
+      }
+    });
+  }
+  
+  /**
+   * Grant federation write permission to another site
+   * This adds them to the trust graph
+   */
+  async grantFederationPermission(sitePublicKey: PublicSignKey): Promise<void> {
+    // In IdentityAccessController, granting permission means adding to the trust graph
+    // The exact method depends on the implementation, but typically involves
+    // adding the public key to a set of trusted identities
+    
+    // For now, we'll need to work with the canPerform method
+    // The actual trust management would be handled by the controller
+    console.log('Granting federation permission to:', sitePublicKey.toString());
+  }
+  
+  /**
+   * Revoke federation write permission from a site
+   */
+  async revokeFederationPermission(sitePublicKey: PublicSignKey): Promise<void> {
+    console.log('Revoking federation permission from:', sitePublicKey.toString());
+  }
+  
+  /**
+   * Check if a site has federation permission
+   */
+  async hasFederationPermission(sitePublicKey: PublicSignKey): Promise<boolean> {
+    // For testing purposes, we'll check if they're the owner or have been granted access
+    if (sitePublicKey.equals(this.node.identity.publicKey)) {
+      return true;
+    }
+    
+    // The actual implementation would check the trust graph
+    return false;
+  }
+}

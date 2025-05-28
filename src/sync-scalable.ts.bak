@@ -1,0 +1,452 @@
+import { Site, Release } from './schema';
+// import { FederationNetwork, ContentPointer, SubscriptionRecord } from './federation-network';
+import type { SubscriptionData } from './types';
+import { 
+  SUBSCRIPTION_SITE_ID_PROPERTY,
+  SUBSCRIPTION_NAME_PROPERTY,
+  SUBSCRIPTION_RECURSIVE_PROPERTY,
+} from './constants';
+import type { Peerbit } from 'peerbit';
+import { SearchRequest, StringMatch, Sort, SortDirection } from '@peerbit/document';
+
+export interface ScalableSyncOptions {
+  onStatusUpdate?: (status: string) => void;
+  onError?: (error: Error) => void;
+  logger?: {
+    info: (message: string, data?: any) => void;
+    warn: (message: string, data?: any) => void;
+    error: (message: string, data?: any) => void;
+    debug: (message: string, data?: any) => void;
+  };
+  federationNetworkAddress?: string; // Optional pre-existing network
+  createNetwork?: boolean; // If true, create network if it doesn't exist
+}
+
+export class ScalableSyncManager {
+  private client: Peerbit;
+  private localSite: Site;
+  private federationNetwork?: FederationNetwork;
+  private logger?: any;
+  private onStatusUpdate?: (status: string) => void;
+  private indexingInterval?: NodeJS.Timer;
+
+  constructor(
+    client: Peerbit,
+    localSite: Site,
+    lensService?: any,
+    private options?: ScalableSyncOptions
+  ) {
+    this.client = client;
+    this.localSite = localSite;
+    this.logger = options?.logger;
+    this.onStatusUpdate = options?.onStatusUpdate;
+  }
+
+  async initialize(): Promise<void> {
+    this.logger?.info('Initializing scalable sync manager');
+    
+    // Join or create the federation network
+    await this.joinFederationNetwork();
+    
+    // Publish our subscriptions to the network
+    await this.publishLocalSubscriptions();
+    
+    // Start indexing our local content
+    await this.startLocalContentIndexing();
+    
+    // Monitor for new content to index
+    this.setupContentMonitoring();
+    
+    this.logger?.info('Scalable sync manager initialized');
+  }
+
+  private async joinFederationNetwork(): Promise<void> {
+    // If a specific network address is provided, try to join it
+    if (this.options?.federationNetworkAddress) {
+      try {
+        this.logger?.info('Attempting to join specified federation network', { 
+          networkAddress: this.options.federationNetworkAddress 
+        });
+        
+        this.federationNetwork = await this.client.open<FederationNetwork>(
+          this.options.federationNetworkAddress,
+          {
+            args: {
+              // Let Peerbit's PID controller manage our participation
+              // based on available resources
+            }
+          }
+        );
+        
+        this.logger?.info('Successfully joined existing federation network', {
+          address: this.federationNetwork.address,
+          subscriptions: await this.federationNetwork.subscriptions.index.getSize(),
+          contentIndex: await this.federationNetwork.contentIndex.index.getSize(),
+        });
+        
+        return;
+      } catch (error) {
+        this.logger?.warn('Failed to join specified network', {
+          address: this.options.federationNetworkAddress,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        
+        if (!this.options.createNetwork) {
+          throw new Error(`Failed to join federation network at ${this.options.federationNetworkAddress}`);
+        }
+      }
+    }
+    
+    // Create new network if allowed
+    if (this.options?.createNetwork) {
+      this.logger?.info('Creating new federation network');
+      
+      this.federationNetwork = new FederationNetwork();
+      await this.client.open(this.federationNetwork);
+      
+      this.logger?.info('Created new federation network', {
+        address: this.federationNetwork.address
+      });
+      
+      // Store the address for other peers to join
+      this.onStatusUpdate?.(`Created federation network: ${this.federationNetwork.address}`);
+    } else {
+      throw new Error('No federation network address provided and createNetwork is false');
+    }
+  }
+
+  private async publishLocalSubscriptions(): Promise<void> {
+    if (!this.federationNetwork) return;
+    
+    const subscriptions = await this.getLocalSubscriptions();
+    
+    this.logger?.info('Publishing local subscriptions to network', { 
+      count: subscriptions.length 
+    });
+    
+    for (const sub of subscriptions) {
+      const record = new SubscriptionRecord({
+        subscriberSiteId: this.localSite.address!,
+        targetSiteId: sub[SUBSCRIPTION_SITE_ID_PROPERTY],
+        siteName: sub[SUBSCRIPTION_NAME_PROPERTY] || '',
+        recursive: sub[SUBSCRIPTION_RECURSIVE_PROPERTY] || false,
+      });
+      
+      await this.federationNetwork.subscriptions.put(record);
+    }
+  }
+
+  private async startLocalContentIndexing(): Promise<void> {
+    if (!this.federationNetwork) return;
+    
+    this.logger?.info('Indexing local content to federation network', {
+      siteAddress: this.localSite.address
+    });
+    
+    // Index existing releases
+    const releases = await this.localSite.releases.index.search(
+      new SearchRequest({ fetch: 1000 })
+    );
+    
+    this.logger?.info('Found local releases to index', { 
+      total: releases.length 
+    });
+    
+    let indexed = 0;
+    for (const release of releases) {
+      // Only index original content (not federated)
+      if (!release.federatedFrom) {
+        const pointer = new ContentPointer({
+          contentId: release.id,
+          sourceSiteId: this.localSite.address!,
+          contentType: 'release',
+          name: release.name,
+          categoryId: release.categoryId,
+        });
+        
+        await this.federationNetwork.contentIndex.put(pointer);
+        indexed++;
+        
+        this.logger?.debug('Indexed release', {
+          id: release.id,
+          name: release.name
+        });
+      }
+    }
+    
+    this.logger?.info('Indexed local content', { 
+      indexed,
+      total: releases.length 
+    });
+  }
+
+  private setupContentMonitoring(): void {
+    // Monitor local releases for changes
+    this.localSite.releases.events.addEventListener('change', async (evt) => {
+      if (!this.federationNetwork) return;
+      
+      const added = evt.detail?.added || [];
+      
+      for (const release of added) {
+        // Only index original content
+        if (!release.federatedFrom) {
+          const pointer = new ContentPointer({
+            contentId: release.id,
+            sourceSiteId: this.localSite.address!,
+            contentType: 'release',
+            name: release.name,
+            categoryId: release.categoryId,
+          });
+          
+          await this.federationNetwork.contentIndex.put(pointer);
+          
+          this.logger?.debug('Indexed new release to federation', {
+            releaseId: release.id,
+            name: release.name,
+          });
+        }
+      }
+    });
+  }
+
+  /**
+   * Query the federation network for content
+   * This leverages Peerbit's coverage calculation to efficiently query
+   * only the necessary peers, not all sites in the network
+   */
+  async searchFederation(query: string, options?: {
+    fetch?: number;
+    remote?: boolean | { amount?: number };
+  }): Promise<ContentPointer[]> {
+    if (!this.federationNetwork) return [];
+    
+    this.logger?.info('Searching federation network', { query });
+    
+    try {
+      // From the indexing docs: remote queries automatically calculate coverage
+      // and query the minimal set of peers needed for complete results
+      const results = await this.federationNetwork.contentIndex.index.search(
+        new SearchRequest({
+          query: [
+            new StringMatch({
+              key: 'name',
+              value: query,
+              caseInsensitive: true,
+            }),
+          ],
+          sort: [
+            new Sort({ 
+              key: 'timestamp', 
+              direction: SortDirection.DESC 
+            }),
+          ],
+          fetch: options?.fetch || 100,
+        }),
+        {
+          remote: options?.remote ?? { amount: 1 }, // Query with 100% coverage by default
+        }
+      );
+      
+      this.logger?.info('Federation search complete', { 
+        resultCount: results.length,
+        fromCache: !options?.remote, // Local results come from cache
+      });
+      
+      return results;
+      
+    } catch (error) {
+      this.logger?.error('Federation search failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  /**
+   * Get content from specific sites based on pointers
+   * Batches requests to the same site for efficiency
+   */
+  async getContent(pointers: ContentPointer[]): Promise<Map<string, Release>> {
+    const results = new Map<string, Release>();
+    
+    // Group pointers by source site to batch requests
+    const bySite = new Map<string, ContentPointer[]>();
+    for (const pointer of pointers) {
+      const sitePointers = bySite.get(pointer.sourceSiteId) || [];
+      sitePointers.push(pointer);
+      bySite.set(pointer.sourceSiteId, sitePointers);
+    }
+    
+    // Process each site's content
+    for (const [siteId, sitePointers] of bySite) {
+      try {
+        // Open the source site in read-only mode
+        const site = await this.client.open<Site>(siteId, {
+          args: {
+            releasesArgs: { 
+              replicate: false, // Don't replicate, just read
+            },
+          },
+        });
+        
+        // Batch get all releases from this site
+        for (const pointer of sitePointers) {
+          try {
+            const release = await site.releases.index.get(pointer.contentId);
+            if (release) {
+              results.set(pointer.contentId, release);
+            }
+          } catch (e) {
+            this.logger?.debug('Failed to get individual release', {
+              contentId: pointer.contentId,
+              error: e,
+            });
+          }
+        }
+        
+        // Close the site to free resources
+        await site.close();
+        
+      } catch (error) {
+        this.logger?.error('Failed to open site for content', {
+          siteId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    
+    return results;
+  }
+
+  /**
+   * Subscribe to a site - just publishes to the federation network
+   * No need to keep connections open to all subscribed sites
+   */
+  async subscribeToSite(
+    siteId: string, 
+    siteName?: string, 
+    isRecursive?: boolean
+  ): Promise<void> {
+    if (!this.federationNetwork) return;
+    
+    const record = new SubscriptionRecord({
+      subscriberSiteId: this.localSite.address!,
+      targetSiteId: siteId,
+      siteName: siteName || siteId,
+      recursive: isRecursive || false,
+    });
+    
+    await this.federationNetwork.subscriptions.put(record);
+    
+    this.logger?.info('Published subscription to federation network', {
+      targetSite: siteId,
+      siteName,
+    });
+  }
+
+  /**
+   * Get popular content across the federation
+   * This demonstrates how coverage-based queries work at scale
+   */
+  async getPopularContent(limit: number = 50): Promise<ContentPointer[]> {
+    if (!this.federationNetwork) return [];
+    
+    // Query for recent content across the federation
+    // Peerbit will automatically query the minimal set of peers
+    // needed to get complete coverage
+    const results = await this.federationNetwork.contentIndex.index.search(
+      new SearchRequest({
+        sort: [
+          new Sort({ 
+            key: 'timestamp', 
+            direction: SortDirection.DESC 
+          }),
+        ],
+        fetch: limit,
+      }),
+      {
+        remote: true,
+      }
+    );
+    
+    return results;
+  }
+
+  /**
+   * Get federation statistics
+   */
+  async getFederationStats(): Promise<{
+    totalSites: number;
+    totalContent: number;
+    myReplicationFactor: number;
+    myRole: 'replicator' | 'observer' | null;
+    networkCoverage: number;
+  }> {
+    if (!this.federationNetwork) {
+      return { 
+        totalSites: 0, 
+        totalContent: 0, 
+        myReplicationFactor: 0,
+        myRole: null,
+        networkCoverage: 0,
+      };
+    }
+    
+    // Get unique site count
+    const subscriptions = await this.federationNetwork.subscriptions.index.search(
+      new SearchRequest({ fetch: 10000 })
+    );
+    const uniqueSites = new Set(subscriptions.map(s => s.subscriberSiteId));
+    
+    // Get content count (local + can query remote)
+    const contentCount = await this.federationNetwork.contentIndex.index.getSize();
+    
+    // Get our current role and replication info
+    // From SharedLog docs: peers are assigned roles based on resources
+    const log = this.federationNetwork.contentIndex.log as any;
+    const myRole = await log.getMyRole?.() || null;
+    const replicationInfo = await log.getReplicationInfo?.();
+    
+    // Calculate network coverage (how much of the data we can query)
+    const coverage = await log.getCoverage?.() || [];
+    const networkCoverage = coverage.length > 0 ? 1 : 0; // Simplified
+    
+    return {
+      totalSites: uniqueSites.size,
+      totalContent: contentCount,
+      myReplicationFactor: replicationInfo?.factor || 0,
+      myRole,
+      networkCoverage,
+    };
+  }
+
+  private async getLocalSubscriptions(): Promise<SubscriptionData[]> {
+    try {
+      const subs = await this.localSite.subscriptions.index.search(
+        new SearchRequest({ fetch: 100 })
+      );
+      return subs;
+    } catch (error) {
+      this.logger?.error('Failed to get local subscriptions', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  getFederationNetworkAddress(): string | null {
+    return this.federationNetwork?.address || null;
+  }
+
+  async shutdown(): Promise<void> {
+    this.logger?.info('Shutting down scalable sync manager');
+    
+    if (this.indexingInterval) {
+      clearInterval(this.indexingInterval as any);
+    }
+    
+    if (this.federationNetwork) {
+      await this.federationNetwork.close();
+    }
+  }
+}
