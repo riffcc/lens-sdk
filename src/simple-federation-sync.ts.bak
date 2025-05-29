@@ -1,0 +1,238 @@
+import { Peerbit } from 'peerbit';
+import { PerSiteFederationIndex, IndexableFederationEntry } from './per-site-federation-index';
+import { Subscription } from './schema';
+import { Documents } from '@peerbit/document';
+
+/**
+ * Simple federation sync - each lens syncs from lenses it follows
+ * 
+ * This is much simpler than the lattice approach:
+ * 1. Each lens has its own federation index
+ * 2. Each lens follows other lenses (stored in subscriptions)
+ * 3. Replicator nodes for a lens sync content from followed lenses
+ * 4. No global coordination needed - the network emerges naturally
+ */
+export class SimpleFederationSync {
+  private peer: Peerbit;
+  private siteId: string;
+  private myFederationIndex: PerSiteFederationIndex;
+  private subscriptions: Documents<Subscription>;
+  private activeWatchers: Map<string, {
+    sourceFedIndex: PerSiteFederationIndex;
+    unsubscribe?: () => void;
+  }> = new Map();
+  
+  constructor(
+    peer: Peerbit,
+    siteId: string,
+    federationIndex: PerSiteFederationIndex,
+    subscriptions: Documents<Subscription>
+  ) {
+    this.peer = peer;
+    this.siteId = siteId;
+    this.myFederationIndex = federationIndex;
+    this.subscriptions = subscriptions;
+  }
+  
+  /**
+   * Start syncing from all subscribed sites
+   */
+  async start(): Promise<void> {
+    console.log(`[SimpleFedSync ${this.siteId}] Starting federation sync`);
+    
+    // Get all current subscriptions
+    const subs = await this.subscriptions.index.search(new SearchRequest());
+    
+    // Start syncing from each subscribed site
+    for (const sub of subs) {
+      await this.syncFromSite(sub.value.siteId, sub.value.subscriptionType === 'recursive');
+    }
+    
+    // Watch for new subscriptions
+    this.subscriptions.events.addEventListener('change', this.handleSubscriptionChange.bind(this));
+  }
+  
+  /**
+   * Stop all syncing
+   */
+  async stop(): Promise<void> {
+    console.log(`[SimpleFedSync ${this.siteId}] Stopping federation sync`);
+    
+    // Stop all watchers
+    for (const [siteId, watcher] of this.activeWatchers) {
+      if (watcher.unsubscribe) {
+        watcher.unsubscribe();
+      }
+      
+      // Close the source index
+      try {
+        await watcher.sourceFedIndex.close();
+      } catch (error) {
+        console.error(`[SimpleFedSync ${this.siteId}] Error closing source index ${siteId}:`, error);
+      }
+    }
+    this.activeWatchers.clear();
+    
+    // Remove event listener
+    this.subscriptions.events.removeEventListener('change', this.handleSubscriptionChange.bind(this));
+  }
+  
+  /**
+   * Handle subscription changes
+   */
+  private async handleSubscriptionChange(event: any): Promise<void> {
+    const change = event.detail;
+    
+    if (change?.type === 'put') {
+      // New or updated subscription
+      const sub = change.value as Subscription;
+      if (sub) {
+        console.log(`[SimpleFedSync ${this.siteId}] New subscription to ${sub.siteId}`);
+        await this.syncFromSite(sub.siteId, sub.subscriptionType === 'recursive');
+      }
+    } else if (change?.type === 'del') {
+      // Removed subscription
+      const sub = change.value as Subscription;
+      if (sub) {
+        console.log(`[SimpleFedSync ${this.siteId}] Unsubscribed from ${sub.siteId}`);
+        await this.stopSyncingFromSite(sub.siteId);
+      }
+    }
+  }
+  
+  /**
+   * Start syncing from a specific site
+   */
+  private async syncFromSite(sourceSiteId: string, recursive: boolean): Promise<void> {
+    // Don't sync from ourselves
+    if (sourceSiteId === this.siteId) {
+      return;
+    }
+    
+    // Check if already syncing
+    if (this.activeWatchers.has(sourceSiteId)) {
+      console.log(`[SimpleFedSync ${this.siteId}] Already syncing from ${sourceSiteId}`);
+      return;
+    }
+    
+    try {
+      // Open the source site's federation index
+      const sourceFedIndex = await this.peer.open(
+        new PerSiteFederationIndex(),
+        {
+          args: {
+            replicate: true,
+            role: 'observer'  // Read-only access
+          },
+          existing: sourceSiteId
+        }
+      );
+      
+      console.log(`[SimpleFedSync ${this.siteId}] Opened federation index for ${sourceSiteId}`);
+      
+      // Initial sync of existing entries
+      const existingEntries = await sourceFedIndex.getAllEntries();
+      let syncedCount = 0;
+      
+      for (const entry of existingEntries) {
+        try {
+          // Check recursive setting
+          if (!recursive && entry.sourceSiteId !== sourceSiteId) {
+            // Non-recursive: only sync content originally from this site
+            continue;
+          }
+          
+          // Create entry for our site
+          const ourEntry = new IndexableFederationEntry({
+            ...entry,
+            // Preserve original source to maintain attribution
+            // But use our site's ID scheme for the entry ID
+            id: `${this.siteId}:${entry.contentCID}`,
+          });
+          
+          await this.myFederationIndex.insertContent(ourEntry);
+          syncedCount++;
+        } catch (error) {
+          // Likely a duplicate, ignore
+        }
+      }
+      
+      console.log(`[SimpleFedSync ${this.siteId}] Initial sync from ${sourceSiteId}: ${syncedCount} entries`);
+      
+      // Set up real-time sync
+      const handleChange = async (event: any) => {
+        const change = event.detail;
+        if (change?.type === 'put') {
+          const entry = change.value;
+          if (entry) {
+            try {
+              // Check recursive setting
+              if (!recursive && entry.sourceSiteId !== sourceSiteId) {
+                return;
+              }
+              
+              const ourEntry = new IndexableFederationEntry({
+                ...entry,
+                id: `${this.siteId}:${entry.contentCID}`,
+              });
+              
+              await this.myFederationIndex.insertContent(ourEntry);
+              console.log(`[SimpleFedSync ${this.siteId}] Synced: ${entry.title} from ${sourceSiteId}`);
+            } catch (error) {
+              // Ignore errors (likely duplicates)
+            }
+          }
+        }
+      };
+      
+      sourceFedIndex.events.addEventListener('change', handleChange);
+      
+      // Store the watcher
+      this.activeWatchers.set(sourceSiteId, {
+        sourceFedIndex,
+        unsubscribe: () => {
+          sourceFedIndex.events.removeEventListener('change', handleChange);
+        }
+      });
+      
+    } catch (error) {
+      console.error(`[SimpleFedSync ${this.siteId}] Error syncing from ${sourceSiteId}:`, error);
+    }
+  }
+  
+  /**
+   * Stop syncing from a specific site
+   */
+  private async stopSyncingFromSite(sourceSiteId: string): Promise<void> {
+    const watcher = this.activeWatchers.get(sourceSiteId);
+    if (watcher) {
+      if (watcher.unsubscribe) {
+        watcher.unsubscribe();
+      }
+      
+      try {
+        await watcher.sourceFedIndex.close();
+      } catch (error) {
+        console.error(`[SimpleFedSync ${this.siteId}] Error closing source index ${sourceSiteId}:`, error);
+      }
+      
+      this.activeWatchers.delete(sourceSiteId);
+      console.log(`[SimpleFedSync ${this.siteId}] Stopped syncing from ${sourceSiteId}`);
+    }
+  }
+  
+  /**
+   * Get current sync statistics
+   */
+  getStats(): {
+    siteId: string;
+    syncingFrom: string[];
+    totalWatchers: number;
+  } {
+    return {
+      siteId: this.siteId,
+      syncingFrom: Array.from(this.activeWatchers.keys()),
+      totalWatchers: this.activeWatchers.size
+    };
+  }
+}

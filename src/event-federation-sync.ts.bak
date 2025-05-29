@@ -1,0 +1,424 @@
+import { Program } from '@peerbit/program';
+import { Documents, SearchRequest, StringMatch } from '@peerbit/document';
+import { field, variant } from '@dao-xyz/borsh';
+import { v4 as uuid } from 'uuid';
+import { Peerbit } from 'peerbit';
+import { PerSiteFederationIndex, IndexableFederationEntry } from './per-site-federation-index';
+
+/**
+ * Federation Sync Baton for event-driven synchronization
+ * Each baton represents a sync relationship from source to target site
+ */
+@variant('federation-sync-baton')
+export class FederationSyncBaton {
+  @field({ type: 'string' })
+  id: string;
+
+  @field({ type: 'string' })
+  sourceSiteId: string;  // Site we're syncing FROM
+
+  @field({ type: 'string' })
+  targetSiteId: string;  // Site we're syncing TO
+
+  @field({ type: 'bool' })
+  recursive: boolean = false;  // Whether to sync transitively (content from sites they follow)
+
+  @field({ type: 'string' })
+  status: 'idle' | 'watching' | 'syncing' | 'error' = 'idle';
+
+  @field({ type: 'string' })
+  claimedBy?: string;  // Node ID that claimed this baton
+
+  @field({ type: 'u64' })
+  claimedAt?: number;  // When the baton was claimed
+
+  @field({ type: 'u64' })
+  expiresAt: number;  // When the claim expires (for fault tolerance)
+
+  @field({ type: 'string' })
+  lastError?: string;  // Last error message if status is 'error'
+
+  @field({ type: 'string' })
+  lastSyncedEntryId?: string;  // For resuming after disconnect
+
+  @field({ type: 'u64' })
+  entriesSynced: number = 0;  // Statistics
+
+  constructor(props?: {
+    sourceSiteId: string;
+    targetSiteId: string;
+    recursive?: boolean;
+    expiresAt?: number;
+  }) {
+    this.id = uuid();
+    this.sourceSiteId = props?.sourceSiteId || '';
+    this.targetSiteId = props?.targetSiteId || '';
+    this.recursive = props?.recursive ?? false;
+    this.status = 'idle';
+    this.expiresAt = props?.expiresAt || Date.now() + 5 * 60 * 1000; // 5 min default
+    this.entriesSynced = 0;
+  }
+}
+
+/**
+ * Store for managing federation sync batons
+ */
+@variant('federation-sync-baton-store')
+export class FederationSyncBatonStore extends Program {
+  @field({ type: Documents })
+  batons: Documents<FederationSyncBaton>;
+
+  constructor() {
+    super();
+    this.batons = new Documents<FederationSyncBaton>({
+      id: uuid()
+    });
+  }
+
+  async open(): Promise<void> {
+    await this.batons.open({
+      type: FederationSyncBaton,
+      index: {
+        fields: (baton: FederationSyncBaton) => ({
+          id: baton.id,
+          sourceSiteId: baton.sourceSiteId,
+          targetSiteId: baton.targetSiteId,
+          status: baton.status,
+          claimedBy: baton.claimedBy || '',
+          expiresAt: baton.expiresAt
+        })
+      }
+    });
+  }
+
+  async createBaton(sourceSiteId: string, targetSiteId: string, recursive: boolean = false): Promise<FederationSyncBaton> {
+    const baton = new FederationSyncBaton({
+      sourceSiteId,
+      targetSiteId,
+      recursive
+    });
+    await this.batons.put(baton);
+    return baton;
+  }
+
+  async claimBaton(batonId: string, nodeId: string, duration: number = 5 * 60 * 1000): Promise<boolean> {
+    const baton = await this.batons.index.get(batonId);
+    if (!baton) return false;
+
+    const now = Date.now();
+    
+    // Check if baton is available (not claimed or expired)
+    if (baton.claimedBy && baton.expiresAt > now) {
+      return false; // Already claimed and not expired
+    }
+
+    // Claim the baton
+    baton.claimedBy = nodeId;
+    baton.claimedAt = now;
+    baton.expiresAt = now + duration;
+    baton.status = 'watching';
+    
+    await this.batons.put(baton);
+    return true;
+  }
+
+  async releaseBaton(batonId: string, nodeId: string): Promise<void> {
+    const baton = await this.batons.index.get(batonId);
+    if (!baton || baton.claimedBy !== nodeId) return;
+
+    baton.claimedBy = undefined;
+    baton.claimedAt = undefined;
+    baton.status = 'idle';
+    
+    await this.batons.put(baton);
+  }
+
+  async updateBatonStatus(
+    batonId: string, 
+    nodeId: string, 
+    status: 'idle' | 'watching' | 'syncing' | 'error',
+    error?: string
+  ): Promise<void> {
+    const baton = await this.batons.index.get(batonId);
+    if (!baton || baton.claimedBy !== nodeId) return;
+
+    baton.status = status;
+    if (error) {
+      baton.lastError = error;
+    }
+    
+    // Extend expiration on activity
+    if (status === 'syncing') {
+      baton.expiresAt = Date.now() + 5 * 60 * 1000;
+    }
+    
+    await this.batons.put(baton);
+  }
+
+  async incrementSyncCount(batonId: string, nodeId: string, count: number = 1): Promise<void> {
+    const baton = await this.batons.index.get(batonId);
+    if (!baton || baton.claimedBy !== nodeId) return;
+
+    baton.entriesSynced += count;
+    baton.expiresAt = Date.now() + 5 * 60 * 1000; // Extend on activity
+    
+    await this.batons.put(baton);
+  }
+
+  async getAvailableBatons(nodeId: string): Promise<FederationSyncBaton[]> {
+    const now = Date.now();
+    const allBatons = await this.batons.index.search(
+      new SearchRequest({
+        query: []
+      })
+    );
+
+    return allBatons.filter(baton => 
+      !baton.claimedBy || baton.expiresAt < now
+    );
+  }
+
+  async getMyBatons(nodeId: string): Promise<FederationSyncBaton[]> {
+    return this.batons.index.search(
+      new SearchRequest({
+        query: [
+          new StringMatch({
+            key: 'claimedBy',
+            value: nodeId
+          })
+        ]
+      })
+    );
+  }
+}
+
+/**
+ * Event-driven federation sync manager
+ * Watches remote federation indexes and syncs changes in real-time
+ */
+export class EventFederationSync {
+  private peer: Peerbit;
+  private nodeId: string;
+  private batonStore: FederationSyncBatonStore;
+  private activeWatchers: Map<string, {
+    baton: FederationSyncBaton;
+    sourceFedIndex: PerSiteFederationIndex;
+    targetFedIndex: PerSiteFederationIndex;
+    unsubscribe?: () => void;
+  }> = new Map();
+
+  constructor(peer: Peerbit, nodeId: string, batonStore: FederationSyncBatonStore) {
+    this.peer = peer;
+    this.nodeId = nodeId;
+    this.batonStore = batonStore;
+  }
+
+  /**
+   * Start claiming and processing available batons
+   */
+  async start(
+    targetSites: Map<string, PerSiteFederationIndex>,  // Sites we're syncing TO
+    maxBatons: number = 10
+  ): Promise<void> {
+    // Periodically check for available batons
+    const claimInterval = setInterval(async () => {
+      try {
+        await this.claimAndProcessBatons(targetSites, maxBatons);
+      } catch (error) {
+        console.error(`[EventFedSync ${this.nodeId}] Error claiming batons:`, error);
+      }
+    }, 10000); // Check every 10 seconds
+
+    // Store interval for cleanup
+    (this as any)._claimInterval = claimInterval;
+  }
+
+  /**
+   * Stop all active watchers and release batons
+   */
+  async stop(): Promise<void> {
+    if ((this as any)._claimInterval) {
+      clearInterval((this as any)._claimInterval);
+    }
+
+    // Release all batons and stop watchers
+    for (const [batonId, watcher] of this.activeWatchers) {
+      if (watcher.unsubscribe) {
+        watcher.unsubscribe();
+      }
+      await this.batonStore.releaseBaton(batonId, this.nodeId);
+    }
+    
+    this.activeWatchers.clear();
+  }
+
+  private async claimAndProcessBatons(
+    targetSites: Map<string, PerSiteFederationIndex>,
+    maxBatons: number
+  ): Promise<void> {
+    // Don't claim more if we're at capacity
+    if (this.activeWatchers.size >= maxBatons) return;
+
+    const availableBatons = await this.batonStore.getAvailableBatons(this.nodeId);
+    
+    // Filter for batons we can handle (we have the target site)
+    const claimableBatons = availableBatons
+      .filter(b => targetSites.has(b.targetSiteId))
+      .slice(0, maxBatons - this.activeWatchers.size);
+
+    for (const baton of claimableBatons) {
+      const claimed = await this.batonStore.claimBaton(baton.id, this.nodeId);
+      if (claimed) {
+        console.log(`[EventFedSync ${this.nodeId}] Claimed baton ${baton.id} for ${baton.sourceSiteId} → ${baton.targetSiteId}`);
+        await this.processBaton(baton, targetSites.get(baton.targetSiteId)!);
+      }
+    }
+  }
+
+  private async processBaton(
+    baton: FederationSyncBaton,
+    targetFedIndex: PerSiteFederationIndex
+  ): Promise<void> {
+    try {
+      // Open the source site's federation index in read-only mode
+      const sourceFedIndex = await this.peer.open(
+        new PerSiteFederationIndex(), 
+        {
+          args: {
+            replicate: true,
+            role: 'observer'  // Read-only
+          },
+          existing: baton.sourceSiteId  // Open by address
+        }
+      );
+
+      console.log(`[EventFedSync ${this.nodeId}] Watching ${baton.sourceSiteId} federation index`);
+
+      // Initial sync - get all existing entries
+      const existingEntries = await sourceFedIndex.getAllEntries();
+      let syncedCount = 0;
+
+      for (const entry of existingEntries) {
+        try {
+          // Check if we should sync this entry based on recursive setting
+          if (!baton.recursive && entry.sourceSiteId !== baton.sourceSiteId) {
+            // Skip entries that are not from the source site directly
+            continue;
+          }
+          
+          // Sync the entry
+          const targetEntry = new IndexableFederationEntry({
+            ...entry,
+            id: `${baton.targetSiteId}:${entry.contentCID}`, // New ID for target
+            // sourceSiteId is already the original creator, preserve it
+          });
+
+          await targetFedIndex.insertContent(targetEntry);
+          syncedCount++;
+        } catch (error) {
+          console.error(`[EventFedSync ${this.nodeId}] Error syncing entry:`, error);
+        }
+      }
+
+      await this.batonStore.incrementSyncCount(baton.id, this.nodeId, syncedCount);
+      console.log(`[EventFedSync ${this.nodeId}] Initial sync complete: ${syncedCount} entries`);
+
+      // Set up real-time event watching
+      const handleChange = async (change: any) => {
+        if (change.detail?.type === 'put') {
+          const entry = change.detail.value;
+          if (entry) {
+            try {
+              // Check if we should sync this entry based on recursive setting
+              if (!baton.recursive && entry.sourceSiteId !== baton.sourceSiteId) {
+                // Skip entries that are not from the source site directly
+                return;
+              }
+              
+              await this.batonStore.updateBatonStatus(baton.id, this.nodeId, 'syncing');
+              
+              // Sync the entry
+              const targetEntry = new IndexableFederationEntry({
+                ...entry,
+                id: `${baton.targetSiteId}:${entry.contentCID}`,
+                // sourceSiteId is preserved as the original creator
+              });
+
+              await targetFedIndex.insertContent(targetEntry);
+              await this.batonStore.incrementSyncCount(baton.id, this.nodeId, 1);
+              
+              console.log(`[EventFedSync ${this.nodeId}] Synced new entry: ${entry.title} (from ${entry.sourceSiteId})`);
+              await this.batonStore.updateBatonStatus(baton.id, this.nodeId, 'watching');
+            } catch (error) {
+              console.error(`[EventFedSync ${this.nodeId}] Error syncing change:`, error);
+            }
+          }
+        }
+      };
+
+      // Subscribe to changes
+      sourceFedIndex.events.addEventListener('change', handleChange);
+
+      // Store watcher info
+      this.activeWatchers.set(baton.id, {
+        baton,
+        sourceFedIndex,
+        targetFedIndex,
+        unsubscribe: () => {
+          sourceFedIndex.events.removeEventListener('change', handleChange);
+        }
+      });
+
+      await this.batonStore.updateBatonStatus(baton.id, this.nodeId, 'watching');
+
+    } catch (error) {
+      console.error(`[EventFedSync ${this.nodeId}] Error processing baton:`, error);
+      await this.batonStore.updateBatonStatus(
+        baton.id, 
+        this.nodeId, 
+        'error', 
+        error instanceof Error ? error.message : String(error)
+      );
+      
+      // Release the baton so someone else can try
+      await this.batonStore.releaseBaton(baton.id, this.nodeId);
+      this.activeWatchers.delete(baton.id);
+    }
+  }
+
+  /**
+   * Get sync statistics
+   */
+  async getStats(): Promise<{
+    activeBatons: number;
+    totalSynced: number;
+    batonDetails: Array<{
+      id: string;
+      source: string;
+      target: string;
+      status: string;
+      synced: number;
+    }>;
+  }> {
+    const myBatons = await this.batonStore.getMyBatons(this.nodeId);
+    let totalSynced = 0;
+    const batonDetails = [];
+
+    for (const baton of myBatons) {
+      totalSynced += baton.entriesSynced;
+      batonDetails.push({
+        id: baton.id,
+        source: baton.sourceSiteId,
+        target: baton.targetSiteId,
+        status: baton.status,
+        synced: baton.entriesSynced
+      });
+    }
+
+    return {
+      activeBatons: myBatons.length,
+      totalSynced,
+      batonDetails
+    };
+  }
+}

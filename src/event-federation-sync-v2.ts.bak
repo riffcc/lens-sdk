@@ -1,0 +1,470 @@
+import { Program } from '@peerbit/program';
+import { field, variant } from '@dao-xyz/borsh';
+import { v4 as uuid } from 'uuid';
+import { Peerbit } from 'peerbit';
+import { DString } from '@peerbit/string';
+import { PerSiteFederationIndex, IndexableFederationEntry } from './per-site-federation-index';
+
+/**
+ * Federation Sync Baton for event-driven synchronization
+ * Stored as JSON in a DString for atomic operations
+ */
+export interface FederationSyncBaton {
+  id: string;
+  sourceSiteId: string;  // Site we're syncing FROM
+  targetSiteId: string;  // Site we're syncing TO
+  recursive: boolean;    // Whether to sync transitively
+  status: 'idle' | 'watching' | 'syncing' | 'error';
+  claimedBy?: string;    // Node ID that claimed this baton
+  claimedAt?: number;    // When the baton was claimed
+  expiresAt?: number;    // When the claim expires
+  lastError?: string;    // Last error message
+  entriesSynced: number; // Statistics
+}
+
+/**
+ * Baton Registry using DString for atomic coordination
+ * The DString contains a JSON array of all batons
+ */
+@variant('federation-sync-baton-registry')
+export class FederationSyncBatonRegistry extends Program {
+  @field({ type: DString })
+  batonsString: DString;
+
+  constructor() {
+    super();
+    this.batonsString = new DString({
+      id: uuid()
+    });
+  }
+
+  async open(): Promise<void> {
+    await this.batonsString.open({
+      onChange: async (change, context) => {
+        // Conflict resolution for concurrent baton claims
+        const localBatons = this.parseBatons(change.value);
+        const remoteBatons = this.parseBatons(context.previous);
+        
+        // Merge strategy: Keep valid claims, release expired ones
+        const now = Date.now();
+        const merged = this.mergeBatons(localBatons, remoteBatons, now);
+        
+        return JSON.stringify(merged);
+      }
+    });
+    
+    // Initialize with empty array if needed
+    if (!this.batonsString.value) {
+      await this.batonsString.set('[]');
+    }
+  }
+
+  private parseBatons(value?: string): FederationSyncBaton[] {
+    if (!value) return [];
+    try {
+      return JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+
+  private mergeBatons(
+    local: FederationSyncBaton[], 
+    remote: FederationSyncBaton[], 
+    now: number
+  ): FederationSyncBaton[] {
+    const merged = new Map<string, FederationSyncBaton>();
+    
+    // Add all remote batons first
+    for (const baton of remote) {
+      merged.set(baton.id, baton);
+    }
+    
+    // Process local changes
+    for (const localBaton of local) {
+      const remoteBaton = merged.get(localBaton.id);
+      
+      if (!remoteBaton) {
+        // New baton
+        merged.set(localBaton.id, localBaton);
+      } else if (localBaton.claimedBy && remoteBaton.claimedBy) {
+        // Conflict: Both trying to claim
+        // Resolution: Keep the one with earlier claimedAt
+        if ((localBaton.claimedAt || 0) < (remoteBaton.claimedAt || 0)) {
+          merged.set(localBaton.id, localBaton);
+        }
+      } else if (localBaton.claimedBy && !remoteBaton.claimedBy) {
+        // Local is claiming an unclaimed baton
+        merged.set(localBaton.id, localBaton);
+      } else if (!localBaton.claimedBy && remoteBaton.claimedBy) {
+        // Local is releasing, but remote has it claimed
+        // Check if remote claim is expired
+        if (remoteBaton.expiresAt && remoteBaton.expiresAt < now) {
+          merged.set(localBaton.id, localBaton); // Accept the release
+        }
+      } else {
+        // Both unclaimed or other updates
+        merged.set(localBaton.id, localBaton);
+      }
+    }
+    
+    // Clean up expired claims
+    for (const [id, baton] of merged) {
+      if (baton.claimedBy && baton.expiresAt && baton.expiresAt < now) {
+        baton.claimedBy = undefined;
+        baton.claimedAt = undefined;
+        baton.status = 'idle';
+      }
+    }
+    
+    return Array.from(merged.values());
+  }
+
+  async createBaton(
+    sourceSiteId: string, 
+    targetSiteId: string, 
+    recursive: boolean = false
+  ): Promise<FederationSyncBaton> {
+    const baton: FederationSyncBaton = {
+      id: uuid(),
+      sourceSiteId,
+      targetSiteId,
+      recursive,
+      status: 'idle',
+      entriesSynced: 0
+    };
+    
+    const batons = this.parseBatons(this.batonsString.value);
+    batons.push(baton);
+    await this.batonsString.set(JSON.stringify(batons));
+    
+    return baton;
+  }
+
+  async claimBaton(
+    batonId: string, 
+    nodeId: string, 
+    duration: number = 5 * 60 * 1000
+  ): Promise<boolean> {
+    const batons = this.parseBatons(this.batonsString.value);
+    const baton = batons.find(b => b.id === batonId);
+    
+    if (!baton) return false;
+    
+    const now = Date.now();
+    
+    // Check if available
+    if (baton.claimedBy && baton.expiresAt && baton.expiresAt > now) {
+      return false; // Already claimed
+    }
+    
+    // Claim it
+    baton.claimedBy = nodeId;
+    baton.claimedAt = now;
+    baton.expiresAt = now + duration;
+    baton.status = 'watching';
+    
+    await this.batonsString.set(JSON.stringify(batons));
+    
+    // Verify we got it (in case of concurrent claim)
+    const updated = this.parseBatons(this.batonsString.value);
+    const claimed = updated.find(b => b.id === batonId);
+    return claimed?.claimedBy === nodeId;
+  }
+
+  async releaseBaton(batonId: string, nodeId: string): Promise<void> {
+    const batons = this.parseBatons(this.batonsString.value);
+    const baton = batons.find(b => b.id === batonId);
+    
+    if (!baton || baton.claimedBy !== nodeId) return;
+    
+    baton.claimedBy = undefined;
+    baton.claimedAt = undefined;
+    baton.expiresAt = undefined;
+    baton.status = 'idle';
+    
+    await this.batonsString.set(JSON.stringify(batons));
+  }
+
+  async updateBatonStatus(
+    batonId: string,
+    nodeId: string,
+    updates: Partial<FederationSyncBaton>
+  ): Promise<void> {
+    const batons = this.parseBatons(this.batonsString.value);
+    const baton = batons.find(b => b.id === batonId);
+    
+    if (!baton || baton.claimedBy !== nodeId) return;
+    
+    // Apply updates
+    Object.assign(baton, updates);
+    
+    // Extend expiration on activity
+    if (updates.status === 'syncing') {
+      baton.expiresAt = Date.now() + 5 * 60 * 1000;
+    }
+    
+    await this.batonsString.set(JSON.stringify(batons));
+  }
+
+  async getAvailableBatons(): Promise<FederationSyncBaton[]> {
+    const now = Date.now();
+    const batons = this.parseBatons(this.batonsString.value);
+    
+    return batons.filter(baton => 
+      !baton.claimedBy || !baton.expiresAt || baton.expiresAt < now
+    );
+  }
+
+  async getMyBatons(nodeId: string): Promise<FederationSyncBaton[]> {
+    const batons = this.parseBatons(this.batonsString.value);
+    return batons.filter(b => b.claimedBy === nodeId);
+  }
+
+  async getAllBatons(): Promise<FederationSyncBaton[]> {
+    return this.parseBatons(this.batonsString.value);
+  }
+}
+
+/**
+ * Event-driven federation sync manager
+ * Watches remote federation indexes and syncs changes in real-time
+ */
+export class EventFederationSyncV2 {
+  private peer: Peerbit;
+  private nodeId: string;
+  private registry: FederationSyncBatonRegistry;
+  private activeWatchers: Map<string, {
+    baton: FederationSyncBaton;
+    sourceFedIndex: PerSiteFederationIndex;
+    targetFedIndex: PerSiteFederationIndex;
+    unsubscribe?: () => void;
+  }> = new Map();
+
+  constructor(peer: Peerbit, nodeId: string, registry: FederationSyncBatonRegistry) {
+    this.peer = peer;
+    this.nodeId = nodeId;
+    this.registry = registry;
+  }
+
+  /**
+   * Start claiming and processing available batons
+   */
+  async start(
+    targetSites: Map<string, PerSiteFederationIndex>,
+    maxBatons: number = 10
+  ): Promise<void> {
+    // Watch for baton changes
+    this.registry.batonsString.events.addEventListener('change', async () => {
+      await this.claimAndProcessBatons(targetSites, maxBatons);
+    });
+    
+    // Initial claim attempt
+    await this.claimAndProcessBatons(targetSites, maxBatons);
+    
+    // Periodic heartbeat to extend claims and check for work
+    const heartbeatInterval = setInterval(async () => {
+      try {
+        // Extend our active claims
+        const myBatons = await this.registry.getMyBatons(this.nodeId);
+        for (const baton of myBatons) {
+          if (baton.status === 'watching' || baton.status === 'syncing') {
+            await this.registry.updateBatonStatus(baton.id, this.nodeId, {
+              expiresAt: Date.now() + 5 * 60 * 1000
+            });
+          }
+        }
+        
+        // Check for new work
+        await this.claimAndProcessBatons(targetSites, maxBatons);
+      } catch (error) {
+        console.error(`[EventFedSync ${this.nodeId}] Heartbeat error:`, error);
+      }
+    }, 30000); // Every 30 seconds
+    
+    (this as any)._heartbeatInterval = heartbeatInterval;
+  }
+
+  /**
+   * Stop all active watchers and release batons
+   */
+  async stop(): Promise<void> {
+    if ((this as any)._heartbeatInterval) {
+      clearInterval((this as any)._heartbeatInterval);
+    }
+
+    // Release all batons
+    for (const [batonId, watcher] of this.activeWatchers) {
+      if (watcher.unsubscribe) {
+        watcher.unsubscribe();
+      }
+      await this.registry.releaseBaton(batonId, this.nodeId);
+    }
+    
+    this.activeWatchers.clear();
+  }
+
+  private async claimAndProcessBatons(
+    targetSites: Map<string, PerSiteFederationIndex>,
+    maxBatons: number
+  ): Promise<void> {
+    if (this.activeWatchers.size >= maxBatons) return;
+    
+    const availableBatons = await this.registry.getAvailableBatons();
+    
+    // Filter for batons we can handle
+    const claimableBatons = availableBatons
+      .filter(b => targetSites.has(b.targetSiteId))
+      .slice(0, maxBatons - this.activeWatchers.size);
+    
+    for (const baton of claimableBatons) {
+      const claimed = await this.registry.claimBaton(baton.id, this.nodeId);
+      if (claimed) {
+        console.log(`[EventFedSync ${this.nodeId}] Claimed baton ${baton.id} for ${baton.sourceSiteId} → ${baton.targetSiteId}`);
+        await this.processBaton(baton, targetSites.get(baton.targetSiteId)!);
+      }
+    }
+  }
+
+  private async processBaton(
+    baton: FederationSyncBaton,
+    targetFedIndex: PerSiteFederationIndex
+  ): Promise<void> {
+    try {
+      // Open the source site's federation index
+      const sourceFedIndex = await this.peer.open(
+        new PerSiteFederationIndex(), 
+        {
+          args: {
+            replicate: true,
+            role: 'observer'
+          },
+          existing: baton.sourceSiteId
+        }
+      );
+
+      console.log(`[EventFedSync ${this.nodeId}] Watching ${baton.sourceSiteId} federation index`);
+
+      // Initial sync
+      const existingEntries = await sourceFedIndex.getAllEntries();
+      let syncedCount = 0;
+
+      for (const entry of existingEntries) {
+        try {
+          // Check recursive setting
+          if (!baton.recursive && entry.sourceSiteId !== baton.sourceSiteId) {
+            continue;
+          }
+          
+          const targetEntry = new IndexableFederationEntry({
+            ...entry,
+            id: `${baton.targetSiteId}:${entry.contentCID}`,
+          });
+
+          await targetFedIndex.insertContent(targetEntry);
+          syncedCount++;
+        } catch (error) {
+          console.error(`[EventFedSync ${this.nodeId}] Error syncing entry:`, error);
+        }
+      }
+
+      await this.registry.updateBatonStatus(baton.id, this.nodeId, {
+        entriesSynced: baton.entriesSynced + syncedCount
+      });
+      
+      console.log(`[EventFedSync ${this.nodeId}] Initial sync: ${syncedCount} entries`);
+
+      // Set up real-time watching
+      const handleChange = async (change: any) => {
+        if (change.detail?.type === 'put') {
+          const entry = change.detail.value;
+          if (entry) {
+            try {
+              if (!baton.recursive && entry.sourceSiteId !== baton.sourceSiteId) {
+                return;
+              }
+              
+              await this.registry.updateBatonStatus(baton.id, this.nodeId, {
+                status: 'syncing'
+              });
+              
+              const targetEntry = new IndexableFederationEntry({
+                ...entry,
+                id: `${baton.targetSiteId}:${entry.contentCID}`,
+              });
+
+              await targetFedIndex.insertContent(targetEntry);
+              
+              await this.registry.updateBatonStatus(baton.id, this.nodeId, {
+                status: 'watching',
+                entriesSynced: baton.entriesSynced + 1
+              });
+              
+              console.log(`[EventFedSync ${this.nodeId}] Synced: ${entry.title}`);
+            } catch (error) {
+              console.error(`[EventFedSync ${this.nodeId}] Error:`, error);
+            }
+          }
+        }
+      };
+
+      sourceFedIndex.events.addEventListener('change', handleChange);
+
+      this.activeWatchers.set(baton.id, {
+        baton,
+        sourceFedIndex,
+        targetFedIndex,
+        unsubscribe: () => {
+          sourceFedIndex.events.removeEventListener('change', handleChange);
+        }
+      });
+
+      await this.registry.updateBatonStatus(baton.id, this.nodeId, {
+        status: 'watching'
+      });
+
+    } catch (error) {
+      console.error(`[EventFedSync ${this.nodeId}] Error processing baton:`, error);
+      await this.registry.updateBatonStatus(baton.id, this.nodeId, {
+        status: 'error',
+        lastError: error instanceof Error ? error.message : String(error)
+      });
+      
+      await this.registry.releaseBaton(baton.id, this.nodeId);
+      this.activeWatchers.delete(baton.id);
+    }
+  }
+
+  async getStats(): Promise<{
+    activeBatons: number;
+    totalSynced: number;
+    batonDetails: Array<{
+      id: string;
+      source: string;
+      target: string;
+      status: string;
+      synced: number;
+    }>;
+  }> {
+    const myBatons = await this.registry.getMyBatons(this.nodeId);
+    let totalSynced = 0;
+    const batonDetails = [];
+
+    for (const baton of myBatons) {
+      totalSynced += baton.entriesSynced;
+      batonDetails.push({
+        id: baton.id,
+        source: baton.sourceSiteId,
+        target: baton.targetSiteId,
+        status: baton.status,
+        synced: baton.entriesSynced
+      });
+    }
+
+    return {
+      activeBatons: myBatons.length,
+      totalSynced,
+      batonDetails
+    };
+  }
+}

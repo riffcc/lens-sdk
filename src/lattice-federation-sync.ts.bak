@@ -1,0 +1,465 @@
+import { Peerbit } from 'peerbit';
+import { PerSiteFederationIndex, IndexableFederationEntry } from './per-site-federation-index';
+import { createHash } from 'crypto';
+
+/**
+ * Federation edge representing a follow relationship
+ */
+export interface FederationEdge {
+  sourceSiteId: string;  // Site being followed
+  targetSiteId: string;  // Site doing the following
+  recursive: boolean;    // Whether to sync transitively
+}
+
+/**
+ * Lattice-based federation sync
+ * 
+ * Each node automatically determines which federation edges it should handle
+ * based on consistent hashing. No coordination or batons needed!
+ * 
+ * The lattice emerges from:
+ * 1. All nodes see the same federation graph (who follows whom)
+ * 2. Consistent hashing assigns edges to nodes deterministically
+ * 3. Nodes naturally pick up slack when others fail
+ */
+export class LatticeFederationSync {
+  private peer: Peerbit;
+  private nodeId: string;
+  private activeWatchers: Map<string, {
+    edge: FederationEdge;
+    sourceFedIndex: PerSiteFederationIndex;
+    targetFedIndex: PerSiteFederationIndex;
+    unsubscribe?: () => void;
+  }> = new Map();
+  
+  // Cache of opened source federation indexes to avoid duplicates
+  private sourceIndexCache: Map<string, PerSiteFederationIndex> = new Map();
+  
+  // Sites this node is replicating (gives it write access)
+  private replicatingSites: Set<string>;
+  
+  // All known federation edges in the network
+  // Key format: `${sourceSiteId}:${targetSiteId}:${recursive}` to handle duplicate follows with different params
+  private federationGraph: Map<string, FederationEdge> = new Map();
+  
+  // Active nodes in the network (could be discovered via DHT/gossip)
+  private activeNodes: Set<string> = new Set();
+  
+  constructor(
+    peer: Peerbit, 
+    nodeId: string,
+    replicatingSites: string[] = []
+  ) {
+    this.peer = peer;
+    this.nodeId = nodeId;
+    this.replicatingSites = new Set(replicatingSites);
+  }
+  
+  /**
+   * Hash a string to a 128-bit value for consistent hashing
+   * Returns as two 64-bit BigInts for better distribution
+   */
+  private hash(str: string): { high: bigint; low: bigint } {
+    const hash = createHash('sha256').update(str).digest();
+    const high = hash.readBigUInt64BE(0);
+    const low = hash.readBigUInt64BE(8);
+    return { high, low };
+  }
+  
+  /**
+   * Calculate "distance" between two hashes on the ring
+   * Using 128-bit arithmetic for better distribution
+   */
+  private ringDistance(hash1: { high: bigint; low: bigint }, hash2: { high: bigint; low: bigint }): bigint {
+    // Compare high bits first, then low bits
+    if (hash1.high !== hash2.high) {
+      const diff = hash2.high - hash1.high;
+      return diff >= 0n ? diff : diff + (1n << 64n);
+    }
+    const diff = hash2.low - hash1.low;
+    return diff >= 0n ? diff : diff + (1n << 64n);
+  }
+  
+  /**
+   * Determine which nodes should handle a given federation edge
+   * using honeycomb-inspired DHT routing with deterministic assignment
+   * 
+   * This uses a Vesper-style approach where:
+   * 1. Each edge gets multiple "responsibility points" in the hash space
+   * 2. Nodes claim the edges whose points are closest to them
+   * 3. Natural load balancing emerges from the distribution
+   */
+  private getResponsibleNodes(
+    edge: FederationEdge, 
+    replicationFactor: number = 3
+  ): string[] {
+    // Create multiple hash points for this edge (honeycomb-style)
+    // This helps with load distribution and fault tolerance
+    const edgeId = `${edge.sourceSiteId}:${edge.targetSiteId}`;
+    const responsibleNodes = new Set<string>();
+    
+    // Generate replicationFactor different points in hash space
+    for (let replica = 0; replica < replicationFactor; replica++) {
+      // Each replica gets a different position in the hash ring
+      const replicaId = `${edgeId}:replica:${replica}`;
+      const replicaHash = this.hash(replicaId);
+      
+      // Find the node closest to this replica point
+      let closestNode = '';
+      let closestDistance = 2n ** 128n; // Max possible distance
+      
+      for (const nodeId of this.activeNodes) {
+        const nodeHash = this.hash(nodeId);
+        const distance = this.ringDistance(nodeHash, replicaHash);
+        
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestNode = nodeId;
+        }
+      }
+      
+      if (closestNode) {
+        responsibleNodes.add(closestNode);
+      }
+    }
+    
+    // Convert to array, ensuring we have at least one node
+    const result = Array.from(responsibleNodes);
+    
+    // If we don't have enough unique nodes (small network), 
+    // fall back to simple closest-N approach
+    if (result.length < replicationFactor && this.activeNodes.size >= replicationFactor) {
+      const edgeHash = this.hash(edgeId);
+      const nodeDistances = Array.from(this.activeNodes).map(nodeId => ({
+        nodeId,
+        distance: this.ringDistance(this.hash(nodeId), edgeHash)
+      })).sort((a, b) => {
+        if (a.distance < b.distance) return -1;
+        if (a.distance > b.distance) return 1;
+        return 0;
+      });
+      
+      // Add more nodes up to replicationFactor
+      for (const node of nodeDistances) {
+        if (!responsibleNodes.has(node.nodeId)) {
+          result.push(node.nodeId);
+          if (result.length >= replicationFactor) break;
+        }
+      }
+    }
+    
+    return result;
+  }
+  
+  /**
+   * Get edges this node should handle based on:
+   * 1. Consistent hashing assignment
+   * 2. Whether we have write access to the target site
+   */
+  private getMyResponsibilities(): FederationEdge[] {
+    const myEdges: FederationEdge[] = [];
+    
+    for (const edge of this.federationGraph.values()) {
+      // Check if we're assigned to this edge
+      const responsibleNodes = this.getResponsibleNodes(edge);
+      if (!responsibleNodes.includes(this.nodeId)) {
+        continue;
+      }
+      
+      // Check if we can write to the target site
+      if (!this.replicatingSites.has(edge.targetSiteId)) {
+        // We can't sync to sites we don't replicate
+        console.log(`[LatticeFedSync ${this.nodeId}] Skipping edge ${edge.sourceSiteId}→${edge.targetSiteId} - no write access`);
+        continue;
+      }
+      
+      myEdges.push(edge);
+    }
+    
+    return myEdges;
+  }
+  
+  /**
+   * Update the known federation graph
+   * In practice, this could be discovered from:
+   * - Subscription stores on each site
+   * - A shared federation registry
+   * - Gossip protocol
+   */
+  async updateFederationGraph(edges: FederationEdge[]): Promise<void> {
+    // Update our view of the federation graph
+    this.federationGraph.clear();
+    for (const edge of edges) {
+      // Include recursive flag in key to handle different follow types
+      const key = `${edge.sourceSiteId}:${edge.targetSiteId}:${edge.recursive}`;
+      this.federationGraph.set(key, edge);
+    }
+    
+    // Recalculate our responsibilities
+    await this.syncResponsibilities();
+  }
+  
+  /**
+   * Update the list of active nodes
+   * This triggers recalculation of responsibilities
+   */
+  async updateActiveNodes(nodes: string[]): Promise<void> {
+    const changed = nodes.length !== this.activeNodes.size ||
+      nodes.some(n => !this.activeNodes.has(n));
+    
+    if (changed) {
+      this.activeNodes = new Set(nodes);
+      console.log(`[LatticeFedSync ${this.nodeId}] Active nodes updated: ${nodes.length} nodes`);
+      await this.syncResponsibilities();
+    }
+  }
+  
+  /**
+   * Start syncing based on lattice assignments
+   */
+  async start(
+    federationIndexes: Map<string, PerSiteFederationIndex>
+  ): Promise<void> {
+    console.log(`[LatticeFedSync ${this.nodeId}] Starting with ${this.replicatingSites.size} replicated sites`);
+    
+    // Store federation indexes for sites we replicate
+    this.federationIndexes = federationIndexes;
+    
+    // Add ourselves to active nodes
+    this.activeNodes.add(this.nodeId);
+    
+    // Start syncing our responsibilities
+    await this.syncResponsibilities();
+    
+    // Periodic rebalancing (in case we missed updates)
+    this.rebalanceInterval = setInterval(async () => {
+      await this.syncResponsibilities();
+    }, 60000); // Every minute
+  }
+  
+  private federationIndexes?: Map<string, PerSiteFederationIndex>;
+  private rebalanceInterval?: NodeJS.Timeout;
+  
+  /**
+   * Stop all syncing and clean up resources
+   */
+  async stop(): Promise<void> {
+    if (this.rebalanceInterval) {
+      clearInterval(this.rebalanceInterval);
+    }
+    
+    // Stop all watchers
+    for (const [key, watcher] of this.activeWatchers) {
+      if (watcher.unsubscribe) {
+        watcher.unsubscribe();
+      }
+    }
+    this.activeWatchers.clear();
+    
+    // Close all cached source indexes
+    for (const [siteId, index] of this.sourceIndexCache) {
+      try {
+        await index.close();
+      } catch (error) {
+        console.error(`[LatticeFedSync ${this.nodeId}] Error closing source index ${siteId}:`, error);
+      }
+    }
+    this.sourceIndexCache.clear();
+  }
+  
+  /**
+   * Sync our assigned federation edges
+   */
+  private async syncResponsibilities(): Promise<void> {
+    const myEdges = this.getMyResponsibilities();
+    const currentKeys = new Set(this.activeWatchers.keys());
+    const newKeys = new Set(myEdges.map(e => `${e.sourceSiteId}:${e.targetSiteId}:${e.recursive}`));
+    
+    // Stop watching edges we're no longer responsible for
+    for (const key of currentKeys) {
+      if (!newKeys.has(key)) {
+        console.log(`[LatticeFedSync ${this.nodeId}] Releasing edge ${key}`);
+        const watcher = this.activeWatchers.get(key);
+        if (watcher?.unsubscribe) {
+          watcher.unsubscribe();
+        }
+        this.activeWatchers.delete(key);
+      }
+    }
+    
+    // Start watching new edges
+    for (const edge of myEdges) {
+      const key = `${edge.sourceSiteId}:${edge.targetSiteId}:${edge.recursive}`;
+      if (!currentKeys.has(key)) {
+        console.log(`[LatticeFedSync ${this.nodeId}] Taking responsibility for edge ${key}`);
+        await this.syncEdge(edge);
+      }
+    }
+    
+    console.log(`[LatticeFedSync ${this.nodeId}] Now syncing ${this.activeWatchers.size} edges`);
+  }
+  
+  /**
+   * Sync a specific federation edge
+   */
+  private async syncEdge(edge: FederationEdge): Promise<void> {
+    const key = `${edge.sourceSiteId}:${edge.targetSiteId}:${edge.recursive}`;
+    
+    try {
+      // Get the target federation index (we must be replicating it)
+      const targetFedIndex = this.federationIndexes?.get(edge.targetSiteId);
+      if (!targetFedIndex) {
+        console.error(`[LatticeFedSync ${this.nodeId}] No federation index for target ${edge.targetSiteId}`);
+        return;
+      }
+      
+      // Get or create source federation index from cache
+      let sourceFedIndex = this.sourceIndexCache.get(edge.sourceSiteId);
+      if (!sourceFedIndex) {
+        // Check if we already have this index in our federationIndexes map
+        sourceFedIndex = this.federationIndexes?.get(edge.sourceSiteId);
+        
+        if (sourceFedIndex) {
+          // We already have this index opened locally
+          this.sourceIndexCache.set(edge.sourceSiteId, sourceFedIndex);
+          console.log(`[LatticeFedSync ${this.nodeId}] Using local source index for ${edge.sourceSiteId}`);
+        } else {
+          // Open the remote index
+          try {
+            sourceFedIndex = await this.peer.open(
+              new PerSiteFederationIndex(),
+              {
+                args: {
+                  replicate: true,
+                  role: 'observer'  // Read-only access
+                },
+                existing: edge.sourceSiteId
+              }
+            );
+            this.sourceIndexCache.set(edge.sourceSiteId, sourceFedIndex);
+            console.log(`[LatticeFedSync ${this.nodeId}] Opened remote source index for ${edge.sourceSiteId}`);
+          } catch (error) {
+            console.error(`[LatticeFedSync ${this.nodeId}] Failed to open source index ${edge.sourceSiteId}:`, error);
+            return;
+          }
+        }
+      } else {
+        console.log(`[LatticeFedSync ${this.nodeId}] Reusing cached source index for ${edge.sourceSiteId}`);
+      }
+      
+      // Initial sync of existing entries
+      const existingEntries = await sourceFedIndex.getAllEntries();
+      let syncedCount = 0;
+      
+      for (const entry of existingEntries) {
+        try {
+          // Check recursive setting
+          if (!edge.recursive && entry.sourceSiteId !== edge.sourceSiteId) {
+            continue;
+          }
+          
+          // Create entry for target site
+          const targetEntry = new IndexableFederationEntry({
+            ...entry,
+            id: `${edge.targetSiteId}:${entry.contentCID}`,
+            // sourceSiteId preserved to show original creator
+          });
+          
+          await targetFedIndex.insertContent(targetEntry);
+          syncedCount++;
+        } catch (error) {
+          // Ignore duplicate entries
+        }
+      }
+      
+      console.log(`[LatticeFedSync ${this.nodeId}] Initial sync of ${key}: ${syncedCount} entries`);
+      
+      // Set up real-time sync
+      const handleChange = async (change: any) => {
+        if (change.detail?.type === 'put') {
+          const entry = change.detail.value;
+          if (entry) {
+            try {
+              // Check recursive setting
+              if (!edge.recursive && entry.sourceSiteId !== edge.sourceSiteId) {
+                return;
+              }
+              
+              const targetEntry = new IndexableFederationEntry({
+                ...entry,
+                id: `${edge.targetSiteId}:${entry.contentCID}`,
+              });
+              
+              await targetFedIndex.insertContent(targetEntry);
+              console.log(`[LatticeFedSync ${this.nodeId}] Synced: ${entry.title} via ${key}`);
+            } catch (error) {
+              // Ignore errors (likely duplicates)
+            }
+          }
+        }
+      };
+      
+      sourceFedIndex.events.addEventListener('change', handleChange);
+      
+      // Store the watcher
+      this.activeWatchers.set(key, {
+        edge,
+        sourceFedIndex,
+        targetFedIndex,
+        unsubscribe: () => {
+          sourceFedIndex.events.removeEventListener('change', handleChange);
+        }
+      });
+      
+    } catch (error) {
+      console.error(`[LatticeFedSync ${this.nodeId}] Error syncing edge ${key}:`, error);
+    }
+  }
+  
+  /**
+   * Get current sync statistics
+   */
+  getStats(): {
+    nodeId: string;
+    activeEdges: number;
+    responsibilities: string[];
+    replicatingSites: string[];
+  } {
+    return {
+      nodeId: this.nodeId,
+      activeEdges: this.activeWatchers.size,
+      responsibilities: Array.from(this.activeWatchers.keys()),
+      replicatingSites: Array.from(this.replicatingSites)
+    };
+  }
+}
+
+/**
+ * Federation graph discovery
+ * 
+ * In a real implementation, this would discover federation relationships
+ * from subscription stores or a gossip protocol
+ */
+export class FederationGraphDiscovery {
+  /**
+   * Discover federation edges from sites' subscription data
+   * This is a simplified version - real implementation would query actual subscription stores
+   */
+  static async discoverEdges(
+    sites: Map<string, { follows: Array<{ siteId: string; recursive: boolean }> }>
+  ): Promise<FederationEdge[]> {
+    const edges: FederationEdge[] = [];
+    
+    for (const [targetSiteId, siteData] of sites) {
+      for (const follow of siteData.follows) {
+        edges.push({
+          sourceSiteId: follow.siteId,
+          targetSiteId,
+          recursive: follow.recursive
+        });
+      }
+    }
+    
+    return edges;
+  }
+}
