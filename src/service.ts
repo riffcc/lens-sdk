@@ -311,7 +311,7 @@ export class ElectronLensService implements ILensService {
 
 export class LensService implements ILensService {
   client: Peerbit | null = null;
-  siteProgram: Site | null = null;
+  public siteProgram: Site | null = null;
   private extenarlyManaged: boolean = false;
 
   constructor(client?: Peerbit) {
@@ -627,31 +627,9 @@ export class LensService implements ILensService {
       const release = new Release(data);
       const result = await siteProgram.releases.put(release);
 
-      // Also add to federation index
-      console.log('[LensSDK] Adding release to federation index...');
-      const metadata = data[RELEASE_METADATA_PROPERTY] ? JSON.parse(data[RELEASE_METADATA_PROPERTY] as string) : {};
-      const federationEntry: FederationIndexEntry = {
-        contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
-        title: release[RELEASE_NAME_PROPERTY],
-        thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
-        coverCID: metadata.Cover || undefined,
-        categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || '',
-        sourceSiteId: await this.getSiteId(),
-        timestamp: Date.now(),
-        isFeatured: metadata.isFeatured || false,
-        isPromoted: metadata.isPromoted || false,
-        featuredUntil: metadata.featuredUntil,
-        promotedUntil: metadata.promotedUntil,
-      };
-      
-      console.log('[LensSDK] Federation entry:', federationEntry);
-      
-      try {
-        await siteProgram.federationIndex.insertContent(federationEntry);
-        console.log('[LensSDK] Successfully added to federation index');
-      } catch (error) {
-        console.error('[LensSDK] Failed to add to federation index:', error);
-      }
+      // Update federation index using the single source of truth method
+      console.log('[LensSDK] Updating federation index for new release...');
+      await this.updateFederationIndexForRelease(release.id);
 
       return {
         success: true,
@@ -674,29 +652,9 @@ export class LensService implements ILensService {
       const release = new Release(data);
       const result = await siteProgram.releases.put(release);
 
-      // Also update in federation index
-      const siteId = await this.getSiteId();
-      
-      // Delete old entry and insert new one
-      const entryId = `${siteId}:${release[RELEASE_CONTENT_CID_PROPERTY]}`;
-      await siteProgram.federationIndex.removeContent(entryId);
-      
-      const metadata = data[RELEASE_METADATA_PROPERTY] ? JSON.parse(data[RELEASE_METADATA_PROPERTY] as string) : {};
-      const federationEntry: FederationIndexEntry = {
-        contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
-        title: release[RELEASE_NAME_PROPERTY],
-        thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
-        coverCID: metadata.Cover || undefined,
-        categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || '',
-        sourceSiteId: siteId,
-        timestamp: Date.now(),
-        isFeatured: metadata.isFeatured || false,
-        isPromoted: metadata.isPromoted || false,
-        featuredUntil: metadata.featuredUntil,
-        promotedUntil: metadata.promotedUntil,
-      };
-      
-      await siteProgram.federationIndex.insertContent(federationEntry);
+      // Update federation index using the single source of truth method
+      console.log('[LensSDK] Updating federation index for edited release...');
+      await this.updateFederationIndexForRelease(release.id);
 
       return {
         success: true,
@@ -768,64 +726,8 @@ export class LensService implements ILensService {
       const featuredRelease = new FeaturedRelease(data);
       const result = await siteProgram.featuredReleases.put(featuredRelease);
 
-      // Update the federation index entry to mark it as featured/promoted
-      try {
-        console.log('[LensSDK] addFeaturedRelease - data:', data);
-        console.log('[LensSDK] addFeaturedRelease - isPromoted:', data[FEATURED_PROMOTED_PROPERTY]);
-        
-        const siteId = await this.getSiteId();
-        const entryId = `${siteId}:${targetRelease[RELEASE_CONTENT_CID_PROPERTY]}`;
-        
-        // Get existing entry to preserve other fields
-        const existingEntries = await siteProgram.federationIndex.getAllEntries();
-        const existingEntry = existingEntries.find(e => e.id === entryId);
-        
-        if (existingEntry) {
-          // Update existing entry
-          await siteProgram.federationIndex.removeContent(entryId);
-          
-          const updatedEntry: FederationIndexEntry = {
-            contentCID: existingEntry.contentCID,
-            title: existingEntry.title,
-            thumbnailCID: existingEntry.thumbnailCID,
-            coverCID: existingEntry.coverCID,
-            categoryId: existingEntry.categoryId,
-            sourceSiteId: existingEntry.sourceSiteId,
-            timestamp: typeof existingEntry.timestamp === 'bigint' ? Number(existingEntry.timestamp) : existingEntry.timestamp,
-            isFeatured: true, // Always featured when adding a featured release
-            isPromoted: data[FEATURED_PROMOTED_PROPERTY] || false,
-            featuredUntil: Number(data[FEATURED_END_TIME_PROPERTY]), // Always set when featuring
-            promotedUntil: data[FEATURED_PROMOTED_PROPERTY] ? Number(data[FEATURED_END_TIME_PROPERTY]) : undefined,
-          };
-          
-          await siteProgram.federationIndex.insertContent(updatedEntry);
-          console.log('[LensSDK] Updated federation index entry for featured release');
-        } else {
-          // Create new federation index entry if it doesn't exist
-          console.log('[LensSDK] Creating new federation index entry for featured release');
-          const metadata = targetRelease[RELEASE_METADATA_PROPERTY] ? JSON.parse(targetRelease[RELEASE_METADATA_PROPERTY] as string) : {};
-          
-          const newEntry: FederationIndexEntry = {
-            contentCID: targetRelease[RELEASE_CONTENT_CID_PROPERTY],
-            title: targetRelease[RELEASE_NAME_PROPERTY],
-            thumbnailCID: targetRelease[RELEASE_THUMBNAIL_CID_PROPERTY],
-            coverCID: metadata.Cover || undefined,
-            categoryId: targetRelease[RELEASE_CATEGORY_ID_PROPERTY] || '',
-            sourceSiteId: siteId,
-            timestamp: Date.now(),
-            isFeatured: true, // Always featured when adding a featured release
-            isPromoted: data[FEATURED_PROMOTED_PROPERTY] || false,
-            featuredUntil: Number(data[FEATURED_END_TIME_PROPERTY]), // Always set when featuring
-            promotedUntil: data[FEATURED_PROMOTED_PROPERTY] ? Number(data[FEATURED_END_TIME_PROPERTY]) : undefined,
-          };
-          
-          await siteProgram.federationIndex.insertContent(newEntry);
-          console.log('[LensSDK] Created new federation index entry for featured release');
-        }
-      } catch (error) {
-        console.error('[LensSDK] Failed to update federation index for featured release:', error);
-        // Don't fail the whole operation if federation index update fails
-      }
+      // Update federation index using the single source of truth method
+      await this.updateFederationIndexForRelease(data[FEATURED_RELEASE_ID_PROPERTY]);
 
       return {
         success: true,
@@ -846,6 +748,9 @@ export class LensService implements ILensService {
 
       const featuredRelease = new FeaturedRelease(data);
       const result = await siteProgram.featuredReleases.put(featuredRelease);
+
+      // Update federation index using the single source of truth method
+      await this.updateFederationIndexForRelease(data[FEATURED_RELEASE_ID_PROPERTY]);
 
       return {
         success: true,
@@ -872,39 +777,7 @@ export class LensService implements ILensService {
       
       // Update the federation index to remove featured/promoted flags
       if (featuredRelease) {
-        try {
-          const targetRelease = await this.getRelease({ id: featuredRelease[FEATURED_RELEASE_ID_PROPERTY] });
-          if (targetRelease) {
-            const siteId = await this.getSiteId();
-            const entryId = `${siteId}:${targetRelease[RELEASE_CONTENT_CID_PROPERTY]}`;
-            
-            const existingEntries = await siteProgram.federationIndex.getAllEntries();
-            const existingEntry = existingEntries.find(e => e.id === entryId);
-            
-            if (existingEntry) {
-              await siteProgram.federationIndex.removeContent(entryId);
-              
-              const updatedEntry: FederationIndexEntry = {
-                contentCID: existingEntry.contentCID,
-                title: existingEntry.title,
-                thumbnailCID: existingEntry.thumbnailCID,
-                coverCID: existingEntry.coverCID,
-                categoryId: existingEntry.categoryId,
-                sourceSiteId: existingEntry.sourceSiteId,
-                timestamp: existingEntry.timestamp,
-                isFeatured: false,
-                isPromoted: false,
-                featuredUntil: undefined,
-                promotedUntil: undefined,
-              };
-              
-              await siteProgram.federationIndex.insertContent(updatedEntry);
-              console.log('[LensSDK] Removed featured/promoted flags from federation index');
-            }
-          }
-        } catch (error) {
-          console.error('[LensSDK] Failed to update federation index after featured release deletion:', error);
-        }
+        await this.updateFederationIndexForRelease(featuredRelease[FEATURED_RELEASE_ID_PROPERTY]);
       }
       
       return {
@@ -1113,25 +986,86 @@ export class LensService implements ILensService {
         }
       }
       
+      // Get all featured releases to check which releases should be featured
+      const featuredReleases = await this.getFeaturedReleases();
+      const featuredMap = new Map<string, any>();
+      
+      console.log('[LensSDK] Featured releases count:', featuredReleases.length);
+      
+      for (const fr of featuredReleases) {
+        const releaseId = fr[FEATURED_RELEASE_ID_PROPERTY];
+        const endTime = fr[FEATURED_END_TIME_PROPERTY];
+        const isPromoted = fr[FEATURED_PROMOTED_PROPERTY];
+        const now = Date.now();
+        
+        // Parse endTime as ISO date string to get timestamp
+        const endTimeMs = endTime ? new Date(endTime).getTime() : undefined;
+        
+        console.log('[LensSDK] Featured release:', {
+          releaseId,
+          endTime,
+          endTimeMs,
+          isPromoted,
+          expired: endTimeMs && endTimeMs <= now
+        });
+        
+        // Only include if not expired
+        if (!endTimeMs || endTimeMs > now) {
+          featuredMap.set(releaseId, {
+            isFeatured: true,
+            isPromoted: Boolean(isPromoted),
+            featuredUntil: endTimeMs,
+            promotedUntil: Boolean(isPromoted) ? endTimeMs : undefined,
+          });
+        }
+      }
+      
+      console.log('[LensSDK] Featured map size:', featuredMap.size);
+
       // Re-add all releases to federation index
       for (const release of releases) {
         try {
-          const metadata = release[RELEASE_METADATA_PROPERTY] 
-            ? JSON.parse(release[RELEASE_METADATA_PROPERTY] as string) 
-            : {};
+          console.log('[LensSDK] Reindex release:', release.id, 'metadata raw:', release[RELEASE_METADATA_PROPERTY]);
+          console.log('[LensSDK] Metadata type:', typeof release[RELEASE_METADATA_PROPERTY]);
+          
+          let metadata;
+          if (release[RELEASE_METADATA_PROPERTY]) {
+            if (typeof release[RELEASE_METADATA_PROPERTY] === 'string') {
+              metadata = JSON.parse(release[RELEASE_METADATA_PROPERTY]);
+            } else {
+              metadata = release[RELEASE_METADATA_PROPERTY];
+            }
+          } else {
+            metadata = {};
+          }
+          
+          console.log('[LensSDK] Parsed metadata:', metadata);
+          console.log('[LensSDK] Cover value:', metadata.cover);
+          
+          // Check if this release is featured
+          const featuredInfo = featuredMap.get(release.id) || {
+            isFeatured: false,
+            isPromoted: false,
+            featuredUntil: undefined,
+            promotedUntil: undefined,
+          };
+          
+          if (featuredMap.has(release.id)) {
+            console.log('[LensSDK] Release is featured:', release.id, featuredInfo);
+          }
             
           const federationEntry: FederationIndexEntry = {
             contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
             title: release[RELEASE_NAME_PROPERTY],
             thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
-            coverCID: metadata.Cover || undefined,
+            coverCID: metadata.cover || undefined,
             categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || '',
             sourceSiteId: siteId,
             timestamp: Date.now(),
-            isFeatured: metadata.isFeatured || false,
-            isPromoted: metadata.isPromoted || false,
-            featuredUntil: metadata.featuredUntil,
-            promotedUntil: metadata.promotedUntil,
+            isFeatured: featuredInfo.isFeatured,
+            isPromoted: featuredInfo.isPromoted,
+            featuredUntil: featuredInfo.featuredUntil,
+            promotedUntil: featuredInfo.promotedUntil,
           };
           
           await siteProgram.federationIndex.insertContent(federationEntry);
@@ -1156,6 +1090,97 @@ export class LensService implements ILensService {
         reindexed,
         errors,
       };
+    }
+  }
+
+  /**
+   * Updates federation index for a single release
+   * This is the single source of truth for federation index entries
+   */
+  private async updateFederationIndexForRelease(releaseId: string): Promise<void> {
+    const { siteProgram } = this.ensureSiteOpened();
+    const siteId = await this.getSiteId();
+    
+    try {
+      // Get the release
+      const release = await siteProgram.releases.index.get(releaseId);
+      if (!release) {
+        console.warn('[LensSDK] Release not found for federation index update:', releaseId);
+        return;
+      }
+      
+      // Remove existing entry if it exists
+      const entryId = `${siteId}:${release[RELEASE_CONTENT_CID_PROPERTY]}`;
+      try {
+        await siteProgram.federationIndex.removeContent(entryId);
+      } catch (e) {
+        // Ignore errors - entry might not exist
+      }
+      
+      // Parse metadata
+      let metadata: any = {};
+      if (release[RELEASE_METADATA_PROPERTY]) {
+        try {
+          metadata = typeof release[RELEASE_METADATA_PROPERTY] === 'string' 
+            ? JSON.parse(release[RELEASE_METADATA_PROPERTY])
+            : release[RELEASE_METADATA_PROPERTY];
+        } catch (e) {
+          console.error('[LensSDK] Failed to parse metadata for release:', releaseId, e);
+        }
+      }
+      
+      // Check if this release is featured
+      const featuredReleases = await siteProgram.featuredReleases.index.search(
+        new SearchRequest({
+          query: [
+            new StringMatch({
+              key: FEATURED_RELEASE_ID_PROPERTY,
+              value: releaseId,
+            }),
+          ],
+        }),
+      );
+      
+      let featuredInfo = {
+        isFeatured: false,
+        isPromoted: false,
+        featuredUntil: undefined as number | undefined,
+        promotedUntil: undefined as number | undefined,
+      };
+      
+      if (featuredReleases.length > 0) {
+        const fr = featuredReleases[0];
+        const endTime = fr[FEATURED_END_TIME_PROPERTY];
+        const endTimeMs = endTime ? new Date(endTime).getTime() : undefined;
+        const now = Date.now();
+        
+        if (!endTimeMs || endTimeMs > now) {
+          featuredInfo = {
+            isFeatured: true,
+            isPromoted: Boolean(fr[FEATURED_PROMOTED_PROPERTY]),
+            featuredUntil: endTimeMs,
+            promotedUntil: Boolean(fr[FEATURED_PROMOTED_PROPERTY]) ? endTimeMs : undefined,
+          };
+        }
+      }
+      
+      // Create federation entry
+      const federationEntry: FederationIndexEntry = {
+        contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
+        title: release[RELEASE_NAME_PROPERTY],
+        thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
+        coverCID: metadata.cover || undefined,
+        categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || '',
+        sourceSiteId: siteId,
+        timestamp: Date.now(),
+        ...featuredInfo,
+      };
+      
+      await siteProgram.federationIndex.insertContent(federationEntry);
+      console.log('[LensSDK] Updated federation index for release:', releaseId);
+      
+    } catch (error) {
+      console.error('[LensSDK] Failed to update federation index for release:', releaseId, error);
     }
   }
 

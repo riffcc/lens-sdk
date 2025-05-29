@@ -67,4 +67,6 @@ export { publicSignKeyFromString } from './utils';
 
 export { SubscriptionSyncManager } from './sync';
 
+export { PerLensFederationSync, createLensCoordinationStore } from './per-lens-federation-sync';
+
 export { SearchRequest } from '@peerbit/document';

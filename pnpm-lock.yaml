@@ -29,6 +29,9 @@ importers:
       '@peerbit/shared-log':
         specifier: ^11.2.3
         version: 11.2.3(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))
+      '@peerbit/string':
+        specifier: ^5.0.92
+        version: 5.0.92(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))
       '@peerbit/time':
         specifier: ^2.1.0
         version: 2.1.0
@@ -903,6 +906,9 @@ packages:
   '@peerbit/stream@4.3.4':
     resolution: {integrity: sha512-tVhgfrzUOtCxzGDc3Y/ff6AOIARhJYbbteCXfk12dFOW19hPy8O98HZCDG7JNAgtymrWA9ptdpTjPUig7RR+ag==}
     engines: {node: '>=16.15.1'}
+
+  '@peerbit/string@5.0.92':
+    resolution: {integrity: sha512-fMOtE1mue5TVXvn4Fsv4opu/Ta/lrXTUaJUfNRfj7HxbyBduoZAyBU+jHEGwDsm2n87fhcMztDrMhmPRdBb0zw==}
 
   '@peerbit/test-utils@2.1.46':
     resolution: {integrity: sha512-HGK2sz8DN+Ni8yFszA62LEQyR3LfmA7pJ+drCmwZAG1VN7fOSsglTf/hvoYI2I9PWXgXFLELO3gV+nYi4UwPvg==}
@@ -4670,6 +4676,20 @@ snapshots:
       libp2p: 2.8.5
       p-queue: 8.1.0
       yallist: 4.0.0
+
+  '@peerbit/string@5.0.92(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))':
+    dependencies:
+      '@dao-xyz/borsh': 5.2.3
+      '@peerbit/logger': 1.0.3
+      '@peerbit/program': 5.2.11(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))
+      '@peerbit/rpc': 5.3.3(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))
+      '@peerbit/shared-log': 11.2.3(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))
+      '@peerbit/time': 2.1.0
+    transitivePeerDependencies:
+      - bufferutil
+      - react-native
+      - supports-color
+      - utf-8-validate
 
   '@peerbit/test-utils@2.1.46(react-native@0.79.2(@babel/core@7.27.1)(react@19.1.0))':
     dependencies:

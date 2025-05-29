@@ -39,6 +39,7 @@
     "@peerbit/program": "^5.2.11",
     "@peerbit/pubsub": "^4.0.4",
     "@peerbit/shared-log": "^11.2.3",
+    "@peerbit/string": "^5.0.92",
     "@peerbit/time": "^2.1.0",
     "peerbit": "^4.1.36",
     "uuid": "^11.1.0"

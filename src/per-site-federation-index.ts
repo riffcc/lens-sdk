@@ -2,6 +2,7 @@ import { Program } from '@peerbit/program';
 import { Documents, SearchRequest, Sort, SortDirection, BoolQuery } from '@peerbit/document';
 import { field, variant, option, vec } from '@dao-xyz/borsh';
 
+
 /**
  * Lightweight pointer for the federation index
  * This is what gets inserted by sites we follow
@@ -25,7 +26,7 @@ export class FederationIndexEntry {
   categoryId: string = ''; // Category slug (e.g., 'movie', 'music', 'documentary')
   
   @field({ type: 'string' })
-  sourceSiteId: string = ''; // Which site this came from (author)
+  sourceSiteId: string = ''; // Original creator/author of the content
   
   @field({ type: 'u64' })
   timestamp: number = 0; // When it was published
@@ -63,8 +64,8 @@ export class FederationIndexEntry {
     this.categoryId = props?.categoryId ?? '';
     this.sourceSiteId = props?.sourceSiteId ?? '';
     this.timestamp = typeof props?.timestamp === 'bigint' ? Number(props.timestamp) : (props?.timestamp ?? Date.now());
-    this.isFeatured = props?.isFeatured ?? false;
-    this.isPromoted = props?.isPromoted ?? false;
+    this.isFeatured = Boolean(props?.isFeatured ?? false);
+    this.isPromoted = Boolean(props?.isPromoted ?? false);
     this.featuredUntil = props?.featuredUntil ? (typeof props.featuredUntil === 'bigint' ? Number(props.featuredUntil) : props.featuredUntil) : undefined;
     this.promotedUntil = props?.promotedUntil ? (typeof props.promotedUntil === 'bigint' ? Number(props.promotedUntil) : props.promotedUntil) : undefined;
   }
@@ -91,7 +92,7 @@ export class IndexableFederationEntry {
   categoryId: string = ''; // Category slug (e.g., 'movie', 'music', 'documentary')
   
   @field({ type: 'string' })
-  sourceSiteId: string = ''; // Which site this came from (author)
+  sourceSiteId: string = ''; // Original creator/author of the content
   
   @field({ type: 'u64' })
   timestamp: number = 0; // When it was published
@@ -117,8 +118,8 @@ export class IndexableFederationEntry {
       this.categoryId = props.categoryId ?? '';
       this.sourceSiteId = props.sourceSiteId ?? '';
       this.timestamp = typeof props.timestamp === 'bigint' ? Number(props.timestamp) : (props.timestamp ?? Date.now());
-      this.isFeatured = props.isFeatured ?? false;
-      this.isPromoted = props.isPromoted ?? false;
+      this.isFeatured = Boolean(props.isFeatured ?? false);
+      this.isPromoted = Boolean(props.isPromoted ?? false);
       this.featuredUntil = props.featuredUntil ? (typeof props.featuredUntil === 'bigint' ? Number(props.featuredUntil) : props.featuredUntil) : undefined;
       this.promotedUntil = props.promotedUntil ? (typeof props.promotedUntil === 'bigint' ? Number(props.promotedUntil) : props.promotedUntil) : undefined;
       this.id = props.id ?? `${this.sourceSiteId}:${this.contentCID}`;
@@ -263,8 +264,8 @@ export class PerSiteFederationIndex extends Program {
       categoryId: entry.categoryId,
       sourceSiteId: entry.sourceSiteId,
       timestamp: typeof entry.timestamp === 'bigint' ? Number(entry.timestamp) : entry.timestamp,
-      isFeatured: entry.isFeatured,
-      isPromoted: entry.isPromoted,
+      isFeatured: Boolean(entry.isFeatured),
+      isPromoted: Boolean(entry.isPromoted),
       featuredUntil: entry.featuredUntil ? (typeof entry.featuredUntil === 'bigint' ? Number(entry.featuredUntil) : entry.featuredUntil) : undefined,
       promotedUntil: entry.promotedUntil ? (typeof entry.promotedUntil === 'bigint' ? Number(entry.promotedUntil) : entry.promotedUntil) : undefined,
       id: `${entry.sourceSiteId}:${entry.contentCID}`

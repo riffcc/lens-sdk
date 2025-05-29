@@ -5,6 +5,7 @@ import {
   RELEASE_CATEGORY_ID_PROPERTY,
   RELEASE_CONTENT_CID_PROPERTY,
   RELEASE_THUMBNAIL_CID_PROPERTY,
+  RELEASE_METADATA_PROPERTY,
   SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
   SUBSCRIPTION_RECURSIVE_PROPERTY,
@@ -311,15 +312,26 @@ export class SubscriptionSyncManager {
             }
             
             // Create federation index entry
+            console.log('[Sync] Processing release for federation index:', {
+              name: release[RELEASE_NAME_PROPERTY],
+              metadataRaw: release[RELEASE_METADATA_PROPERTY],
+            });
+            const metadata = release[RELEASE_METADATA_PROPERTY] ? JSON.parse(release[RELEASE_METADATA_PROPERTY] as string) : {};
+            console.log('[Sync] Parsed metadata:', metadata);
+            console.log('[Sync] Metadata keys:', JSON.stringify(Object.keys(metadata)));
+            console.log('[Sync] Cover value:', metadata.cover);
             const indexEntry = {
               contentCID: release[RELEASE_CONTENT_CID_PROPERTY],
               title: release[RELEASE_NAME_PROPERTY] || 'Untitled',
               thumbnailCID: release[RELEASE_THUMBNAIL_CID_PROPERTY],
+              coverCID: metadata.cover || undefined,
               categoryId: release[RELEASE_CATEGORY_ID_PROPERTY] || '',
               sourceSiteId: release.federatedFrom || siteId,
               timestamp: Date.now(),
               isFeatured: false,
               isPromoted: false,
+              featuredUntil: undefined,
+              promotedUntil: undefined,
             };
             
             // Insert into federation index
@@ -392,6 +404,7 @@ export class SubscriptionSyncManager {
             // Prepare federated release with metadata
             const federatedRelease = new Release({
               ...release,
+              [RELEASE_METADATA_PROPERTY]: release[RELEASE_METADATA_PROPERTY], // Explicitly preserve metadata
               federatedFrom: originalSource, // Preserve original source for recursive sync
               federatedAt: new Date().toISOString(),
               federatedRealtime: true,

@@ -88,7 +88,7 @@ export class Release {
       this.federatedAt = (props as any).federatedAt;
     }
     if ((props as any).federatedRealtime !== undefined) {
-      this.federatedRealtime = (props as any).federatedRealtime;
+      this.federatedRealtime = Boolean((props as any).federatedRealtime);
     }
   }
 }
@@ -153,7 +153,7 @@ export class IndexableRelease {
       this.federatedAt = props.federatedAt;
     }
     if (props.federatedRealtime !== undefined) {
-      this.federatedRealtime = props.federatedRealtime;
+      this.federatedRealtime = Boolean(props.federatedRealtime);
     }
     this.created = created;
     this.modified = modified;
@@ -183,7 +183,7 @@ export class FeaturedRelease {
     this[FEATURED_RELEASE_ID_PROPERTY] = props[FEATURED_RELEASE_ID_PROPERTY];
     this[FEATURED_START_TIME_PROPERTY] = props[FEATURED_START_TIME_PROPERTY];
     this[FEATURED_END_TIME_PROPERTY] = props[FEATURED_END_TIME_PROPERTY];
-    this[FEATURED_PROMOTED_PROPERTY] = props[FEATURED_PROMOTED_PROPERTY];
+    this[FEATURED_PROMOTED_PROPERTY] = Boolean(props[FEATURED_PROMOTED_PROPERTY]);
   }
 }
 
@@ -222,7 +222,7 @@ export class IndexableFeaturedRelease {
     this[FEATURED_RELEASE_ID_PROPERTY] = props[FEATURED_RELEASE_ID_PROPERTY];
     this[FEATURED_START_TIME_PROPERTY] = props[FEATURED_START_TIME_PROPERTY];
     this[FEATURED_END_TIME_PROPERTY] = props[FEATURED_END_TIME_PROPERTY];
-    this[FEATURED_PROMOTED_PROPERTY] = props[FEATURED_PROMOTED_PROPERTY];
+    this[FEATURED_PROMOTED_PROPERTY] = Boolean(props[FEATURED_PROMOTED_PROPERTY]);
     this.created = created;
     this.modified = modified;
     this.author = author.bytes;
@@ -249,7 +249,7 @@ export class ContentCategory {
   constructor(props: ContentCategoryData) {
     this[ID_PROPERTY] = props[ID_PROPERTY];
     this[CONTENT_CATEGORY_DISPLAY_NAME_PROPERTY] = props[CONTENT_CATEGORY_DISPLAY_NAME_PROPERTY];
-    this[CONTENT_CATEGORY_FEATURED_PROPERTY] = props[CONTENT_CATEGORY_FEATURED_PROPERTY];
+    this[CONTENT_CATEGORY_FEATURED_PROPERTY] = Boolean(props[CONTENT_CATEGORY_FEATURED_PROPERTY]);
     if (props[CONTENT_CATEGORY_DESCRIPTION_PROPERTY]) {
       this[CONTENT_CATEGORY_DESCRIPTION_PROPERTY] = props[CONTENT_CATEGORY_DESCRIPTION_PROPERTY];
     }
@@ -331,7 +331,7 @@ export class Subscription {
   constructor(props: SubscriptionData) {
     this[ID_PROPERTY] = uuid();
     this[SUBSCRIPTION_SITE_ID_PROPERTY] = props[SUBSCRIPTION_SITE_ID_PROPERTY];
-    this[SUBSCRIPTION_RECURSIVE_PROPERTY] = props[SUBSCRIPTION_RECURSIVE_PROPERTY];
+    this[SUBSCRIPTION_RECURSIVE_PROPERTY] = Boolean(props[SUBSCRIPTION_RECURSIVE_PROPERTY]);
     this.subscriptionType = props.subscriptionType;
     this.currentDepth = props.currentDepth;
     this.followChain = props.followChain;
