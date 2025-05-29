@@ -461,28 +461,26 @@ export class PerSiteFederationIndex extends Program {
     console.log('[PerSiteFederationIndex] getAllEntries called');
     
     try {
-      // Use a simple search to get all entries
-      console.log('[PerSiteFederationIndex] Searching entries...');
-      const request = new SearchRequest({});
-      (request as any).fetch = 1000; // Get up to 1000 entries
-      const results = await this.entries.index.search(request);
-      console.log('[PerSiteFederationIndex] search results:', results?.length || 0, 'entries');
+      // Use iterator to get all entries more reliably
+      console.log('[PerSiteFederationIndex] Using iterator to get entries...');
+      const allEntries: IndexableFederationEntry[] = [];
+      const iterator = this.entries.index.iterate(new SearchRequest({}));
       
-      if (!results || results.length === 0) {
-        console.log('[PerSiteFederationIndex] No entries found in search');
-        return [];
+      while (iterator.done() !== true) {
+        const batch = await iterator.next(100);
+        console.log('[PerSiteFederationIndex] Iterator batch:', batch.length, 'entries');
+        
+        for (const item of batch) {
+          // Check if item has value property (wrapped result)
+          const entry = (item as any).value || item;
+          if (entry instanceof IndexableFederationEntry) {
+            allEntries.push(entry);
+          }
+        }
       }
       
-      // Debug: Check the structure of the first result
-      console.log('[PerSiteFederationIndex] First result keys:', Object.keys(results[0]));
-      console.log('[PerSiteFederationIndex] First result:', results[0]);
-      
-      // The results are already IndexableFederationEntry objects with __context
-      // We can return them directly without creating new instances
-      const converted = results as IndexableFederationEntry[];
-      
-      console.log('[PerSiteFederationIndex] converted entries:', converted.length);
-      return converted;
+      console.log('[PerSiteFederationIndex] Total entries found:', allEntries.length);
+      return allEntries;
     } catch (error: any) {
       console.error('[PerSiteFederationIndex] Error getting entries:', error);
       // Return empty array on database corruption
