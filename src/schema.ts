@@ -27,6 +27,8 @@ import {
   SITE_NAME_PROPERTY,
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
+  PROFILE_NAME_PROPERTY,
+  PROFILE_NAME_LANGUAGE_PROPERTY,
 } from './constants';
 
 import type {
@@ -37,6 +39,7 @@ import type {
   BlockedContentData,
   SiteArgs,
   IdData,
+  ProfileArgs,
 } from './types';
 
 
@@ -443,8 +446,8 @@ const PLACEHOLDER_PUBLIC_KEY = {
   bytes: new Uint8Array([
     0, 37, 8, 1, 18, 32, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-  ])
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  ]),
 } as PublicSignKey;
 
 @variant('site')
@@ -676,3 +679,60 @@ export class Site extends Program<SiteArgs> {
     console.timeEnd('[Site] Total open time');
   }
 }
+
+@variant(0)
+export class UserName {
+  @field({ type: 'string' })
+  [PROFILE_NAME_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [PROFILE_NAME_LANGUAGE_PROPERTY]: string;
+  constructor(props: { name: string; language: string}){
+    this[PROFILE_NAME_PROPERTY] = props.name;
+    this[PROFILE_NAME_LANGUAGE_PROPERTY] = props.language;
+  }
+}
+
+export class IndexableUserName {
+  @field({ type: 'string' })
+  [PROFILE_NAME_PROPERTY]: string;
+
+  @field({ type: 'string' })
+  [PROFILE_NAME_LANGUAGE_PROPERTY]: string;
+
+  constructor(
+    name: string,
+    language: string,
+  ) {
+    this[PROFILE_NAME_LANGUAGE_PROPERTY] = language;
+    this[PROFILE_NAME_PROPERTY] = name;
+  }
+}
+
+@variant('profile')
+export class Profile extends Program<ProfileArgs> {
+  @field({ type: Documents })
+  names: Documents<UserName, IndexableUserName>;
+
+  constructor() {
+    super();
+    this.names = new Documents();
+  }
+  
+  async open () {
+    await this.names.open({
+      type: UserName,
+      index: {
+        idProperty: PROFILE_NAME_LANGUAGE_PROPERTY,
+        type: IndexableUserName,
+        transform: async (userName) => {
+          return new IndexableUserName(
+            userName[PROFILE_NAME_PROPERTY],
+            userName[PROFILE_NAME_LANGUAGE_PROPERTY],
+          );
+        },
+      },
+    });
+  }
+};
+ 

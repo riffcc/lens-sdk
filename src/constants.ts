@@ -29,6 +29,10 @@ export const SITE_NAME_PROPERTY = 'siteName';
 export const SITE_DESCRIPTION_PROPERTY = 'siteDescription';
 export const SITE_IMAGE_CID_PROPERTY = 'siteImageCid';
 
+// User profile properties
+export const PROFILE_NAME_PROPERTY = 'profileName';
+export const PROFILE_NAME_LANGUAGE_PROPERTY = 'language';
+
 export const SYNC_SITE_TARGET_ID_PROPERTY = 'targetSiteId';
 export const SYNC_SITE_STATUS_PROPERTY = 'status';
 export const SYNC_SITE_LAST_SYNC_PROPERTY = 'lastSync';
