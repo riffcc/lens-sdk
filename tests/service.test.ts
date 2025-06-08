@@ -2,7 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { Peerbit } from 'peerbit';
 import { delay } from '@peerbit/time';
 import { LensService } from '../src/service';
-import { Site } from '../src/schema';
+import { Profile, Site, UserName } from '../src/schema';
 import {
   RELEASE_NAME_PROPERTY,
   RELEASE_CATEGORY_ID_PROPERTY,
@@ -11,6 +11,7 @@ import {
   RELEASE_METADATA_PROPERTY,
 } from '../src/constants';
 import type { ReleaseData } from '../src/types';
+import { SearchRequest, Sort, SortDirection, type WithContext } from '@peerbit/document';
 
 describe('Lens Service Init', () => {
   it('create a new lens service instance with external client', async () => {
@@ -125,4 +126,47 @@ describe('Site Program', () => {
     const retrievedRelease = await service.getRelease({ id: nonExistentId });
     expect(retrievedRelease).toBeUndefined();
   });
+});
+
+describe('Profile Program', () => {
+  let client: Peerbit;
+  let profileProgram: Profile;
+
+  beforeAll(async () => {
+    client = await Peerbit.create();
+    profileProgram = new Profile();
+    await client.open(profileProgram, {args: { releasesArgs: { disableCache: true }} });
+  });
+
+  afterAll(async () => {
+    if (profileProgram) {
+      await profileProgram.close();
+    }
+    if (client) {
+      await client.stop();
+    }
+  });
+
+  it('can add and read a name', async () => {
+    const userName = new UserName({language: 'en', name: 'Me'});
+    await profileProgram.names.put(userName);
+
+    await delay(200);
+
+    const allResults: WithContext<UserName>[] = [];
+    const  request = new SearchRequest({
+      sort: [
+        new Sort({ key: 'language', direction: SortDirection.DESC }),
+      ]});
+    const iterator = profileProgram.names.index.iterate(request);
+
+    while (iterator.done() !== true) {
+      const batch = await iterator.next(100); // Fetch 100 releases per page
+      allResults.push(...batch);
+    }
+    expect(allResults).toHaveLength(1);
+    expect(allResults[0].language).toEqual('en');
+    expect(allResults[0].profileName).toEqual('Me');
+  });
+
 });
