@@ -28,6 +28,12 @@ import {
   SITE_NAME_PROPERTY,
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
+  FEDERATED_AT_PROPERTY,
+  FEDERATED_FROM_PROPERTY,
+  FEDERATED_REALTIME_PROPERTY,
+  SUBSCRIPTION_CURRENT_DEPTH_PROPERTY,
+  SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY,
+  SUBSCRIPTION_TYPE_PROPERTY,
 } from './constants';
 
 import type {
@@ -38,6 +44,7 @@ import type {
   BlockedContentData,
   SiteArgs,
   IdData,
+  FederatedData,
 } from './types';
 
 
@@ -62,15 +69,17 @@ export class Release {
   [RELEASE_METADATA_PROPERTY]?: string;
 
   @field({ type: option('string') })
-  federatedFrom?: string;
+  [FEDERATED_FROM_PROPERTY]?: string;
 
   @field({ type: option('string') })
-  federatedAt?: string;
+  [FEDERATED_AT_PROPERTY]?: string;
 
   @field({ type: option('bool') })
-  federatedRealtime?: boolean;
+  [FEDERATED_REALTIME_PROPERTY]?: boolean;
 
-  constructor(props: Partial<IdData> & ReleaseData) {
+  constructor(
+    props: Partial<IdData> & ReleaseData & Partial<FederatedData>,
+  ) {
     this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
     this[RELEASE_NAME_PROPERTY] = props[RELEASE_NAME_PROPERTY];
     this[RELEASE_CATEGORY_ID_PROPERTY] = props[RELEASE_CATEGORY_ID_PROPERTY];
@@ -81,14 +90,14 @@ export class Release {
     if (props[RELEASE_METADATA_PROPERTY]) {
       this[RELEASE_METADATA_PROPERTY] = props[RELEASE_METADATA_PROPERTY];
     }
-    if ((props as any).federatedFrom) {
-      this.federatedFrom = (props as any).federatedFrom;
+    if (props[FEDERATED_FROM_PROPERTY]) {
+      this[FEDERATED_FROM_PROPERTY] = props[FEDERATED_FROM_PROPERTY];
     }
-    if ((props as any).federatedAt) {
-      this.federatedAt = (props as any).federatedAt;
+    if (props[FEDERATED_AT_PROPERTY]) {
+      this[FEDERATED_AT_PROPERTY] = props[FEDERATED_AT_PROPERTY];
     }
-    if ((props as any).federatedRealtime !== undefined) {
-      this.federatedRealtime = Boolean((props as any).federatedRealtime);
+    if (props[FEDERATED_REALTIME_PROPERTY] !== undefined) {
+      this[FEDERATED_REALTIME_PROPERTY] = props[FEDERATED_REALTIME_PROPERTY];
     }
   }
 }
@@ -113,13 +122,13 @@ export class IndexableRelease {
   [RELEASE_METADATA_PROPERTY]?: string;
 
   @field({ type: option('string') })
-  federatedFrom?: string;
+  [FEDERATED_FROM_PROPERTY]?: string;
 
   @field({ type: option('string') })
-  federatedAt?: string;
+  [FEDERATED_AT_PROPERTY]?: string;
 
   @field({ type: option('bool') })
-  federatedRealtime?: boolean;
+  [FEDERATED_REALTIME_PROPERTY]?: boolean;
 
   @field({ type: 'u64' })
   created: bigint;
@@ -146,14 +155,14 @@ export class IndexableRelease {
     if (props[RELEASE_METADATA_PROPERTY]) {
       this[RELEASE_METADATA_PROPERTY] = props[RELEASE_METADATA_PROPERTY];
     }
-    if (props.federatedFrom) {
-      this.federatedFrom = props.federatedFrom;
+    if (props[FEDERATED_FROM_PROPERTY]) {
+      this[FEDERATED_FROM_PROPERTY] = props[FEDERATED_FROM_PROPERTY];
     }
-    if (props.federatedAt) {
-      this.federatedAt = props.federatedAt;
+    if (props[FEDERATED_AT_PROPERTY]) {
+      this[FEDERATED_AT_PROPERTY] = props[FEDERATED_AT_PROPERTY];
     }
-    if (props.federatedRealtime !== undefined) {
-      this.federatedRealtime = Boolean(props.federatedRealtime);
+    if (props[FEDERATED_REALTIME_PROPERTY] !== undefined) {
+      this[FEDERATED_REALTIME_PROPERTY] = props[FEDERATED_REALTIME_PROPERTY];
     }
     this.created = created;
     this.modified = modified;
@@ -320,21 +329,21 @@ export class Subscription {
   [SUBSCRIPTION_RECURSIVE_PROPERTY]: boolean;
 
   @field({ type: 'string' })
-  subscriptionType: string;
+  [SUBSCRIPTION_TYPE_PROPERTY]: string;
 
   @field({ type: 'u32' })
-  currentDepth: number;
+  [SUBSCRIPTION_CURRENT_DEPTH_PROPERTY]: number;
 
   @field({ type: vec('string') })
-  followChain: string[];
+  [SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY]: string[];
 
   constructor(props: SubscriptionData) {
     this[ID_PROPERTY] = uuid();
     this[SUBSCRIPTION_SITE_ID_PROPERTY] = props[SUBSCRIPTION_SITE_ID_PROPERTY];
     this[SUBSCRIPTION_RECURSIVE_PROPERTY] = Boolean(props[SUBSCRIPTION_RECURSIVE_PROPERTY]);
-    this.subscriptionType = props.subscriptionType;
-    this.currentDepth = props.currentDepth;
-    this.followChain = props.followChain;
+    this[SUBSCRIPTION_TYPE_PROPERTY] = props[SUBSCRIPTION_TYPE_PROPERTY];
+    this[SUBSCRIPTION_CURRENT_DEPTH_PROPERTY] = props[SUBSCRIPTION_CURRENT_DEPTH_PROPERTY];
+    this[SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY] = props[SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY];
     if (props[SUBSCRIPTION_NAME_PROPERTY]) {
       this[SUBSCRIPTION_NAME_PROPERTY] = props[SUBSCRIPTION_NAME_PROPERTY];
     }
@@ -355,13 +364,13 @@ export class IndexableSubscription {
   [SUBSCRIPTION_RECURSIVE_PROPERTY]: boolean;
 
   @field({ type: 'string' })
-  subscriptionType: string;
+  [SUBSCRIPTION_TYPE_PROPERTY]: string;
 
   @field({ type: 'u32' })
-  currentDepth: number;
+  [SUBSCRIPTION_CURRENT_DEPTH_PROPERTY]: number;
 
   @field({ type: vec('string') })
-  followChain: string[];
+  [SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY]: string[];
 
   @field({ type: 'u64' })
   created: bigint;
@@ -381,9 +390,9 @@ export class IndexableSubscription {
     this[ID_PROPERTY] = subscription[ID_PROPERTY];
     this[SUBSCRIPTION_SITE_ID_PROPERTY] = subscription[SUBSCRIPTION_SITE_ID_PROPERTY];
     this[SUBSCRIPTION_RECURSIVE_PROPERTY] = subscription[SUBSCRIPTION_RECURSIVE_PROPERTY];
-    this.subscriptionType = subscription.subscriptionType;
-    this.currentDepth = subscription.currentDepth;
-    this.followChain = subscription.followChain;
+    this[SUBSCRIPTION_TYPE_PROPERTY] = subscription[SUBSCRIPTION_TYPE_PROPERTY];
+    this[SUBSCRIPTION_CURRENT_DEPTH_PROPERTY] = subscription[SUBSCRIPTION_CURRENT_DEPTH_PROPERTY];
+    this[SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY] = subscription[SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY];
     if (subscription[SUBSCRIPTION_NAME_PROPERTY]) {
       this[SUBSCRIPTION_NAME_PROPERTY] = subscription[SUBSCRIPTION_NAME_PROPERTY];
     }

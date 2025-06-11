@@ -22,6 +22,12 @@ import type {
   SITE_NAME_PROPERTY,
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
+  FEDERATED_FROM_PROPERTY,
+  FEDERATED_AT_PROPERTY,
+  FEDERATED_REALTIME_PROPERTY,
+  SUBSCRIPTION_TYPE_PROPERTY,
+  SUBSCRIPTION_CURRENT_DEPTH_PROPERTY,
+  SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY,
 } from './constants';
 import type { ReplicationLimitsOptions, ReplicationOptions } from '@peerbit/shared-log';
 import type { Query, SearchRequest, Sort, WithContext } from '@peerbit/document';
@@ -50,15 +56,18 @@ export type IdData = {
   [ID_PROPERTY]: string
 };
 
+export type FederatedData = {
+  [FEDERATED_FROM_PROPERTY]: string;
+  [FEDERATED_AT_PROPERTY]: string;
+  [FEDERATED_REALTIME_PROPERTY]: boolean;
+};
+
 export type ReleaseData<T = string> = {
   [RELEASE_NAME_PROPERTY]: string;
   [RELEASE_CATEGORY_ID_PROPERTY]: string;
   [RELEASE_CONTENT_CID_PROPERTY]: string;
   [RELEASE_THUMBNAIL_CID_PROPERTY]?: string;
   [RELEASE_METADATA_PROPERTY]?: T;
-  federatedFrom?: string;
-  federatedAt?: string;
-  federatedRealtime?: boolean;
 }
 
 export type FeaturedReleaseData = {
@@ -86,9 +95,9 @@ export type SubscriptionData = {
   [SUBSCRIPTION_SITE_ID_PROPERTY]: string;
   [SUBSCRIPTION_NAME_PROPERTY]?: string;
   [SUBSCRIPTION_RECURSIVE_PROPERTY]: boolean;
-  subscriptionType: string;
-  currentDepth: number;
-  followChain: string[];
+  [SUBSCRIPTION_TYPE_PROPERTY]: string;
+  [SUBSCRIPTION_CURRENT_DEPTH_PROPERTY]: number;
+  [SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY]: string[];
 }
 
 export type BlockedContentData = {

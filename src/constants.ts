@@ -2,6 +2,10 @@ import type { SiteArgs } from './types';
 
 export const ID_PROPERTY = 'id';
 
+export const FEDERATED_FROM_PROPERTY = 'federatedFrom';
+export const FEDERATED_AT_PROPERTY = 'federatedAt';
+export const FEDERATED_REALTIME_PROPERTY = 'federatedRealtime';
+
 export const RELEASE_NAME_PROPERTY = 'name';
 export const RELEASE_CATEGORY_ID_PROPERTY = 'categoryId';
 export const RELEASE_CONTENT_CID_PROPERTY = 'contentCID';
@@ -21,6 +25,9 @@ export const CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY = 'metadataSchema';
 export const SUBSCRIPTION_SITE_ID_PROPERTY = 'siteId';
 export const SUBSCRIPTION_NAME_PROPERTY = 'name';
 export const SUBSCRIPTION_RECURSIVE_PROPERTY = 'recursive';
+export const SUBSCRIPTION_TYPE_PROPERTY = 'type';
+export const SUBSCRIPTION_CURRENT_DEPTH_PROPERTY = 'currentDepth';
+export const SUBSCRIPTION_FOLLOW_CHAIN_PROPERTY = 'followChain';
 
 export const BLOCKED_CONTENT_CID_PROPERTY = 'cid';
 
