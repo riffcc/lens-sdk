@@ -13,7 +13,6 @@ export {
   CONTENT_CATEGORY_DESCRIPTION_PROPERTY,
   CONTENT_CATEGORY_FEATURED_PROPERTY,
   CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY,
-  SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
   SUBSCRIPTION_RECURSIVE_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
@@ -55,6 +54,6 @@ export type {
 
 export { AccountType } from './types';
 
-export { ElectronLensService, LensService, authorise } from './service';
+export { ElectronLensService, LensService } from './service';
 
 export { publicSignKeyFromString } from './utils';

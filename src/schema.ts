@@ -1,10 +1,33 @@
-import { Documents } from '@peerbit/document';
-import { field, option, variant, vec } from '@dao-xyz/borsh';
+import type {
+  CanPerformOperations,
+  DocumentsChange,
+  Operation,
+  WithContext,
+} from '@peerbit/document';
+import {
+  Documents,
+  isDeleteOperation,
+  isPutOperation,
+  SearchRequest,
+  StringMatch,
+  StringMatchMethod,
+} from '@peerbit/document';
+import type { AbstractType } from '@dao-xyz/borsh';
+import { deserialize, field, option, serialize, variant, vec } from '@dao-xyz/borsh';
+import type { MaybePromise } from '@peerbit/crypto';
 import { type PublicSignKey } from '@peerbit/crypto';
 import { Program } from '@peerbit/program';
 import { IdentityAccessController } from '@peerbit/identity-access-controller';
 import { v4 as uuid } from 'uuid';
 import type { PeerId } from '@libp2p/interface';
+import { Entry } from '@peerbit/log';
+import {
+  Access,
+  AccessType,
+  PublicKeyAccessCondition,
+} from '@peerbit/identity-access-controller';
+import { publicSignKeyFromString } from './utils';
+
 import {
   ID_PROPERTY,
   RELEASE_NAME_PROPERTY,
@@ -20,13 +43,12 @@ import {
   CONTENT_CATEGORY_DESCRIPTION_PROPERTY,
   CONTENT_CATEGORY_FEATURED_PROPERTY,
   CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY,
-  SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
-  SUBSCRIPTION_RECURSIVE_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
   SITE_NAME_PROPERTY,
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
+  SITE_ADDRESS_PROPERTY,
 } from './constants';
 
 import type {
@@ -38,7 +60,7 @@ import type {
   SiteArgs,
   IdData,
 } from './types';
-
+import { AccountType } from './types';
 
 @variant('release')
 export class Release {
@@ -60,14 +82,8 @@ export class Release {
   @field({ type: option('string') })
   [RELEASE_METADATA_PROPERTY]?: string;
 
-  @field({ type: option('string') })
-  federatedFrom?: string;
-
-  @field({ type: option('string') })
-  federatedAt?: string;
-
-  @field({ type: option('bool') })
-  federatedRealtime?: boolean;
+  @field({ type: 'string' })
+  [SITE_ADDRESS_PROPERTY]: string;
 
   constructor(props: Partial<IdData> & ReleaseData) {
     this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
@@ -80,15 +96,7 @@ export class Release {
     if (props[RELEASE_METADATA_PROPERTY]) {
       this[RELEASE_METADATA_PROPERTY] = props[RELEASE_METADATA_PROPERTY];
     }
-    if ((props as any).federatedFrom) {
-      this.federatedFrom = (props as any).federatedFrom;
-    }
-    if ((props as any).federatedAt) {
-      this.federatedAt = (props as any).federatedAt;
-    }
-    if ((props as any).federatedRealtime !== undefined) {
-      this.federatedRealtime = (props as any).federatedRealtime;
-    }
+    this[SITE_ADDRESS_PROPERTY] = props[SITE_ADDRESS_PROPERTY];
   }
 }
 
@@ -111,14 +119,8 @@ export class IndexableRelease {
   @field({ type: option('string') })
   [RELEASE_METADATA_PROPERTY]?: string;
 
-  @field({ type: option('string') })
-  federatedFrom?: string;
-
-  @field({ type: option('string') })
-  federatedAt?: string;
-
-  @field({ type: option('bool') })
-  federatedRealtime?: boolean;
+  @field({ type: 'string' })
+  [SITE_ADDRESS_PROPERTY]: string;
 
   @field({ type: 'u64' })
   created: bigint;
@@ -145,15 +147,7 @@ export class IndexableRelease {
     if (props[RELEASE_METADATA_PROPERTY]) {
       this[RELEASE_METADATA_PROPERTY] = props[RELEASE_METADATA_PROPERTY];
     }
-    if (props.federatedFrom) {
-      this.federatedFrom = props.federatedFrom;
-    }
-    if (props.federatedAt) {
-      this.federatedAt = props.federatedAt;
-    }
-    if (props.federatedRealtime !== undefined) {
-      this.federatedRealtime = props.federatedRealtime;
-    }
+    this[SITE_ADDRESS_PROPERTY] = props[SITE_ADDRESS_PROPERTY];
     this.created = created;
     this.modified = modified;
     this.author = author.bytes;
@@ -177,12 +171,16 @@ export class FeaturedRelease {
   @field({ type: 'bool' })
   [FEATURED_PROMOTED_PROPERTY]: boolean;
 
+  @field({ type: 'string' })
+  [SITE_ADDRESS_PROPERTY]: string;
+
   constructor(props: Partial<IdData> & FeaturedReleaseData) {
     this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
     this[FEATURED_RELEASE_ID_PROPERTY] = props[FEATURED_RELEASE_ID_PROPERTY];
     this[FEATURED_START_TIME_PROPERTY] = props[FEATURED_START_TIME_PROPERTY];
     this[FEATURED_END_TIME_PROPERTY] = props[FEATURED_END_TIME_PROPERTY];
     this[FEATURED_PROMOTED_PROPERTY] = props[FEATURED_PROMOTED_PROPERTY];
+    this[SITE_ADDRESS_PROPERTY] = props[SITE_ADDRESS_PROPERTY];
   }
 }
 
@@ -201,6 +199,9 @@ export class IndexableFeaturedRelease {
 
   @field({ type: 'bool' })
   [FEATURED_PROMOTED_PROPERTY]: boolean;
+
+  @field({ type: 'string' })
+  [SITE_ADDRESS_PROPERTY]: string;
 
   @field({ type: 'u64' })
   created: bigint;
@@ -222,6 +223,7 @@ export class IndexableFeaturedRelease {
     this[FEATURED_START_TIME_PROPERTY] = props[FEATURED_START_TIME_PROPERTY];
     this[FEATURED_END_TIME_PROPERTY] = props[FEATURED_END_TIME_PROPERTY];
     this[FEATURED_PROMOTED_PROPERTY] = props[FEATURED_PROMOTED_PROPERTY];
+    this[SITE_ADDRESS_PROPERTY] = props[SITE_ADDRESS_PROPERTY];
     this.created = created;
     this.modified = modified;
     this.author = author.bytes;
@@ -245,6 +247,9 @@ export class ContentCategory {
   @field({ type: option('string') })
   [CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY]?: string;
 
+  @field({ type: 'string' })
+  [SITE_ADDRESS_PROPERTY]: string;
+
   constructor(props: ContentCategoryData) {
     this[ID_PROPERTY] = props[ID_PROPERTY];
     this[CONTENT_CATEGORY_DISPLAY_NAME_PROPERTY] = props[CONTENT_CATEGORY_DISPLAY_NAME_PROPERTY];
@@ -255,6 +260,7 @@ export class ContentCategory {
     if (props[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY]) {
       this[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY] = props[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY];
     }
+    this[SITE_ADDRESS_PROPERTY] = props[SITE_ADDRESS_PROPERTY];
   }
 }
 
@@ -273,6 +279,9 @@ export class IndexableContentCategory {
 
   @field({ type: option('string') })
   [CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY]?: string;
+
+  @field({ type: 'string' })
+  [SITE_ADDRESS_PROPERTY]: string;
 
   @field({ type: 'u64' })
   created: bigint;
@@ -298,6 +307,7 @@ export class IndexableContentCategory {
     if (contentCategory[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY]) {
       this[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY] = contentCategory[CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY];
     }
+    this[SITE_ADDRESS_PROPERTY] = contentCategory[SITE_ADDRESS_PROPERTY];
     this.created = created;
     this.modified = modified;
     this.author = author.bytes;
@@ -310,30 +320,14 @@ export class Subscription {
   [ID_PROPERTY]: string;
 
   @field({ type: 'string' })
-  [SUBSCRIPTION_SITE_ID_PROPERTY]: string;
+  [SITE_ADDRESS_PROPERTY]: string;
 
   @field({ type: option('string') })
   [SUBSCRIPTION_NAME_PROPERTY]?: string;
 
-  @field({ type: 'bool' })
-  [SUBSCRIPTION_RECURSIVE_PROPERTY]: boolean;
-
-  @field({ type: 'string' })
-  subscriptionType: string;
-
-  @field({ type: 'u32' })
-  currentDepth: number;
-
-  @field({ type: vec('string') })
-  followChain: string[];
-
-  constructor(props: SubscriptionData) {
-    this[ID_PROPERTY] = uuid();
-    this[SUBSCRIPTION_SITE_ID_PROPERTY] = props[SUBSCRIPTION_SITE_ID_PROPERTY];
-    this[SUBSCRIPTION_RECURSIVE_PROPERTY] = props[SUBSCRIPTION_RECURSIVE_PROPERTY];
-    this.subscriptionType = props.subscriptionType;
-    this.currentDepth = props.currentDepth;
-    this.followChain = props.followChain;
+  constructor(props: Partial<IdData> & SubscriptionData) {
+    this[ID_PROPERTY] = props[ID_PROPERTY] ?? uuid();
+    this[SITE_ADDRESS_PROPERTY] = props[SITE_ADDRESS_PROPERTY];
     if (props[SUBSCRIPTION_NAME_PROPERTY]) {
       this[SUBSCRIPTION_NAME_PROPERTY] = props[SUBSCRIPTION_NAME_PROPERTY];
     }
@@ -345,22 +339,10 @@ export class IndexableSubscription {
   [ID_PROPERTY]: string;
 
   @field({ type: 'string' })
-  [SUBSCRIPTION_SITE_ID_PROPERTY]: string;
+  [SITE_ADDRESS_PROPERTY]: string;
 
   @field({ type: option('string') })
   [SUBSCRIPTION_NAME_PROPERTY]?: string;
-
-  @field({ type: 'bool' })
-  [SUBSCRIPTION_RECURSIVE_PROPERTY]: boolean;
-
-  @field({ type: 'string' })
-  subscriptionType: string;
-
-  @field({ type: 'u32' })
-  currentDepth: number;
-
-  @field({ type: vec('string') })
-  followChain: string[];
 
   @field({ type: 'u64' })
   created: bigint;
@@ -378,11 +360,7 @@ export class IndexableSubscription {
     author: PublicSignKey,
   ) {
     this[ID_PROPERTY] = subscription[ID_PROPERTY];
-    this[SUBSCRIPTION_SITE_ID_PROPERTY] = subscription[SUBSCRIPTION_SITE_ID_PROPERTY];
-    this[SUBSCRIPTION_RECURSIVE_PROPERTY] = subscription[SUBSCRIPTION_RECURSIVE_PROPERTY];
-    this.subscriptionType = subscription.subscriptionType;
-    this.currentDepth = subscription.currentDepth;
-    this.followChain = subscription.followChain;
+    this[SITE_ADDRESS_PROPERTY] = subscription[SITE_ADDRESS_PROPERTY];
     if (subscription[SUBSCRIPTION_NAME_PROPERTY]) {
       this[SUBSCRIPTION_NAME_PROPERTY] = subscription[SUBSCRIPTION_NAME_PROPERTY];
     }
@@ -436,16 +414,106 @@ export class IndexableBlockedContent {
   }
 }
 
-// Reusable placeholder to avoid expensive async calls during indexing
-// Using a valid Ed25519 public key (all zeros is a valid point on the curve)
-const PLACEHOLDER_PUBLIC_KEY = {
-  toString: () => '12D3KooWBfmETW1ZbkdZbKKPpE3jpjyQ5WBXoDF8y9oE78cKpBsn',
-  bytes: new Uint8Array([
-    0, 37, 8, 1, 18, 32, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-  ])
-} as PublicSignKey;
+// // Reusable placeholder to avoid expensive async calls during indexing
+// // Using a valid Ed25519 public key (all zeros is a valid point on the curve)
+// const PLACEHOLDER_PUBLIC_KEY = {
+//   toString: () => '12D3KooWBfmETW1ZbkdZbKKPpE3jpjyQ5WBXoDF8y9oE78cKpBsn',
+//   bytes: new Uint8Array([
+//     0, 37, 8, 1, 18, 32, 0, 0, 0, 0, 0, 0, 0, 0,
+//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+//     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+//   ]),
+// } as PublicSignKey;
+
+  // Cache for subscription checks to improve performance
+  const subscriptionCache = new Map<string, { isSubscribed: boolean; timestamp: number }>();
+  const CACHE_TTL = 60000; // 1 minute cache TTL
+
+const isSubscribed = async (originSiteAddress: string, subscriptionsStore: Documents<Subscription, IndexableSubscription>): Promise<boolean> => {
+  const cached = subscriptionCache.get(originSiteAddress);
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+    return cached.isSubscribed;
+  }
+
+  const results = await subscriptionsStore.index.search(new SearchRequest({
+    query: [
+      new StringMatch({
+        key: SITE_ADDRESS_PROPERTY,
+        value: originSiteAddress,
+        caseInsensitive: false,
+        method: StringMatchMethod.exact,
+      }),
+    ],
+    fetch: 1,
+  }));
+
+  const isSubscribed = results.length > 0;
+  subscriptionCache.set(originSiteAddress, { isSubscribed, timestamp: Date.now() });
+  return isSubscribed;
+};
+
+const canPerformFederatedWrite = async<
+  T extends { [SITE_ADDRESS_PROPERTY]: string },
+  I extends object = T
+>(
+  localSiteAddress: string,
+  props: CanPerformOperations<T>,
+  subscriptionsStore: Documents<Subscription, IndexableSubscription>,
+  targetSstore: Documents<T, I>,
+  docClass: AbstractType<T>,
+  localPermissionCheck: (props: CanPerformOperations<T>) => MaybePromise<boolean>,
+): Promise<boolean> => {
+  // For a 'put' operation, deserialize the incoming data to check its origin
+  if (isPutOperation(props.operation)) {
+    const doc = deserialize(props.operation.data, docClass);
+    const originSiteAddress = doc[SITE_ADDRESS_PROPERTY];
+    if (originSiteAddress === localSiteAddress) {
+      return localPermissionCheck(props);
+    }
+    return isSubscribed(originSiteAddress, subscriptionsStore);
+  }
+
+  // For a 'delete' operation, we must first fetch the document being deleted
+  // from the index to check its origin.
+  if (isDeleteOperation(props.operation)) {
+    const docToDelete = await targetSstore.index.get(props.operation.key.key);
+    if (!docToDelete) {
+      return true; // Allow delete if the document doesn't exist (idempotent)
+    }
+    const originSiteAddress = docToDelete[SITE_ADDRESS_PROPERTY];
+    if (originSiteAddress === localSiteAddress) {
+      return localPermissionCheck(props);
+    }
+    return isSubscribed(originSiteAddress, subscriptionsStore);
+  }
+
+  // Fallback to local permission checks for any other operation types.
+  return localPermissionCheck(props);
+};
+
+
+
+@variant('federation_update')
+export class FederationUpdate {
+  @field({ type: 'string' })
+  store: 'releases' | 'featuredReleases' | 'contentCategories'; // Which store was updated
+
+  @field({ type: vec(Entry) }) // Sending full entries preserves all metadata and signatures
+  added: Entry<Operation>[];
+
+  @field({ type: vec(Entry) })
+  removed: Entry<Operation>[];
+
+  constructor(props: {
+    store: 'releases' | 'featuredReleases' | 'contentCategories';
+    added?: Entry<Operation>[];
+    removed?: Entry<Operation>[];
+  }) {
+    this.store = props.store;
+    this.added = props.added || [];
+    this.removed = props.removed || [];
+  }
+}
 
 @variant('site')
 export class Site extends Program<SiteArgs> {
@@ -481,7 +549,9 @@ export class Site extends Program<SiteArgs> {
   @field({ type: option('string') })
   [SITE_IMAGE_CID_PROPERTY]?: string;
 
-
+  get federationTopic(): string {
+    return `${this.address}/federation`;
+  }
 
   constructor(rootTrust: PublicSignKey | PeerId) {
     super();
@@ -504,30 +574,28 @@ export class Site extends Program<SiteArgs> {
     await Promise.all([
       // Access controllers need to be opened first for permission checks
       this.members.open({
-        replicate: args?.membersArg?.replicate ?? false,
+        replicate: args?.membersArg?.replicate ?? true,
       }),
       this.administrators.open({
-        replicate: args?.administratorsArgs?.replicate ?? false,
+        replicate: args?.administratorsArgs?.replicate ?? true,
       }),
     ]);
     console.timeEnd('[Site] Access controllers open');
 
-    // Now open all data stores in parallel with factor 0 for fast loading
     console.time('[Site] Data stores open');
     await Promise.all([
       this.releases.open({
         type: Release,
-        replicate: args?.releasesArgs?.replicate ?? { factor: 0 },
+        replicate: args?.releasesArgs?.replicate ?? true,
         replicas: args?.releasesArgs?.replicas,
-        canPerform: (props) => {
-          if (props.type === 'delete') {
-            return administratorCanPerform(props);
-          } else {
-            return (
-              memberCanPerform(props)
-            );
-          }
-        },
+        canPerform: (props) => canPerformFederatedWrite(
+          this.address,
+          props,
+          this.subscriptions,
+          this.releases,
+          Release,
+          (localProps) => props.type === 'put' ? memberCanPerform(localProps) : administratorCanPerform(localProps),
+        ),
         index: {
           canRead: () => {
             return true;
@@ -538,27 +606,26 @@ export class Site extends Program<SiteArgs> {
               release,
               ctx.created,
               ctx.modified,
-              PLACEHOLDER_PUBLIC_KEY,
+              (await this.releases.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
             );
           },
-          // Add query caching for faster repeated searches
-          // cache: {
-          //   query: {
-          //     strategy: 'auto', // Automatic cache management
-          //     maxSize: args?.releasesArgs?.disableCache ? 0 : Infinity, // Unlimited cache size or disabled for tests
-          //     maxTotalSize: args?.releasesArgs?.disableCache ? 0 : Infinity, // Unlimited total cache size or disabled for tests
-          //     keepAlive: 6e4, // 60 second TTL
-          //     prefetchThreshold: 2, // Prefetch after 2 hits
-          //   },
-          // },
         },
       }),
 
       this.featuredReleases.open({
         type: FeaturedRelease,
-        replicate: args?.featuredReleasesArgs?.replicate ?? { factor: 0 },
+        replicate: args?.featuredReleasesArgs?.replicate ?? true,
         replicas: args?.featuredReleasesArgs?.replicas,
-        canPerform: administratorCanPerform,
+        canPerform: (props) => canPerformFederatedWrite(
+          this.address,
+          props,
+          this.subscriptions,
+          this.contentCategories, 
+          ContentCategory, 
+          administratorCanPerform,
+        ),
         index: {
           canRead: () => {
             return true;
@@ -569,27 +636,26 @@ export class Site extends Program<SiteArgs> {
               featuredRelease,
               ctx.created,
               ctx.modified,
-              PLACEHOLDER_PUBLIC_KEY,
+              (await this.featuredReleases.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
             );
           },
-          // Featured releases are accessed frequently, use aggressive caching
-          // cache: {
-          //   query: {
-          //     strategy: 'auto',
-          //     maxSize: args?.featuredReleasesArgs?.disableCache ? 0 : Infinity, // Unlimited cache size or disabled for tests
-          //     maxTotalSize: args?.featuredReleasesArgs?.disableCache ? 0 : Infinity, // Unlimited total cache size or disabled for tests
-          //     keepAlive: 12e4, // 2 minute TTL
-          //     prefetchThreshold: 1, // Prefetch after first hit
-          //   },
-          // },
         },
       }),
 
       this.contentCategories.open({
         type: ContentCategory,
-        replicate: args?.contentCategoriesArgs?.replicate ?? { factor: 0 },
+        replicate: args?.contentCategoriesArgs?.replicate ?? true,
         replicas: args?.contentCategoriesArgs?.replicas,
-        canPerform: administratorCanPerform,
+        canPerform: (props) => canPerformFederatedWrite(
+          this.address,
+          props, 
+          this.subscriptions,
+          this.contentCategories, 
+          ContentCategory, 
+          administratorCanPerform,
+        ),
         index: {
           canRead: () => {
             return true;
@@ -600,53 +666,38 @@ export class Site extends Program<SiteArgs> {
               contentCategory,
               ctx.created,
               ctx.modified,
-              PLACEHOLDER_PUBLIC_KEY,
+              (await this.contentCategories.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
             );
           },
-          // Categories rarely change, use long-lived cache
-          // cache: {
-          //   query: {
-          //     strategy: 'auto',
-          //     maxSize: args?.contentCategoriesArgs?.disableCache ? 0 : 20,
-          //     maxTotalSize: args?.contentCategoriesArgs?.disableCache ? 0 : 1e5, // 100KB or disabled for tests
-          //     keepAlive: 36e5, // 1 hour TTL
-          //     prefetchThreshold: 1,
-          //   },
-          // },
         },
       }),
 
       this.subscriptions.open({
         type: Subscription,
-        replicate: args?.subscriptionsArgs?.replicate ?? { factor: 0 },
+        replicate: args?.subscriptionsArgs?.replicate ?? true,
         replicas: args?.subscriptionsArgs?.replicas,
         canPerform: administratorCanPerform,
         index: {
-          canRead: () => true, // Site owners can always read their own subscriptions
+          canRead: (props) => this.administrators.canRead(props, this.node.identity.publicKey),
           type: IndexableSubscription,
           transform: async (subscription, ctx) => {
             return new IndexableSubscription(
               subscription,
               ctx.created,
               ctx.modified,
-              PLACEHOLDER_PUBLIC_KEY,
+              (await this.subscriptions.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
             );
           },
-          // cache: {
-          //   query: {
-          //     strategy: 'auto',
-          //     maxSize: args?.subscriptionsArgs?.disableCache ? 0 : 30,
-          //     maxTotalSize: args?.subscriptionsArgs?.disableCache ? 0 : 5e3,
-          //     keepAlive: 1e4,
-          //     prefetchThreshold: 2,
-          //   },
-          // },
         },
       }),
 
       this.blockedContent.open({
         type: BlockedContent,
-        replicate: args?.blockedContentArgs?.replicate ?? { factor: 0 },
+        replicate: args?.blockedContentArgs?.replicate ?? true,
         replicas: args?.blockedContentArgs?.replicas,
         canPerform: administratorCanPerform,
         index: {
@@ -657,22 +708,89 @@ export class Site extends Program<SiteArgs> {
               blockedContent,
               ctx.created,
               ctx.modified,
-              PLACEHOLDER_PUBLIC_KEY,
+              (await this.blockedContent.log.log.get(
+                ctx.head,
+              ))!.signatures[0].publicKey,
             );
           },
-          // cache: {
-          //   query: {
-          //     strategy: 'auto',
-          //     maxSize: args?.blockedContentArgs?.disableCache ? 0 : 100,
-          //     maxTotalSize: args?.blockedContentArgs?.disableCache ? 0 : 1e4,
-          //     keepAlive: 1e4,
-          //     prefetchThreshold: 5,
-          //   },
-          // },
         },
       }),
     ]);
     console.timeEnd('[Site] Data stores open');
+    this.setupFederationBroadcasts();
     console.timeEnd('[Site] Total open time');
+  }
+
+
+  async authorise(
+    accountType: AccountType,
+    stringPublicKey: string,
+  ): Promise<void> {
+    const publicSignKey = publicSignKeyFromString(stringPublicKey);
+    const accessCondition = new PublicKeyAccessCondition({ key: publicSignKey });
+    const accessTypes: AccessType[] = [AccessType.Read, AccessType.Write];
+
+    if (accountType === AccountType.MEMBER) {
+      const access = new Access({
+        accessCondition,
+        accessTypes,
+      });
+      await this.members.access.put(access);
+
+    } else if (accountType === AccountType.ADMIN) {
+      const access = new Access({
+        accessCondition,
+        accessTypes,
+      });
+      await this.members.access.put(access);
+      await this.administrators.access.put(access);
+
+    } else {
+      throw new Error('authorization for this account type is not implemented yet.');
+    }
+  }
+
+  private setupFederationBroadcasts() {
+    // Listen for local changes and broadcast them
+    this.releases.events.addEventListener('change', (event) => {
+      this.broadcastFederationUpdate('releases', event.detail);
+    });
+
+    this.featuredReleases.events.addEventListener('change', (event) => {
+      this.broadcastFederationUpdate('featuredReleases', event.detail);
+    });
+
+    this.contentCategories.events.addEventListener('change', (event) => {
+      this.broadcastFederationUpdate('contentCategories', event.detail);
+    });
+  }
+
+  private async broadcastFederationUpdate(storeName: 'releases' | 'featuredReleases' | 'contentCategories', change: DocumentsChange<unknown, unknown>) {
+    // We need the full Entry<Operation> object to broadcast
+    // This requires fetching them from the log based on the change set
+    const getEntriesFromChange = async (docs: WithContext<unknown>[]) => {
+      const entries: Entry<Operation>[] = [];
+      for (const doc of docs) {
+        const entry = await this[storeName].log.log.get(doc.__context.head);
+        if (entry) entries.push(entry);
+      }
+      return entries;
+    };
+
+    const addedEntries = await getEntriesFromChange(change.added);
+    const removedEntries = await getEntriesFromChange(change.removed);
+
+    if (addedEntries.length === 0 && removedEntries.length === 0) {
+      return;
+    }
+
+    const updateMessage = new FederationUpdate({
+      store: storeName,
+      added: addedEntries,
+      removed: removedEntries,
+    });
+
+    // Publish to this site's unique federation topic
+    await this.node.services.pubsub.publish(serialize(updateMessage), { topics: [this.federationTopic] });
   }
 }

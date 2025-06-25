@@ -1,4 +1,4 @@
-import type { FeaturedRelease, Release, Site } from './schema';
+import type { FeaturedRelease, Release, Site, Subscription } from './schema';
 import type {
   ID_PROPERTY,
   RELEASE_NAME_PROPERTY,
@@ -14,13 +14,12 @@ import type {
   CONTENT_CATEGORY_DESCRIPTION_PROPERTY,
   CONTENT_CATEGORY_FEATURED_PROPERTY,
   CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY,
-  SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
-  SUBSCRIPTION_RECURSIVE_PROPERTY,
   BLOCKED_CONTENT_CID_PROPERTY,
   SITE_NAME_PROPERTY,
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
+  SITE_ADDRESS_PROPERTY,
 } from './constants';
 import type { ReplicationLimitsOptions, ReplicationOptions } from '@peerbit/shared-log';
 import type { Query, SearchRequest, Sort, WithContext } from '@peerbit/document';
@@ -55,9 +54,7 @@ export type ReleaseData<T = string> = {
   [RELEASE_CONTENT_CID_PROPERTY]: string;
   [RELEASE_THUMBNAIL_CID_PROPERTY]?: string;
   [RELEASE_METADATA_PROPERTY]?: T;
-  federatedFrom?: string;
-  federatedAt?: string;
-  federatedRealtime?: boolean;
+  [SITE_ADDRESS_PROPERTY]: string;
 }
 
 export type FeaturedReleaseData = {
@@ -65,6 +62,7 @@ export type FeaturedReleaseData = {
   [FEATURED_START_TIME_PROPERTY]: string;
   [FEATURED_END_TIME_PROPERTY]: string;
   [FEATURED_PROMOTED_PROPERTY]: boolean;
+  [SITE_ADDRESS_PROPERTY]: string;
 }
 
 export type ContentCategoryData<T = string> = IdData & {
@@ -72,6 +70,7 @@ export type ContentCategoryData<T = string> = IdData & {
   [CONTENT_CATEGORY_FEATURED_PROPERTY]: boolean;
   [CONTENT_CATEGORY_DESCRIPTION_PROPERTY]?: string;
   [CONTENT_CATEGORY_METADATA_SCHEMA_PROPERTY]?: T;
+  [SITE_ADDRESS_PROPERTY]: string;
 }
 
 export type ContentCategoryMetadata = Record<string, {
@@ -81,13 +80,8 @@ export type ContentCategoryMetadata = Record<string, {
 }>;
 
 export type SubscriptionData = {
-  [ID_PROPERTY]: string;
-  [SUBSCRIPTION_SITE_ID_PROPERTY]: string;
+  [SITE_ADDRESS_PROPERTY]: string;
   [SUBSCRIPTION_NAME_PROPERTY]?: string;
-  [SUBSCRIPTION_RECURSIVE_PROPERTY]: boolean;
-  subscriptionType: string;
-  currentDepth: number;
-  followChain: string[];
 }
 
 export type BlockedContentData = {
@@ -116,11 +110,11 @@ export interface HashResponse extends IdResponse {
 export interface ILensService {
   init: (directory?: string) => Promise<void>;
   stop: () => Promise<void>;
-  openSite: (siteOrAddress: Site | string, openOptions?: SiteArgs) => Promise<void>;
+  openSite: (siteOrAddress: Site | string, options: { siteArgs?: SiteArgs, federate: boolean }) => Promise<void>;
   getPublicKey: () => Promise<string>;
   getPeerId: () => Promise<string>;
   getAccountStatus: () => Promise<AccountType>;
-  getSiteId: () => Promise<string>;
+  getSiteAddress: () => Promise<string>;
   getSiteMetadata: () => Promise<SiteMetadata>;
   setSiteMetadata: (metadata: SiteMetadata) => Promise<BaseResponse>;
   getRemoteSiteMetadata: (siteId: string) => Promise<SiteMetadata | null>;
@@ -137,7 +131,7 @@ export interface ILensService {
   editFeaturedRelease: (data: IdData & FeaturedReleaseData) => Promise<HashResponse>;
   deleteFeaturedRelease: (data: IdData) => Promise<IdResponse>;
   // Subscription methods
-  getSubscriptions: (options?: SearchOptions) => Promise<SubscriptionData[]>;
+  getSubscriptions: (options?: SearchOptions) => Promise<Subscription[]>;
   addSubscription: (data: Omit<SubscriptionData, 'id'>) => Promise<HashResponse>;
   deleteSubscription: (data: IdData) => Promise<IdResponse>;
 

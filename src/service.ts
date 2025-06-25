@@ -1,4 +1,5 @@
 import { Peerbit } from 'peerbit';
+import type { Documents, DocumentsChange } from '@peerbit/document';
 import {
   Compare,
   IntegerCompare,
@@ -9,17 +10,8 @@ import {
   StringMatch,
   type WithContext,
 } from '@peerbit/document';
-import { v4 as uuid } from 'uuid';
-
-import {
-  Access,
-  ACCESS_TYPE_PROPERTY,
-  AccessType,
-  PublicKeyAccessCondition,
-  type IdentityAccessController,
-} from '@peerbit/identity-access-controller';
-import type { PublicSignKey } from '@peerbit/crypto';
-import { FeaturedRelease, Release, Site, Subscription } from './schema';
+import type { Site } from './schema';
+import { FeaturedRelease, FederationUpdate, Release, Subscription } from './schema';
 import type {
   BaseResponse,
   FeaturedReleaseData,
@@ -35,44 +27,51 @@ import type {
 } from './types';
 
 import { AccountType } from './types';
-import { publicSignKeyFromString } from './utils';
-import { 
+import {
   FEATURED_RELEASE_ID_PROPERTY,
   ID_PROPERTY,
-  SUBSCRIPTION_SITE_ID_PROPERTY,
   SUBSCRIPTION_NAME_PROPERTY,
-  SUBSCRIPTION_RECURSIVE_PROPERTY,
   SITE_NAME_PROPERTY,
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
+  SITE_ADDRESS_PROPERTY,
 } from './constants';
+import type { PublicSignKey } from '@peerbit/crypto';
+import { type IdentityAccessController, ACCESS_TYPE_PROPERTY, AccessType, Access } from '@peerbit/identity-access-controller';
+import { deserialize } from '@dao-xyz/borsh';
+import type { DataEvent } from '@peerbit/pubsub-interface';
+import { AbortError, delay } from '@peerbit/time';
 
-export async function authorise(
-  siteProgram: Site,
-  accountType: AccountType,
-  stringPublicKey: string,
-): Promise<void> {
-  const publicSignKey = publicSignKeyFromString(stringPublicKey);
-  const accessCondition = new PublicKeyAccessCondition({ key: publicSignKey });
-  const accessTypes: AccessType[] = [AccessType.Read, AccessType.Write];
+class _Logger {
+  private prefix: string;
+  public readonly enabled: boolean;
 
-  if (accountType === AccountType.MEMBER) {
-    const access = new Access({
-      accessCondition,
-      accessTypes,
-    });
-    await siteProgram.members.access.put(access);
+  constructor(options: { enabled?: boolean; prefix?: string }) {
+    this.enabled = options.enabled || false;
+    this.prefix = options.prefix || '[LensService]';
+  }
 
-  } else if (accountType === AccountType.ADMIN) {
-    const access = new Access({
-      accessCondition,
-      accessTypes,
-    });
-    await siteProgram.members.access.put(access);
-    await siteProgram.administrators.access.put(access);
+  debug(...args: unknown[]) {
+    if (this.enabled) {
+      console.log(this.prefix, ...args);
+    }
+  }
 
-  } else {
-    throw new Error('authorization for this account type is not implemented yet.');
+  error(...args: unknown[]) {
+    // Errors are always logged for visibility.
+    console.error(this.prefix, '[ERROR]', ...args);
+  }
+
+  time(label: string) {
+    if (this.enabled) {
+      console.time(label);
+    }
+  }
+
+  timeEnd(label: string) {
+    if (this.enabled) {
+      console.timeEnd(label);
+    }
   }
 }
 
@@ -80,21 +79,21 @@ export async function authorise(
 const accessCheckCache = new Map<string, { result: boolean; timestamp: number }>();
 const CACHE_TTL = 60000; // 1 minute cache
 
-const canPerformCheck = async (accessController: IdentityAccessController, key: PublicSignKey) => {
-  const timerLabel = `[LensSDK] canPerformCheck ${accessController.address?.slice(0, 8)}`;
-  console.time(timerLabel);
-  
+const canPerformCheck = async (accessController: IdentityAccessController, key: PublicSignKey, logger: _Logger) => {
+  const timerLabel = `canPerformCheck on ACL: ${accessController.address?.slice(0, 10)}`;
+  logger.time(timerLabel);
+
   // Check cache first
   const cacheKey = `${accessController.address}_${key.toString()}`;
   const cached = accessCheckCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    console.log(`${timerLabel} - Cache hit`);
-    console.timeEnd(timerLabel);
+    logger.debug(`canPerformCheck for ACL ${accessController.address?.slice(0, 10)} - Cache hit`);
+    logger.timeEnd(timerLabel);
     return cached.result;
   }
 
   // Optimized query with specific access types
-  console.time(`${timerLabel} - index.search`);
+  logger.time(`${timerLabel} - index.search`);
   const accessWritedOrAny = await accessController.access.index.search(
     new SearchRequest({
       query: [
@@ -111,10 +110,9 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
           }),
         ]),
       ],
-      fetch: 50, // Limit results for performance
     }),
   );
-  console.timeEnd(`${timerLabel} - index.search`);
+  logger.timeEnd(`${timerLabel} - index.search`);
 
   for (const access of accessWritedOrAny) {
     if (access instanceof Access) {
@@ -127,17 +125,17 @@ const canPerformCheck = async (accessController: IdentityAccessController, key: 
         if (await access.accessCondition.allowed(key)) {
           // Cache the result
           accessCheckCache.set(cacheKey, { result: true, timestamp: Date.now() });
-          console.timeEnd(timerLabel);
+          logger.timeEnd(timerLabel);
           return true;
         }
         continue;
       }
     }
   }
-  
+
   // Cache negative result
   accessCheckCache.set(cacheKey, { result: false, timestamp: Date.now() });
-  console.timeEnd(timerLabel);
+  logger.timeEnd(timerLabel);
   return false;
 };
 
@@ -152,8 +150,8 @@ export class ElectronLensService implements ILensService {
     await window.electronLensService.stop();
   }
 
-  async openSite(siteOrAddress: Site | string, openOptions?: SiteArgs): Promise<void> {
-    await window.electronLensService.openSite(siteOrAddress, openOptions);
+  async openSite(siteOrAddress: Site | string, options: { siteArgs?: SiteArgs, federate: boolean } = { federate: true }): Promise<void> {
+    await window.electronLensService.openSite(siteOrAddress, options);
   }
 
   async getPublicKey() {
@@ -168,8 +166,8 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.getAccountStatus();
   }
 
-  async getSiteId(): Promise<string> {
-    return window.electronLensService.getSiteId();
+  async getSiteAddress(): Promise<string> {
+    return window.electronLensService.getSiteAddress();
   }
 
   async getSiteMetadata(): Promise<SiteMetadata> {
@@ -228,7 +226,7 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.deleteFeaturedRelease(data);
   }
 
-  async getSubscriptions(options?: SearchOptions): Promise<SubscriptionData[]> {
+  async getSubscriptions(options?: SearchOptions): Promise<Subscription[]> {
     return window.electronLensService.getSubscriptions(options);
   }
 
@@ -244,11 +242,16 @@ export class ElectronLensService implements ILensService {
 export class LensService implements ILensService {
   client: Peerbit | null = null;
   siteProgram: Site | null = null;
+  private logger: _Logger;
   private extenarlyManaged: boolean = false;
 
-  constructor(client?: Peerbit) {
-    if (client) {
-      this.client = client;
+  private activeFederations: Map<string, { close: () => Promise<void>; }> = new Map();
+
+  constructor(options?: { client?: Peerbit; debug?: boolean }) {
+    this.logger = new _Logger({ enabled: options?.debug, prefix: '[LensService]' });
+
+    if (options?.client) {
+      this.client = options.client;
       this.extenarlyManaged = true;
     }
   }
@@ -256,22 +259,32 @@ export class LensService implements ILensService {
   async init(directory?: string): Promise<void> {
     if (this.client) {
       throw new Error(
-        'LensService: Already configured with instances from constructor. Do not call init().',
+        'LensService: Already configured with an external client. Do not call init().',
       );
     }
+    this.logger.debug(`Initializing new Peerbit client in directory: ${directory || 'in-memory'}`);
     this.client = await Peerbit.create({ directory });
     this.extenarlyManaged = false;
   }
 
-  async stop(): Promise<void> {
+  async stop() {
+    const { client } = this.ensureInitialized();
+    this.logger.debug('Stopping LensService...');
+    await Promise.all([...this.activeFederations.values()].map(federation => federation.close()));
+    this.activeFederations.clear();
+    this.removeSubscriptionListener();
+    this.logger.debug('All active federations stopped.');
+
     if (!this.extenarlyManaged) {
-      const { client } = this.ensureInitialized();
-      try {
-        await client.stop();
-      } catch (error) {
-        console.error('LensService: Error stopping Peerbit client:', error);
-      }
+      await client.stop();
+      this.logger.debug('Internal Peerbit client stopped.');
     }
+    if (this.siteProgram) {
+      await this.siteProgram.close();
+    }
+    this.client = null;
+    this.siteProgram = null;
+    this.logger.debug('LensService stopped successfully.');
   }
 
   private ensureInitialized(): {
@@ -287,40 +300,12 @@ export class LensService implements ILensService {
     };
   }
 
-  async openSite(siteOrAddress: Site | string, openOptions?: SiteArgs): Promise<void> {
-    if (this.siteProgram) {
-      throw new Error(
-        'Site already opened.',
-      );
-    }
-    const { client } = this.ensureInitialized();
-
-    console.time('[LensSDK] Total openSite');
-    console.log('[LensSDK] Opening site with args:', JSON.stringify(openOptions, null, 2));
-    
-    if (siteOrAddress instanceof Site) {
-      console.time('[LensSDK] client.open (Site instance)');
-      this.siteProgram = await client.open(siteOrAddress, {
-        args: openOptions,
-      });
-      console.timeEnd('[LensSDK] client.open (Site instance)');
-    } else {
-      console.time('[LensSDK] client.open (address)');
-      this.siteProgram = await client.open<Site>(siteOrAddress, {
-        args: openOptions,
-      });
-      console.timeEnd('[LensSDK] client.open (address)');
-    }
-    
-    console.timeEnd('[LensSDK] Total openSite');
-  }
-
   private ensureSiteOpened(): {
     client: Peerbit;
     siteProgram: Site;
   } {
     const { client } = this.ensureInitialized();
-    if (!this.siteProgram) {
+    if (!this.siteProgram || this.siteProgram.closed) {
       throw new Error(
         'LensService is not properly initialized. call init(directory?).',
       );
@@ -331,10 +316,226 @@ export class LensService implements ILensService {
     };
   }
 
-  async closeSite(): Promise<void> {
+  async openSite(siteOrAddress: Site | string, options: { siteArgs?: SiteArgs, federate: boolean } = { federate: true }): Promise<void> {
+    if (this.siteProgram) {
+      throw new Error('A site is already open. Please close it before opening a new one.');
+    }
+    const { client } = this.ensureInitialized();
+    this.siteProgram = await client.open(siteOrAddress, { args: options.siteArgs });
+    this.logger.debug(`Site opened successfully at address: ${this.siteProgram.address}`);
+
+    if (options.federate) {
+      this.setupSubscriptionListener();
+      await this.initializeExistingFederations();
+    }
+
+  }
+
+  private setupSubscriptionListener() {
     const { siteProgram } = this.ensureSiteOpened();
-    await siteProgram.close();
-    this.siteProgram = null;
+    this.logger.debug('Setting up subscription listener.');
+    this._handleSubscriptionChange = this._handleSubscriptionChange.bind(this);
+    siteProgram.subscriptions.events.addEventListener('change', this._handleSubscriptionChange);
+  }
+
+  private removeSubscriptionListener() {
+    if (this.siteProgram && !this.siteProgram.closed) {
+      this.logger.debug('Removing subscription listener.');
+      this.siteProgram.subscriptions.events.removeEventListener('change', this._handleSubscriptionChange);
+    }
+  }
+
+  private _handleSubscriptionChange(event: CustomEvent<DocumentsChange<Subscription, Subscription>>) {
+    this.logger.debug(`Subscription change detected: ${event.detail.added.length} added, ${event.detail.removed.length} removed.`);
+    for (const added of event.detail.added) {
+      this.startFederation(added[SITE_ADDRESS_PROPERTY]);
+    }
+    for (const removed of event.detail.removed) {
+      this.stopFederation(removed[SITE_ADDRESS_PROPERTY]);
+    }
+  }
+
+  private async initializeExistingFederations() {
+    const { siteProgram } = this.ensureSiteOpened();
+    const existingSubscriptions = await siteProgram.subscriptions.index.search({});
+    this.logger.debug(`Found ${existingSubscriptions.length} existing subscriptions to initialize.`);
+    for (const sub of existingSubscriptions) {
+      await this.startFederation(sub[SITE_ADDRESS_PROPERTY]);
+    }
+  }
+
+  private async runHistoricalSync(remoteSiteAddress: string, externalSignal: AbortSignal): Promise<void> {
+    const { client, siteProgram: localSiteProgram } = this.ensureSiteOpened();
+    const SYNC_DURATION_MS = 60 * 1000; // 1 minute
+    const SYNC_POLL_INTERVAL_MS = 3 * 1000; // 3 seconds
+    this.logger.debug(`[Federation] Starting historical sync for ${remoteSiteAddress} (max duration: ${SYNC_DURATION_MS}ms)`);
+
+    let remoteSiteProgram: Site | undefined;
+    const timeoutController = new AbortController();
+    const combinedSignal = AbortSignal.any([externalSignal, timeoutController.signal]);
+
+    // REFACTOR: Use setTimeout to trigger the abort signal for a clean timeout.
+    const timeoutId = setTimeout(() => {
+      this.logger.debug(`[Federation] Historical sync timeout reached for ${remoteSiteAddress}.`);
+      timeoutController.abort();
+    }, SYNC_DURATION_MS);
+
+    try {
+      remoteSiteProgram = await client.open<Site>(remoteSiteAddress, {
+        timeout: 15000, // Timeout for opening the remote program
+        args: {
+          releasesArgs: { replicate: { factor: 1 } },
+          featuredReleasesArgs: { replicate: { factor: 1 } },
+          contentCategoriesArgs: { replicate: { factor: 1 } },
+          subscriptionsArgs: { replicate: false },
+          blockedContentArgs: { replicate: false },
+          membersArg: { replicate: false },
+          administratorsArgs: { replicate: false },
+        },
+      });
+
+      // This loop will be broken by the AbortController's signal
+      const syncLoop = async () => {
+        while (!combinedSignal.aborted) {
+          this.logger.debug(`[Federation] Running sync poll for ${remoteSiteAddress}`);
+
+
+          const [
+            releasesHeads,
+            featuredReleasesHeads,
+            contentCategoriesHeads,
+
+          ] = await Promise.all([
+            remoteSiteProgram!.releases.log.log.getHeads(true).all(),
+            remoteSiteProgram!.featuredReleases.log.log.getHeads(true).all(),
+            remoteSiteProgram!.contentCategories.log.log.getHeads(true).all(),
+          ]);
+
+          const joinPromises: Promise<void>[] = [];
+
+          if (releasesHeads.length > 0) {
+            joinPromises.push(localSiteProgram.releases.log.join(releasesHeads));
+          }
+          if (featuredReleasesHeads.length > 0) {
+            joinPromises.push(localSiteProgram.featuredReleases.log.join(featuredReleasesHeads));
+          }
+          if (contentCategoriesHeads.length > 0) {
+            joinPromises.push(localSiteProgram.contentCategories.log.join(contentCategoriesHeads));
+          }
+
+          await Promise.all(joinPromises);
+
+          await delay(SYNC_POLL_INTERVAL_MS, { signal: combinedSignal });
+        }
+      };
+      await syncLoop();
+    } catch (error) {
+      if (!(error instanceof AbortError)) { // Ignore AbortError as it's expected on timeout
+        this.logger.error(`[Federation] Error during historical sync for ${remoteSiteAddress}:`, error);
+      }
+    } finally {
+      clearTimeout(timeoutId); // Important: always clear the timeout
+      if (remoteSiteProgram) {
+        await remoteSiteProgram.close();
+        this.logger.debug(`[Federation] Historical sync for ${remoteSiteAddress} finished. Remote program closed.`);
+      }
+    }
+  }
+
+  private async startFederation(remoteSiteAddress: string) {
+    const { client, siteProgram: localSiteProgram } = this.ensureSiteOpened();
+
+    if (remoteSiteAddress === localSiteProgram.address || this.activeFederations.has(remoteSiteAddress)) {
+      this.logger.debug(`Federation with ${remoteSiteAddress} is already active or is self, skipping.`);
+      return;
+    }
+
+    this.logger.debug(`Activating federation with site: ${remoteSiteAddress}`);
+    const syncController = new AbortController();
+    // --- PHASE 1: HISTORICAL SYNC (Fire-and-forget) ---
+    // This runs in the background and cleans itself up.
+    this.runHistoricalSync(remoteSiteAddress, syncController.signal).catch(error => {
+      this.logger.error(`[Federation] Unhandled error in historical sync background process for ${remoteSiteAddress}:`, error);
+    });
+
+    // --- PHASE 2: LIVE UPDATES (Pub/Sub) ---
+    const federationTopic = `${remoteSiteAddress}/federation`;
+
+    const onFederationMessage = async (event: CustomEvent<DataEvent>) => {
+      if (!event.detail.data.topics.includes(federationTopic)) {
+        return;
+      }
+      try {
+        const update = deserialize(event.detail.data.data, FederationUpdate);
+        const targetStore = localSiteProgram[update.store].log;
+        if (update.added.length > 0) await targetStore.join(update.added);
+        if (update.removed.length > 0) await targetStore.join(update.removed);
+      } catch { /* Not a FederationUpdate, ignore */ }
+    };
+
+    this.logger.debug(`Subscribing to live updates on topic: ${federationTopic}`);
+    await client.services.pubsub.subscribe(federationTopic);
+    client.services.pubsub.addEventListener('data', onFederationMessage);
+
+    // Store the cleanup logic for the live subscription.
+    this.activeFederations.set(remoteSiteAddress, {
+      close: async () => {
+        this.logger.debug(`Cleaning up live subscription for ${remoteSiteAddress}`);
+        syncController.abort();
+        await client.services.pubsub.unsubscribe(federationTopic);
+        client.services.pubsub.removeEventListener('data', onFederationMessage);
+      },
+    });
+
+    this.logger.debug(`Federation fully active for site: ${remoteSiteAddress}`);
+  }
+
+  private async stopFederation(remoteSiteAddress: string) {
+    const federationHandle = this.activeFederations.get(remoteSiteAddress);
+    if (!federationHandle) {
+      this.logger.debug(`No active federation for site ${remoteSiteAddress}, skipping stop.`);
+      return;
+    }
+
+    try {
+      const { siteProgram: localSiteProgram } = this.ensureSiteOpened();
+      this.logger.debug(`Cleaning up federated documents from site: ${remoteSiteAddress}`);
+      const query = [new StringMatch({ key: SITE_ADDRESS_PROPERTY, value: remoteSiteAddress })];
+
+      // Helper function to iterate and collect all documents from a store matching a query
+      const collectAll = async <T, I extends object>(store: Documents<T, I>) => {
+        const allDocs: WithContext<T>[] = [];
+        const iterator = store.index.iterate({ query });
+        while (!iterator.done()) {
+            const batch = await iterator.next(1000); // Process in batches of 1000
+            allDocs.push(...batch);
+        }
+        return allDocs;
+      };
+
+      const [releasesToRemove, featuredToRemove, contentCategoriesToRemove] = await Promise.all([
+          collectAll(localSiteProgram.releases),
+          collectAll(localSiteProgram.featuredReleases),
+          collectAll(localSiteProgram.contentCategories),
+      ]);
+
+      const deletePromises = [
+        ...releasesToRemove.map(r => localSiteProgram.releases.del(r.id)),
+        ...featuredToRemove.map(fr => localSiteProgram.featuredReleases.del(fr.id)),
+        ...contentCategoriesToRemove.map(fr => localSiteProgram.contentCategories.del(fr.id)),
+      ];
+
+      if (deletePromises.length > 0) {
+        await Promise.all(deletePromises);
+        this.logger.debug(`Cleaned up ${deletePromises.length} federated documents from site: ${remoteSiteAddress}.`);
+      }
+
+      this.logger.debug(`Stopping federation with site: ${remoteSiteAddress}`);
+      await federationHandle.close();
+      this.activeFederations.delete(remoteSiteAddress);
+    } catch (error) {
+      this.logger.error(`Error during federation cleanup for site ${remoteSiteAddress}:`, error);
+    }
   }
 
   async getPublicKey(): Promise<string> {
@@ -353,28 +554,34 @@ export class LensService implements ILensService {
   }
 
   async getAccountStatus(): Promise<AccountType> {
-    console.time('[LensSDK] getAccountStatus');
+    this.logger.time('getAccountStatus');
     const { client, siteProgram } = this.ensureSiteOpened();
 
-    // Check administrators first (smaller set, faster query)
-    console.time('[LensSDK] Admin check');
-    const isAdmin = await canPerformCheck(siteProgram.administrators, client.identity.publicKey);
-    console.timeEnd('[LensSDK] Admin check');
-    
+    // Run permission checks in parallel for better performance.
+    const [isAdmin, isMember] = await Promise.all([
+      canPerformCheck(siteProgram.administrators, client.identity.publicKey, this.logger),
+      canPerformCheck(siteProgram.members, client.identity.publicKey, this.logger),
+    ]);
+
+    // Check from highest to lowest privilege.
     if (isAdmin) {
-      console.timeEnd('[LensSDK] getAccountStatus');
+      this.logger.debug('User status determined: ADMIN.');
+      this.logger.timeEnd('getAccountStatus');
       return AccountType.ADMIN;
     }
-    
-    console.time('[LensSDK] Member check');
-    const isMember = await canPerformCheck(siteProgram.members, client.identity.publicKey);
-    console.timeEnd('[LensSDK] Member check');
-    
-    console.timeEnd('[LensSDK] getAccountStatus');
-    return isMember ? AccountType.MEMBER : AccountType.GUEST;
+
+    if (isMember) {
+      this.logger.debug('User status determined: MEMBER.');
+      this.logger.timeEnd('getAccountStatus');
+      return AccountType.MEMBER;
+    }
+
+    this.logger.debug('User status determined: GUEST.');
+    this.logger.timeEnd('getAccountStatus');
+    return AccountType.GUEST;
   }
 
-  async getSiteId(): Promise<string> {
+  async getSiteAddress(): Promise<string> {
     const { siteProgram } = this.ensureSiteOpened();
     return siteProgram.address;
   }
@@ -391,7 +598,7 @@ export class LensService implements ILensService {
   async setSiteMetadata(metadata: SiteMetadata): Promise<BaseResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
-      
+      this.logger.debug('Updating site metadata:', metadata);
       // Update the site metadata fields
       if (metadata[SITE_NAME_PROPERTY] !== undefined) {
         siteProgram[SITE_NAME_PROPERTY] = metadata[SITE_NAME_PROPERTY];
@@ -405,9 +612,10 @@ export class LensService implements ILensService {
 
       return { success: true };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to update site metadata' 
+      this.logger.error('Failed to update site metadata:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update site metadata',
       };
     }
   }
@@ -415,22 +623,24 @@ export class LensService implements ILensService {
   async getRemoteSiteMetadata(siteId: string): Promise<SiteMetadata | null> {
     try {
       const { client } = this.ensureInitialized();
-      
+      this.logger.debug(`Fetching remote site metadata for: ${siteId}`);
+
       // Open remote site temporarily to get metadata
       const remoteSite = await client.open<Site>(siteId);
-      
+
       const metadata: SiteMetadata = {
         [SITE_NAME_PROPERTY]: remoteSite[SITE_NAME_PROPERTY],
         [SITE_DESCRIPTION_PROPERTY]: remoteSite[SITE_DESCRIPTION_PROPERTY],
         [SITE_IMAGE_CID_PROPERTY]: remoteSite[SITE_IMAGE_CID_PROPERTY],
       };
-      
+
       // Close the remote site
       await remoteSite.close();
-      
+      this.logger.debug(`Successfully fetched and closed remote site handle for: ${siteId}`);
+
       return metadata;
     } catch (error) {
-      console.error('Failed to get remote site metadata:', error);
+      this.logger.error('Failed to get remote site metadata:', error);
       return null;
     }
   }
@@ -441,30 +651,30 @@ export class LensService implements ILensService {
   }
 
   async getReleases(options?: SearchOptions): Promise<WithContext<Release>[]> {
-    console.time('[LensSDK] getReleases');
+    this.logger.time('getReleases');
     const { siteProgram } = this.ensureSiteOpened();
-    
+
     const request = options?.request ?? new SearchRequest({
       sort: options?.sort ?? [
         new Sort({ key: 'created', direction: SortDirection.DESC }),
       ],
     });
-    
-    console.log('[LensSDK] Fetching all releases using iterator pattern');
-    console.time('[LensSDK] releases.index.iterate');
-    
+
+    this.logger.debug('Fetching all releases with iterator pattern:', request);
+    this.logger.time('releases.index.iterate');
+
     const allResults: WithContext<Release>[] = [];
     const iterator = siteProgram.releases.index.iterate(request);
-    
+
     while (iterator.done() !== true) {
       const batch = await iterator.next(100); // Fetch 100 releases per page
       allResults.push(...batch);
-      console.log(`[LensSDK] Fetched batch of ${batch.length} releases, total: ${allResults.length}`);
+      this.logger.debug(`Fetched batch of ${batch.length} releases, total: ${allResults.length}`);
     }
-    
-    console.timeEnd('[LensSDK] releases.index.iterate');
-    console.log('[LensSDK] Found total releases:', allResults.length);
-    console.timeEnd('[LensSDK] getReleases');
+
+    this.logger.timeEnd('releases.index.iterate');
+    this.logger.debug(`Found a total of ${allResults.length} releases.`);
+    this.logger.timeEnd('getReleases');
     return allResults;
   }
 
@@ -474,30 +684,30 @@ export class LensService implements ILensService {
   }
 
   async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
-    console.time('[LensSDK] getFeaturedReleases');
+    this.logger.time('getFeaturedReleases');
     const { siteProgram } = this.ensureSiteOpened();
-    
+
     const request = options?.request ?? new SearchRequest({
       sort: options?.sort ?? [
         new Sort({ key: 'created', direction: SortDirection.DESC }),
       ],
     });
-    
-    console.log('[LensSDK] Fetching all featured releases using iterator pattern');
-    console.time('[LensSDK] featuredReleases.index.iterate');
-    
+
+    this.logger.debug('Fetching all featured releases with iterator pattern:', request);
+    this.logger.time('featuredReleases.index.iterate');
+
     const allResults: WithContext<FeaturedRelease>[] = [];
     const iterator = siteProgram.featuredReleases.index.iterate(request);
-    
+
     while (iterator.done() !== true) {
       const batch = await iterator.next(100); // Fetch 100 featured releases per page
       allResults.push(...batch);
-      console.log(`[LensSDK] Fetched batch of ${batch.length} featured releases, total: ${allResults.length}`);
+      this.logger.debug(`Fetched batch of ${batch.length} featured releases, total: ${allResults.length}`);
     }
-    
-    console.timeEnd('[LensSDK] featuredReleases.index.iterate');
-    console.log('[LensSDK] Found total featured releases:', allResults.length);
-    console.timeEnd('[LensSDK] getFeaturedReleases');
+
+    this.logger.timeEnd('featuredReleases.index.iterate');
+    this.logger.debug(`Found a total of ${allResults.length} featured releases.`);
+    this.logger.timeEnd('getFeaturedReleases');
     return allResults;
   }
 
@@ -507,13 +717,14 @@ export class LensService implements ILensService {
 
       const release = new Release(data);
       const result = await siteProgram.releases.put(release);
-
+      this.logger.debug(`Successfully added release with ID: ${release.id}`);
       return {
         success: true,
         id: release.id,
         hash: result.entry.hash,
       };
     } catch (error) {
+      this.logger.error('Failed to add release:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to add release',
@@ -525,16 +736,16 @@ export class LensService implements ILensService {
   async editRelease(data: IdData & ReleaseData): Promise<HashResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
-
       const release = new Release(data);
       const result = await siteProgram.releases.put(release);
-
+      this.logger.debug(`Successfully edited release with ID: ${release.id}`);
       return {
         success: true,
         id: release.id,
         hash: result.entry.hash,
       };
     } catch (error) {
+      this.logger.error(`Failed to edit release with ID: ${data.id}`, error);
       return {
         success: false,
         id: data.id,
@@ -546,7 +757,7 @@ export class LensService implements ILensService {
   async deleteRelease({ id }: IdData): Promise<IdResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
-
+      this.logger.debug(`Attempting to delete release with ID: ${id}`);
       const targetFeaturedReleases = await siteProgram.featuredReleases.index.search(
         new SearchRequest({
           query: [
@@ -559,15 +770,18 @@ export class LensService implements ILensService {
       );
 
       for (const tfr of targetFeaturedReleases) {
+        this.logger.debug(`Deleting associated featured release with ID: ${tfr.id}`);
         await this.deleteFeaturedRelease({ id: tfr.id });
       }
 
       await siteProgram.releases.del(id);
+      this.logger.debug(`Successfully deleted release with ID: ${id}`);
       return {
         success: true,
         id,
       };
     } catch (error) {
+      this.logger.error(`Failed to delete release with ID: ${id}`, error);
       return {
         success: false,
         id,
@@ -589,6 +803,7 @@ export class LensService implements ILensService {
       }
       const featuredRelease = new FeaturedRelease(data);
       const result = await siteProgram.featuredReleases.put(featuredRelease);
+      this.logger.debug(`Successfully added featured release with ID: ${featuredRelease.id}`);
 
       return {
         success: true,
@@ -596,6 +811,7 @@ export class LensService implements ILensService {
         hash: result.entry.hash,
       };
     } catch (error) {
+      this.logger.error('Failed to add featured release:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to add featured release',
@@ -609,6 +825,7 @@ export class LensService implements ILensService {
 
       const featuredRelease = new FeaturedRelease(data);
       const result = await siteProgram.featuredReleases.put(featuredRelease);
+      this.logger.debug(`Successfully edited featured release with ID: ${featuredRelease.id}`);
 
       return {
         success: true,
@@ -616,6 +833,7 @@ export class LensService implements ILensService {
         hash: result.entry.hash,
       };
     } catch (error) {
+      this.logger.error(`Failed to edit featured release with ID: ${data.id}`, error);
       return {
         success: false,
         id: data.id,
@@ -627,13 +845,14 @@ export class LensService implements ILensService {
   async deleteFeaturedRelease({ id }: IdData): Promise<IdResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
-
       await siteProgram.featuredReleases.del(id);
+      this.logger.debug(`Successfully deleted featured release with ID: ${id}`);
       return {
         success: true,
         id,
       };
     } catch (error) {
+      this.logger.error(`Failed to delete featured release with ID: ${id}`, error);
       return {
         success: false,
         id,
@@ -642,63 +861,53 @@ export class LensService implements ILensService {
     }
   }
 
-  async getSubscriptions(options?: SearchOptions): Promise<SubscriptionData[]> {
+  async getSubscriptions(options?: SearchOptions): Promise<Subscription[]> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
-
       const request = options?.request ?? new SearchRequest({
         sort: options?.sort ?? [
           new Sort({ key: 'created', direction: SortDirection.DESC }),
         ],
       });
 
-      const allResults: SubscriptionData[] = [];
+      this.logger.debug('Fetching all subscriptions with iterator pattern.');
+      const allResults: Subscription[] = [];
       const iterator = siteProgram.subscriptions.index.iterate(request);
 
       while (iterator.done() !== true) {
-        const batch = await iterator.next(100); // Fetch 100 subscriptions per page
+        const batch = await iterator.next(100);
         for (const subscription of batch) {
           allResults.push({
             [ID_PROPERTY]: subscription[ID_PROPERTY],
-            [SUBSCRIPTION_SITE_ID_PROPERTY]: subscription[SUBSCRIPTION_SITE_ID_PROPERTY],
+            [SITE_ADDRESS_PROPERTY]: subscription[SITE_ADDRESS_PROPERTY],
             [SUBSCRIPTION_NAME_PROPERTY]: subscription[SUBSCRIPTION_NAME_PROPERTY],
-            [SUBSCRIPTION_RECURSIVE_PROPERTY]: subscription[SUBSCRIPTION_RECURSIVE_PROPERTY],
-            subscriptionType: subscription.subscriptionType,
-            currentDepth: subscription.currentDepth,
-            followChain: subscription.followChain,
           });
         }
-
-        // Apply fetch limit if specified
         if (options?.fetch && allResults.length >= options.fetch) {
           break;
         }
       }
-
+      this.logger.debug(`Found a total of ${allResults.length} subscriptions.`);
       return allResults;
     } catch (error) {
-      console.error('Failed to get subscriptions:', error);
+      this.logger.error('Failed to get subscriptions:', error);
       return [];
     }
   }
 
-  async addSubscription(data: Omit<SubscriptionData, 'id'>): Promise<HashResponse> {
+  async addSubscription(data: SubscriptionData): Promise<HashResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
-
-      const subscriptionData = {
-        [ID_PROPERTY]: uuid(),
-        ...data,
-      };
-      const subscription = new Subscription(subscriptionData);
+      this.logger.debug(`Adding subscription to site: ${data.siteAddress}`);
+      const subscription = new Subscription(data);
       const result = await siteProgram.subscriptions.put(subscription);
-
       return {
         success: true,
-        id: subscription.id,
+        id: subscription.siteAddress,
         hash: result.entry.hash,
       };
     } catch (error) {
+      this.logger.error('Failed to add subscription:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to add subscription',
@@ -706,16 +915,40 @@ export class LensService implements ILensService {
     }
   }
 
-  async deleteSubscription({ id }: IdData): Promise<IdResponse> {
+  async deleteSubscription({ id, siteAddress }: Partial<IdData & { siteAddress: string }>): Promise<IdResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
 
-      await siteProgram.subscriptions.del(id);
+      let subscriptionIdToDelete = id;
+      if (siteAddress) {
+        const subscription = await siteProgram.subscriptions.index.search(
+          new SearchRequest({
+            query: [
+              new StringMatch({
+                key: SITE_ADDRESS_PROPERTY,
+                value: siteAddress,
+              }),
+            ],
+            fetch: 1,
+          }), 
+        );
+        if (subscription[0]) {
+          subscriptionIdToDelete = subscription[0].id;
+          
+        }
+      }
+      if (!subscriptionIdToDelete) {
+        throw new Error('At least one params must be passed. Subscription ID or Site Address');
+      }
+      this.logger.debug(`Deleting subscription with ID: ${id}`);
+      await siteProgram.subscriptions.del(subscriptionIdToDelete);
+
       return {
         success: true,
         id,
       };
     } catch (error) {
+      this.logger.error(`Failed to delete subscription with ID: ${id}`, error);
       return {
         success: false,
         id,
