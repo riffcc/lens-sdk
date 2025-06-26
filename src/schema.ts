@@ -620,8 +620,8 @@ export class Site extends Program<SiteArgs> {
           this.address,
           props,
           this.subscriptions,
-          this.contentCategories,
-          ContentCategory,
+          this.featuredReleases,
+          FeaturedRelease,
           administratorCanPerform,
         ),
         index: {
