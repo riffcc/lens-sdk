@@ -425,9 +425,9 @@ export class IndexableBlockedContent {
 //   ]),
 // } as PublicSignKey;
 
-  // Cache for subscription checks to improve performance
-  const subscriptionCache = new Map<string, { isSubscribed: boolean; timestamp: number }>();
-  const CACHE_TTL = 60000; // 1 minute cache TTL
+// Cache for subscription checks to improve performance
+const subscriptionCache = new Map<string, { isSubscribed: boolean; timestamp: number }>();
+const CACHE_TTL = 60000; // 1 minute cache TTL
 
 const isSubscribed = async (originSiteAddress: string, subscriptionsStore: Documents<Subscription, IndexableSubscription>): Promise<boolean> => {
   const cached = subscriptionCache.get(originSiteAddress);
@@ -490,8 +490,6 @@ const canPerformFederatedWrite = async<
   // Fallback to local permission checks for any other operation types.
   return localPermissionCheck(props);
 };
-
-
 
 @variant('federation_update')
 export class FederationUpdate {
@@ -622,8 +620,8 @@ export class Site extends Program<SiteArgs> {
           this.address,
           props,
           this.subscriptions,
-          this.contentCategories, 
-          ContentCategory, 
+          this.contentCategories,
+          ContentCategory,
           administratorCanPerform,
         ),
         index: {
@@ -650,10 +648,10 @@ export class Site extends Program<SiteArgs> {
         replicas: args?.contentCategoriesArgs?.replicas,
         canPerform: (props) => canPerformFederatedWrite(
           this.address,
-          props, 
+          props,
           this.subscriptions,
-          this.contentCategories, 
-          ContentCategory, 
+          this.contentCategories,
+          ContentCategory,
           administratorCanPerform,
         ),
         index: {
@@ -765,7 +763,10 @@ export class Site extends Program<SiteArgs> {
     });
   }
 
-  private async broadcastFederationUpdate(storeName: 'releases' | 'featuredReleases' | 'contentCategories', change: DocumentsChange<unknown, unknown>) {
+  private async broadcastFederationUpdate(
+    storeName: 'releases' | 'featuredReleases' | 'contentCategories',
+    change: DocumentsChange<unknown, unknown>,
+  ) {
     // We need the full Entry<Operation> object to broadcast
     // This requires fetching them from the log based on the change set
     const getEntriesFromChange = async (docs: WithContext<unknown>[]) => {

@@ -399,7 +399,6 @@ export class LensService implements ILensService {
         while (!combinedSignal.aborted) {
           this.logger.debug(`[Federation] Running sync poll for ${remoteSiteAddress}`);
 
-
           const [
             releasesHeads,
             featuredReleasesHeads,
