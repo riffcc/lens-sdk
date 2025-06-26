@@ -202,7 +202,7 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.getFeaturedReleases(options);
   }
 
-  async addRelease(data: ReleaseData): Promise<HashResponse> {
+  async addRelease(data: Omit<ReleaseData, 'siteAddress'>): Promise<HashResponse> {
     return window.electronLensService.addRelease(data);
   }
   // Admin methods
@@ -214,7 +214,7 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.deleteRelease(data);
   }
 
-  async addFeaturedRelease(data: FeaturedReleaseData): Promise<HashResponse> {
+  async addFeaturedRelease(data: Omit<FeaturedReleaseData, 'siteAddress'>): Promise<HashResponse> {
     return window.electronLensService.addFeaturedRelease(data);
   }
 
@@ -710,11 +710,14 @@ export class LensService implements ILensService {
     return allResults;
   }
 
-  async addRelease(data: ReleaseData): Promise<HashResponse> {
+  async addRelease(data: Omit<ReleaseData, 'siteAddress'>): Promise<HashResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
 
-      const release = new Release(data);
+      const release = new Release({
+        ...data,
+        [SITE_ADDRESS_PROPERTY]: siteProgram.address,
+      });
       const result = await siteProgram.releases.put(release);
       this.logger.debug(`Successfully added release with ID: ${release.id}`);
       return {
@@ -789,7 +792,7 @@ export class LensService implements ILensService {
     }
   }
 
-  async addFeaturedRelease(data: FeaturedReleaseData): Promise<HashResponse> {
+  async addFeaturedRelease(data: Omit<FeaturedReleaseData, 'siteAddress'>): Promise<HashResponse> {
     try {
       const { siteProgram } = this.ensureSiteOpened();
 
@@ -800,7 +803,10 @@ export class LensService implements ILensService {
           `Cannot add featured release: The specified release ID ${data[FEATURED_RELEASE_ID_PROPERTY]} does not exist.`,
         );
       }
-      const featuredRelease = new FeaturedRelease(data);
+      const featuredRelease = new FeaturedRelease({
+        ...data,
+        [SITE_ADDRESS_PROPERTY]: siteProgram.address,
+      });
       const result = await siteProgram.featuredReleases.put(featuredRelease);
       this.logger.debug(`Successfully added featured release with ID: ${featuredRelease.id}`);
 

@@ -123,16 +123,16 @@ export interface ILensService {
   getReleases: (options?: SearchOptions) => Promise<WithContext<Release>[]>;
   getFeaturedRelease: (data: IdData) => Promise<WithContext<FeaturedRelease> | undefined>;
   getFeaturedReleases: (options?: SearchOptions) => Promise<WithContext<FeaturedRelease>[]>;
-  addRelease: (data: ReleaseData) => Promise<HashResponse>;
+  addRelease: (data: Omit<ReleaseData, 'siteAddress'>) => Promise<HashResponse>;
   // Admin methods
   editRelease: (data: IdData & ReleaseData) => Promise<HashResponse>;
   deleteRelease: (data: IdData) => Promise<IdResponse>;
-  addFeaturedRelease: (data: FeaturedReleaseData) => Promise<HashResponse>;
+  addFeaturedRelease: (data: Omit<FeaturedReleaseData, 'siteAddress'>) => Promise<HashResponse>;
   editFeaturedRelease: (data: IdData & FeaturedReleaseData) => Promise<HashResponse>;
   deleteFeaturedRelease: (data: IdData) => Promise<IdResponse>;
   // Subscription methods
   getSubscriptions: (options?: SearchOptions) => Promise<Subscription[]>;
-  addSubscription: (data: Omit<SubscriptionData, 'id'>) => Promise<HashResponse>;
+  addSubscription: (data: SubscriptionData) => Promise<HashResponse>;
   deleteSubscription: (data: IdData) => Promise<IdResponse>;
 
 }

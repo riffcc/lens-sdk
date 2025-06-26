@@ -51,7 +51,6 @@ const run = async () => {
                 name: `Historical Release #${i}`,
                 categoryId: 'benchmark-historical',
                 contentCID: `cid_historical_${i}`,
-                siteAddress: siteAAddress,
             });
         }
 
@@ -90,7 +89,6 @@ const run = async () => {
             name: 'Live Update Release',
             categoryId: 'benchmark-live',
             contentCID: 'cid_live_update',
-            siteAddress: siteAAddress,
         });
 
         const expectedLiveSize = BATCH_SIZE_A + 1;
@@ -142,7 +140,6 @@ const run = async () => {
                 name: `Site B Release #${i}`,
                 categoryId: 'benchmark-site-b',
                 contentCID: `cid_site_b_${i}`,
-                siteAddress: siteBAddress,
             });
         }
         
