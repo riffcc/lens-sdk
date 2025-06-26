@@ -1,202 +1,146 @@
-## Architecture and Data Flow of the Lens Defederation System
+## Architecture and Data Flow of the Lens Federation System
 
-### 1. Overview
+### 1. Executive Summary
 
-The Lens Defederation System is a decentralized content management and distribution network built on the Peerbit P2P framework. Its core purpose is to allow independent "Sites" to operate as self-contained databases while also being able to "federate" or "subscribe" to content from other sites.
+The Lens Federation System is a decentralized content management and distribution network built on the Peerbit framework. Its architecture allows independent, self-contained "Sites" to operate autonomously while also being able to "federate" with each other. Federation is achieved through a subscription model, where one Site can subscribe to another to automatically replicate its content, creating a resilient and interconnected network of content hubs.
 
-This architecture enables a powerful model where each site owner maintains full control over their own content and user permissions but can pull in and re-distribute content from other sites they trust. The system is designed to be robust, secure, and scalable, leveraging Peerbit's automatic replication, access control, and a hybrid data synchronization model.
+The system's core features include:
 
-### 2. Core Architectural Components
+* **Modular Data Stores**: Each Site contains multiple, distinct databases (for releases, categories, etc.).
+* **Role-Based Access Control**: Permissions are managed through a two-tiered system of "Members" and "Administrators".
+* **Federated Replication**: Sites can subscribe to other Sites to pull in and re-host their content.
+* **Live and Historical Sync**: The federation mechanism supports both real-time updates and the synchronization of historical data.
 
-The entire system is orchestrated by the `LensService` class, but the fundamental building blocks are defined in `schema.ts`.
+### 2. Core Concepts
 
-#### 2.1. The `Site` Program
+#### 2.1. The `Site`
 
-The central component of the system is the `Site` class. It is a composite **`Program`** in Peerbit, acting as a container for all the data and logic related to a single content hub.
+A `Site` is the central architectural unit in the Lens system. It is a self-contained Peerbit `Program` that encapsulates:
 
-*   **Identity**: Each `Site` has a unique, cryptographically generated address. This address serves as its global identifier within the network.
-*   **Encapsulation**: It encapsulates all related data stores (releases, subscriptions, access control lists) into a single, replicable unit.
+* **Data**: A collection of databases for managing content (e.g., releases, featured content).
+* **Access Control Lists (ACLs)**: Databases that define which users are members or administrators.
+* **Subscriptions**: A list of other Sites it follows.
+* **Metadata**: Descriptive information like its name and description.
 
-```typescript
-// schema.ts
-@variant('site')
-export class Site extends Program<SiteArgs> {
-  @field({ type: Documents })
-  releases: Documents<Release, IndexableRelease>;
+Each `Site` has a unique, stable address derived from its content, making it discoverable and verifiable on the P2P network.
 
-  @field({ type: Documents })
-  featuredReleases: Documents<FeaturedRelease, IndexableFeaturedRelease>;
+#### 2.2. Federation
 
-  // ... other stores
+Federation is a one-way relationship between two Sites, established via a `Subscription`.
 
-  @field({ type: IdentityAccessController })
-  members: IdentityAccessController;
+* If **Site A** subscribes to **Site B**, Site A will begin to pull and replicate content from Site B.
+* This relationship is not automatically reciprocal; Site B does not replicate content from Site A unless it also creates a subscription to Site A.
+* This model allows for various network topologies, from one-way content mirrors to fully meshed, bi-directional federations.
 
-  @field({ type: IdentityAccessController })
-  administrators: IdentityAccessController;
+### 3. System Architecture
 
-  // ... site metadata
-}
-```
+The system is composed of two main layers: the `Site` Program, which defines the on-chain/P2P logic, and the `LensService`, which acts as a high-level API and orchestrator.
 
-#### 2.2. Internal Data Stores
+#### 3.1. The `Site` Program (`schema.ts`)
 
-Each `Site` program contains several internal **`Documents`** stores. Each store is a separate, fully-fledged database with its own topic for replication. This separation is key to the system's modularity.
+The `Site` class is the heart of the system, containing several nested sub-programs.
 
-*   **`releases`**: The primary content store for things like articles, videos, or music releases.
-*   **`featuredReleases`**: A store to highlight specific releases, often used for a site's homepage.
-*   **`contentCategories`**: For organizing releases into categories.
-*   **`subscriptions`**: **The engine of federation.** This store holds a list of other `Site` addresses that the current site is subscribed to.
-*   **`blockedContent`**: An admin-only store to list CIDs of content that should be hidden or censored.
+* **Data Stores (`Documents`)**:
+  * `releases`: Stores the primary content objects (`Release`).
+  * `featuredReleases`: Stores metadata for featuring specific releases.
+  * `contentCategories`: Manages categories for organizing releases.
+  * `subscriptions`: A critical store that lists the addresses of other `Site` programs this Site federates with.
+  * `blockedContent`: An administrative list of CIDs to block.
 
-#### 2.3. Access Control Layer
+* **Access Control (`IdentityAccessController`)**:
+  * `members`: A list of public keys that have permission to create content (e.g., add a `Release`).
+  * `administrators`: A list of public keys with elevated privileges, such as managing categories, subscriptions, and deleting content.
 
-Security and permissions are managed by two dedicated `IdentityAccessController` programs within each `Site`.
+* **Federation Topic**: Each `Site` instance generates a unique pub/sub topic for broadcasting its updates to subscribers. The topic is derived from its address: `${site.address}/federation`.
 
-*   **`members`**: Holds a list of public keys that are granted "member" privileges. Typically, members can create content (e.g., `addRelease`).
-*   **`administrators`**: Holds a list of public keys with full administrative control. Admins can manage all content, subscriptions, and permissions for both members and other admins.
+* **Broadcast Setup**: When a `Site` is opened via `site.open()`, it automatically calls `setupFederationBroadcasts()`. This method attaches event listeners to its core data stores (`releases`, `featuredReleases`, etc.). When a local change occurs in one of these stores, these listeners trigger the broadcasting mechanism, enabling the real-time updates described in the data flow section.
 
-Access checks are performed within the `canPerform` hooks of each data store. This hook now uses a helper, `canPerformFederatedWrite`, which elegantly handles the distinction between local and federated content.
+#### 3.2. The `LensService` (`service.ts`)
 
-```typescript
-// schema.ts -> Site.open()
-this.releases.open({
-  // ...
-  canPerform: (props) => canPerformFederatedWrite(
-    this.address,
-    props,
-    this.subscriptions,
-    this.releases,
-    Release,
-    // This is the fallback check for local content
-    (localProps) => props.type === 'put' ? memberCanPerform(localProps) : administratorCanPerform(localProps),
-  ),
-  // ...
-});
-```
+This class provides a simplified API for interacting with the P2P system. It is responsible for:
 
-The `canPerformFederatedWrite` helper checks if the content's origin address is the local site's address. If it is, it defers to the standard member/admin check. If not, it checks if the local site is subscribed to the origin site. This is a critical security gate.
+* **Lifecycle Management**: Initializing and stopping the underlying `Peerbit` client.
+* **Site Management**: Opening and closing `Site` programs.
+* **Federation Orchestration**: This is its most critical role. The `LensService` listens for changes in its local `subscriptions` store and automatically manages the federation lifecycle:
+  * **`startFederation`**: Initiates both historical and live sync with a remote site.
+  * **`stopFederation`**: Tears down the connection and cleans up replicated data from a remote site.
 
-#### 2.4. The `LensService`
+### 4. Data Flow
 
-This class (`service.ts`) acts as the high-level API and orchestrator for the entire system. It abstracts away the complexities of Peerbit and provides a clean, promise-based interface for applications.
+The data flow can be understood in two main scenarios: local operations within a single site and federated operations between sites.
 
-*   **Lifecycle Management**: Handles initializing and stopping the underlying `Peerbit` client.
-*   **Site Management**: Manages opening, closing, and interacting with the primary `Site` program.
-*   **Defederation Logic**: Contains the crucial `startFederation` and `stopFederation` methods that manage the data flow between sites.
-*   **API Facade**: Exposes methods like `getReleases`, `addSubscription`, etc., which translate simple calls into operations on the appropriate internal stores.
+#### 4.1. Data Flow for Local Operations
 
-### 3. Data Flow and Key Processes
+This flow describes what happens when a user interacts with their own `Site`.
 
-#### 3.1. Single Site Replication
+1. **API Call**: A user calls a method on the `LensService`, such as `addRelease(data)`.
+2. **Service Layer**: The `LensService` ensures the `Site` program is open and then calls the appropriate method on it, for example, `siteProgram.releases.put(new Release(data))`.
+3. **Permission Check**: The `canPerformFederatedWrite` hook on the `releases` store is triggered. Since the write originates locally (`originSiteAddress === localSiteAddress`), it delegates the permission check to the relevant local ACL (`members.canPerform()` for adding a release).
+4. **Append to Log**: If the user has permission, the new `Release` data is serialized and appended as an entry to the `SharedLog` inside the `releases` documents store.
+5. **Local Index Update**: The `releases` store's `change` event fires. This triggers the internal index to update, making the new release immediately available for querying on the local node.
+6. **Broadcast (for federation)**: Simultaneously, the `change` event is caught by the `setupFederationBroadcasts` listener, which prepares and publishes a `FederationUpdate` message to the Site's federation topic for any subscribers.
+7. **Response**: The service method returns a success response to the user.
 
-This is the standard Peerbit replication model and the foundation of the system.
+#### 4.2. Establishing a Federation (The Subscription Process)
 
-1.  **Peer A** initializes the `LensService` and calls `openSite(new Site(...))`. This creates a new `Site` program with a unique address.
-2.  **Peer B** initializes its own `LensService` and calls `openSite('address-of-site-A')`.
-3.  **Topic Subscription**: Both peers' services automatically subscribe to the topics associated with *each internal store* (releases, featuredReleases, etc.) of that specific `Site`.
-4.  **Discovery & Replication**: Through the shared topics, Peer A and Peer B discover each other.
-5.  When Peer A adds a release, the new entry is published on the `releases` store's topic. Peer B receives it and automatically uses the internal `log.join()` method to merge the entry into its local `releases` store. Replication is bidirectional and automatic for all shared stores.
+This is the initial step required before any federated data can flow. It is typically performed by an administrator.
 
-```mermaid
-sequenceDiagram
-    participant Peer A
-    participant PubSub Network
-    participant Peer B
+1. **Admin Action**: An administrator of **Site A** calls `LensService.addSubscription()` with the address of **Site B**.
+2. **Write to Subscriptions Store**: This action creates a new `Subscription` document and uses `siteProgram.subscriptions.put()` to save it to Site A's local `subscriptions` store.
+3. **Service Listener Triggered**: The `LensService` on Site A is actively listening for `change` events on its `subscriptions` store. The addition of the new subscription triggers its handler.
+4. **Initiate Federation**: The handler calls the internal `startFederation(siteB.address)` method. This begins the two-phase synchronization process.
 
-    Peer A->>PubSub Network: Subscribes to topics for Site X
-    Peer B->>PubSub Network: Subscribes to topics for Site X
-    PubSub Network-->>Peer A: Discovers Peer B
-    PubSub Network-->>Peer B: Discovers Peer A
+#### 4.3. Data Flow for Federation
 
-    Note over Peer A, Peer B: Peers are now connected and ready to replicate Site X.
+Once a subscription is active, data flows from the subscribed-to site (Site B) to the subscriber (Site A).
 
-    Peer A->>Peer A: user.addRelease("New Post")
-    Peer A->>PubSub Network: Publishes new 'release' entry to topic
-    PubSub Network->>Peer B: Relays 'release' entry
-    Peer B->>Peer B: log.join(entry) -> Data is replicated
-```
+##### **Phase 1: Historical Sync**
 
-#### 3.2. The Defederation Data Flow (Hybrid Model)
+This phase is a fire-and-forget background process designed to pull all existing content from the remote site.
 
-Defederation is now a sophisticated **hybrid model** combining an initial historical sync with real-time push updates. This is managed by the `subscriptions` store.
+1. **Initiation**: The `startFederation` method calls the `runHistoricalSync` function.
+2. **Open Remote Handle**: `runHistoricalSync` opens a temporary, read-only handle to the remote `Site` program (Site B) using its address. This does not involve subscribing to live updates.
+3. **Fetch Heads**: It requests all the latest entries (log heads) from Site B's core data stores (`releases`, `featuredReleases`, etc.).
+4. **Join Data**: The fetched entries from Site B are then merged into Site A's corresponding local stores using the `localStore.log.join(remoteHeads)` method. This populates Site A with all of Site B's historical content.
+5. **Cleanup**: This process runs for a configured duration (e.g., 1 minute) to catch any recent changes and then automatically closes the temporary connection to Site B.
 
-1.  **Trigger**: An **Admin** of `Site A` decides they want to show content from `Site B`. They call `addSubscription({ siteAddress: 'address-of-site-B' })`.
-2.  **Event Listener**: The `LensService` on `Site A` is listening for changes to its *own* `subscriptions` store (`_handleSubscriptionChange`).
-3.  **Start Defederation**: When the new subscription entry is detected, `service.startFederation('address-of-site-B')` is called on `Site A`'s node. This initiates two concurrent processes:
+##### **Phase 2: Live Updates via Pub/Sub**
 
-    *   **Phase 1: Historical Sync (Fire-and-forget Pull)**
-        *   The `runHistoricalSync` method is invoked. It opens `Site B`'s program with selective replication (`replicate: false` for sensitive stores).
-        *   It then enters a **temporary polling loop**, fetching the latest entry heads from `Site B`'s content stores (`releases`, etc.) and joining them into `Site A`'s local stores.
-        *   This process has a fixed duration (e.g., 1 minute) and is designed to efficiently backfill recent content. It runs in the background and cleans up its own resources (closing the remote program handle, clearing the timeout).
+This phase runs concurrently with the historical sync and ensures Site A receives new content from Site B in real-time.
 
-    *   **Phase 2: Live Updates (Push via Pub/Sub)**
-        *   Simultaneously, `startFederation` subscribes `Site A`'s client to a dedicated topic for `Site B`: **`${address-of-site-B}/federation`**.
-        *   On `Site B`'s end, the `setupFederationBroadcasts` method listens for any local changes to its content stores. When a change occurs (e.g., a new release is added), it creates a `FederationUpdate` message.
-        *   This `FederationUpdate` message, containing the new entries, is published to `Site B`'s own federation topic.
-        *   `Site A`'s `onFederationMessage` handler, listening on this topic, receives the update, deserializes it, and joins the new entries into its local database.
+1. **Subscribe to Topic**: As part of `startFederation`, Site A's `LensService` subscribes to Site B's unique federation topic, which is `${siteB.address}/federation`.
+2. **Remote Content Change**: A member on Site B creates a new `Release`.
+3. **Broadcast Update**: The `change` event on Site B's `releases` store triggers its `broadcastFederationUpdate` method. This method packages the new entry into a `FederationUpdate` message and publishes it to the federation topic.
+4. **Receive Update**: Site A, being subscribed to the topic, receives this `FederationUpdate` message via its `onFederationMessage` handler.
+5. **Join New Entry**: The handler deserializes the message and calls `localSiteProgram.releases.log.join()` to integrate the new entry.
+6. **Local Index Update**: The `join` operation triggers a local `change` event on Site A's `releases` store, which updates its index, making the newly federated content searchable.
 
-4.  **Permission Check on Join**: Whether an entry arrives via historical sync or a live update, `Site A`'s `releases` store triggers its `canPerform` hook. The `canPerformFederatedWrite` helper verifies that `Site A` is indeed subscribed to `Site B` before allowing the federated content to be saved.
+#### 4.4. Data Flow for Unsubscribing
 
-```mermaid
-graph TD
-    subgraph Site A Node
-        A_Service[LensService]
-        A_SubsDB[subscriptions]
-        A_ReleasesDB[releases]
-    end
+When the subscription is removed from Site A:
 
-    subgraph Site B Node
-        B_ReleasesDB[releases]
-    end
-    
-    subgraph Defederation Topic
-      direction LR
-      F_Topic[(`${Site B Address}/federation`)]
-    end
+1. A `delete` operation on the `subscriptions` store fires a `change` event.
+2. The `LensService` listener calls `stopFederation(siteB.address)`.
+3. The service unsubscribes from Site B's federation topic to stop receiving live updates.
+4. It then queries all its local data stores to find and delete all content where the `siteAddress` property matches Site B's address, effectively cleaning up all the federated data.
 
-    Admin -- 1. addSubscription('Site B') --> A_Service
-    A_Service -- 2. Puts entry into --> A_SubsDB
-    A_SubsDB -- 3. Emits 'change' event --> A_Service
-    A_Service -- 4. Calls startFederation('Site B') --> A_Service
+---
 
-    A_Service -- "Phase 1: runHistoricalSync" --> B_ReleasesDB
-    A_Service -- "Phase 2: Subscribes to" --> F_Topic
-    
-    B_ReleasesDB -- "Local change occurs" --> SiteB_Handler(broadcastFederationUpdate)
-    SiteB_Handler -- "Publishes 'FederationUpdate'" --> F_Topic
-    F_Topic -- "Pushes message to subscriber" --> A_Service
-    A_Service -- "Joins live update" --> A_ReleasesDB
+### 5. Permissions & Access Control Flow
 
-    style A_Service fill:#f9f,stroke:#333,stroke-width:2px
-    style B_ReleasesDB fill:#bbf,stroke:#333,stroke-width:2px
-    style F_Topic fill:#9f9,stroke:#333,stroke-width:2px
-```
+The `canPerformFederatedWrite` function is the gatekeeper for all write operations, ensuring that only authorized users or subscribed sites can modify the data.
 
-#### 3.3. Defederation Termination
+The logic proceeds as follows:
 
-1.  **Trigger**: An admin on `Site A` calls `deleteSubscription({ siteAddress: 'address-of-site-B' })`.
-2.  **Event Listener**: The `_handleSubscriptionChange` listener on `Site A` detects the removal.
-3.  **Stop Defederation**: It calls `stopFederation('address-of-site-B')`.
-4.  **Cleanup**:
-    *   The live update subscription is terminated by unsubscribing from the federation topic and removing the message listener.
-    *   The abort signal for the historical sync is triggered, stopping its polling loop.
-    *   A cleanup task is initiated to query all documents in `Site A`'s stores that originated from `Site B` (matching `siteAddress`) and deletes them. This ensures that when a federation is removed, the imported content is also purged.
+1. **Operation Detected**: A `put` (create/update) or `delete` operation is attempted on a `Documents` store (e.g., `releases`).
+2. **Determine Data Origin**: The system identifies the `siteAddress` associated with the data.
+    * For a **`put` operation**, it deserializes the incoming data and reads the `siteAddress` property from the new document.
+    * For a **`delete` operation**, it first fetches the existing document from the local index using its ID to find its `siteAddress`. If the document doesn't exist, the delete is permitted (idempotency).
+3. **Compare Origin to Local Site**: It checks if the `originSiteAddress` is the same as the current site's address.
+4. **Execute Permission Logic**:
+    * **If Local Write**: The addresses match. The request is delegated to the appropriate local Access Control List. For example, adding a release requires a check against the `members` store (`memberCanPerform()`), while deleting one requires a check against the `administrators` store (`administratorCanPerform()`).
+    * **If Federated Write**: The addresses do not match. The system checks if the local site is subscribed to the origin site by calling `isSubscribed(originSiteAddress)`.
+        * If a valid subscription exists, the write is **allowed**.
+        * If no subscription exists, the write is **denied**.
 
-***
-
-### 4. Advantages of the Hybrid Defederation Model
-
-The system's hybrid model combines the best of pull and push-based systems, enhancing scalability, security, and real-time responsiveness.
-
-*   **Effortless Scalability & Efficiency**: Source sites do not bear the performance cost of managing and pushing updates to every individual subscriber. A single site can be federated by thousands of others without performance degradation. The fire-and-forget nature of pub/sub broadcasts is highly efficient and decouples the source from its subscribers.
-
-*   **Granular Security and Control**:
-    *   **Subscriber Sovereignty**: Subscribers have complete control. Defederation is an explicit, opt-in action. A site only ingests content from sources it has actively subscribed to, preventing data spam.
-    *   **Source Data Protection**: Source sites are inherently secure. They never expose sensitive data like user lists or administrative settings because subscribers are configured to only replicate public content stores during the initial historical sync.
-
-*   **Real-Time & Resilient Architecture**:
-    *   **Low Latency**: After the initial sync, new content is pushed in near real-time via the pub/sub topic, providing a much better user experience than a purely polling-based model.
-    *   **High Autonomy**: Each site operates as a sovereign entity. The failure or shutdown of a source site does not impact its subscribers, who continue to function with the content they have already pulled.
-
-*   **Enables Curation**: This model naturally encourages content curation. Site owners can subscribe to multiple sources to create unique, aggregated feeds for their communities, acting as curators without needing explicit permission from the source.
+This flow guarantees that a Site only accepts content from two sources: its own authenticated users (Members/Admins) or other Sites it has explicitly trusted by creating a subscription.
