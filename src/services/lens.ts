@@ -10,8 +10,8 @@ import {
   StringMatch,
   type WithContext,
 } from '@peerbit/document';
-import type { Site } from './schema';
-import { FeaturedRelease, FederationUpdate, Release, Subscription } from './schema';
+import type { Site } from '../schemas/site';
+import { FeaturedRelease, FederationUpdate, Release, Subscription } from '../schemas/site';
 import type {
   BaseResponse,
   FeaturedReleaseData,
@@ -24,9 +24,9 @@ import type {
   SiteArgs,
   SiteMetadata,
   SubscriptionData,
-} from './types';
+} from '../types';
 
-import { AccountType } from './types';
+import { AccountType } from '../types';
 import {
   FEATURED_RELEASE_ID_PROPERTY,
   ID_PROPERTY,
@@ -35,7 +35,7 @@ import {
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
   SITE_ADDRESS_PROPERTY,
-} from './constants';
+} from '../constants';
 import type { PublicSignKey } from '@peerbit/crypto';
 import { type IdentityAccessController, ACCESS_TYPE_PROPERTY, AccessType, Access } from '@peerbit/identity-access-controller';
 import { deserialize } from '@dao-xyz/borsh';

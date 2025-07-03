@@ -11,6 +11,9 @@ importers:
       '@dao-xyz/borsh':
         specifier: ^5.2.3
         version: 5.2.3
+      '@libp2p/crypto':
+        specifier: ^5.1.7
+        version: 5.1.7
       '@peerbit/crypto':
         specifier: ^2.3.9
         version: 2.3.9
@@ -20,6 +23,9 @@ importers:
       '@peerbit/identity-access-controller':
         specifier: ^5.0.93
         version: 5.0.93(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
+      '@peerbit/indexer-interface':
+        specifier: ^2.0.10
+        version: 2.0.10
       '@peerbit/log':
         specifier: ^4.0.63
         version: 4.0.63
@@ -41,9 +47,27 @@ importers:
       '@peerbit/time':
         specifier: ^2.1.0
         version: 2.1.0
+      bip39:
+        specifier: ^3.1.0
+        version: 3.1.0
+      idb-keyval:
+        specifier: ^6.2.2
+        version: 6.2.2
+      libsodium-wrappers:
+        specifier: ^0.7.15
+        version: 0.7.15
+      p-defer:
+        specifier: ^4.0.1
+        version: 4.0.1
       peerbit:
         specifier: ^4.1.40
         version: 4.1.40(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
+      uint8arrays:
+        specifier: ^5.1.0
+        version: 5.1.0
       uuid:
         specifier: ^11.1.0
         version: 11.1.0
@@ -66,9 +90,15 @@ importers:
       '@types/jest':
         specifier: ^29.5.14
         version: 29.5.14
+      '@types/libsodium-wrappers':
+        specifier: ^0.7.14
+        version: 0.7.14
       '@types/node':
         specifier: ^22.15.32
         version: 22.15.32
+      '@types/qrcode':
+        specifier: ^1.5.5
+        version: 1.5.5
       '@types/uuid':
         specifier: ^10.0.0
         version: 10.0.0
@@ -714,8 +744,8 @@ packages:
   '@libp2p/circuit-relay-v2@3.2.19':
     resolution: {integrity: sha512-sY439DQmQv16iOs82l5NMvD2Dzmj7SsidcYpMK/ZpJOat+1IJMAWvHj23nyy7AIlqHAjqWjvMS7ZPICPyweMHA==}
 
-  '@libp2p/crypto@5.1.6':
-    resolution: {integrity: sha512-hCNDInAsjfFTOr1ZlVTVuRKpkGEbR1GC+cDbmn2Vslwd0dHZHqhKv5ye7l6NZaiNUxxqUCVmqvJIWqVLuTPDdg==}
+  '@libp2p/crypto@5.1.7':
+    resolution: {integrity: sha512-7DO0piidLEKfCuNfS420BlHG0e2tH7W/zugdsPSiC/1Apa/s1B1dBkaIEgfDkGjrRP4S/8Or86Rtq7zXeEu67g==}
 
   '@libp2p/identify@3.0.36':
     resolution: {integrity: sha512-swpgKzZ8SihHeguIEf3LxYlEcD7C9cSB7DE1XGTuCxNXkXksv2ieQTSiJ2xURMRw0nwe0wEGS5vzmshJh3kzrA==}
@@ -725,6 +755,9 @@ packages:
 
   '@libp2p/interface@2.10.4':
     resolution: {integrity: sha512-FX3uujZgjH9bb7mDSNR54j3JzJnF/ngnQH20GQ1wPk5irIeHDvmzRlUj3bJ3hHQmdB2MxLZNT6e39O1es10LFA==}
+
+  '@libp2p/interface@2.10.5':
+    resolution: {integrity: sha512-Z52n04Mph/myGdwyExbFi5S/HqrmZ9JOmfLc2v4r2Cik3GRdw98vrGH19PFvvwjLwAjaqsweCtlGaBzAz09YDw==}
 
   '@libp2p/keychain@5.2.7':
     resolution: {integrity: sha512-JMgtVAZ5eol4G3oZ99em+AQJCC2cwqexXZYYOxVav39sE1RJQw6ieU7yb3OQaE2mclMJEQNniV6C+sa1TJxHfQ==}
@@ -1055,8 +1088,14 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
+  '@types/libsodium-wrappers@0.7.14':
+    resolution: {integrity: sha512-5Kv68fXuXK0iDuUir1WPGw2R9fOZUlYlSAa0ztMcL0s0BfIDTqg9GXz8K30VJpPP3sxWhbolnQma2x+/TfkzDQ==}
+
   '@types/node@22.15.32':
     resolution: {integrity: sha512-3jigKqgSjsH6gYZv2nEsqdXfZqIFGAV36XYYjf9KGZ3PSG+IhLecqPnI310RvjutyMwifE2hhhNEklOUrvx/wA==}
+
+  '@types/qrcode@1.5.5':
+    resolution: {integrity: sha512-CdfBi/e3Qk+3Z/fXYShipBT13OJ2fDO2Q2w5CIP5anLTLIndQG9z6P1cnm+8zCWSpm5dnxMFd/uREtb0EXuQzg==}
 
   '@types/retry@0.12.2':
     resolution: {integrity: sha512-XISRgDJ2Tc5q4TRqvgJtzsRkFYNJzZrhTdtMoGVBttwzzQJkPnS3WWTFc7kuDRoPtPakl+T+OfdEUjYJj7Jbow==}
@@ -1277,6 +1316,9 @@ packages:
   bindings@1.5.0:
     resolution: {integrity: sha512-p2q/t/mhvuOj/UeLlV6566GD/guowlr0hHxClI0W9m7MWYkL1F0hLo+0Aexs9HSPCtR1SXQ0TD3MMKrXZajbiQ==}
 
+  bip39@3.1.0:
+    resolution: {integrity: sha512-c9kiwdk45Do5GL0vJMe7tS95VjCii65mYAH7DfWl3uW8AVzXKQVUm64i3hzVybBDMp9r7j9iNxR85+ul8MdN/A==}
+
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
 
@@ -1387,6 +1429,9 @@ packages:
     resolution: {integrity: sha512-yGy8j8LjPbN0Bh3+ygmyYvrmskVita92pD/zCoalfcC9XxZj6iDtZTAnz+ot7GG8p9KLTG+MZ84tSA4AhkgVZQ==}
     engines: {node: '>=18'}
 
+  cliui@6.0.0:
+    resolution: {integrity: sha512-t6wbgtoCXvAzst7QgXxJYqPt0usEfbgQdftEPbLL/cvv6HPE5VgvqCuAIDR0NgU52ds6rFwqrgakNLrHEjCbrQ==}
+
   cliui@8.0.1:
     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
     engines: {node: '>=12'}
@@ -1464,6 +1509,10 @@ packages:
       supports-color:
         optional: true
 
+  decamelize@1.2.0:
+    resolution: {integrity: sha512-z2S+W9X73hAUUki+N+9Za2lBlun89zigOyGrsax+KUQ6wKW4ZoWpEYBkGhQjwAjjDCkWxhY0VKEhk8wzY7F5cA==}
+    engines: {node: '>=0.10.0'}
+
   decompress-response@6.0.0:
     resolution: {integrity: sha512-aW35yZM6Bb/4oJlZncMH2LCoZtJXTRxES17vE3hoRiowU2kWHaJKFkSBDnDR+cm9J+9QhXmREyIfv0pji9ejCQ==}
     engines: {node: '>=10'}
@@ -1513,6 +1562,9 @@ packages:
   diff-sequences@29.6.3:
     resolution: {integrity: sha512-EjePK1srD3P08o2j4f0ExnylqRs5B9tJjcp9t1krH2qRi8CCdsYfwe9JgSLurFBWwq4uOlipzfk5fHNvwFKr8Q==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
+
+  dijkstrajs@1.0.3:
+    resolution: {integrity: sha512-qiSlmBq9+BCdCA/L46dw8Uy93mloxsPSbwnm5yrKn2vMPiy8KyAskTF6zuV/j5BMsmOGZDPs7KjU+mjb670kfA==}
 
   dns-packet@5.6.1:
     resolution: {integrity: sha512-l4gcSouhcgIKRvyy99RNVOgxXiicE+2jZoNmaNmZ6JXiGajBOJAesk1OBlJuM5k2c+eudGdLxDqXuPCKIj6kpw==}
@@ -1861,6 +1913,9 @@ packages:
   human-signals@2.1.0:
     resolution: {integrity: sha512-B4FFZ6q/T2jhhksgkbEW3HBvWIfDW85snkQgawt07S7J5QXTk6BkNV+0yAeZrM5QpMAdYlocGoljn0sJ/WQkFw==}
     engines: {node: '>=10.17.0'}
+
+  idb-keyval@6.2.2:
+    resolution: {integrity: sha512-yjD9nARJ/jb1g+CvD0tlhUHOrJ9Sy0P8T9MF3YaLlHnSRpwPfpTX0XIvpmw3gAJUmEu3FiICLBDPXVwyEvrleg==}
 
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
@@ -2692,6 +2747,10 @@ packages:
     resolution: {integrity: sha512-HRDzbaKjC+AOWVXxAU/x54COGeIv9eb+6CkDSQoNTt4XyWoIJvuPsXizxu/Fr23EiekbtZwmh1IcIG/l/a10GQ==}
     engines: {node: '>=8'}
 
+  pngjs@5.0.0:
+    resolution: {integrity: sha512-40QW5YalBNfQo5yRYmiw7Yz6TKKVr3h6970B2YE+3fQpsWcrbj1PzJgxeJ19DRQjhMbKPIuMY8rFaXc8moolVw==}
+    engines: {node: '>=10.13.0'}
+
   prebuild-install@7.1.3:
     resolution: {integrity: sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug==}
     engines: {node: '>=10'}
@@ -2741,6 +2800,11 @@ packages:
   pvutils@1.1.3:
     resolution: {integrity: sha512-pMpnA0qRdFp32b1sJl1wOJNxZLQ2cbQx+k6tjNtZ8CpvVhNqEPRgivZ2WOUev2YMajecdH7ctUPDvEe87nariQ==}
     engines: {node: '>=6.0.0'}
+
+  qrcode@1.5.4:
+    resolution: {integrity: sha512-1ca71Zgiu6ORjHqFBDpnSMTR2ReToX4l1Au1VFLyVeBTFavzQnv5JxMFr3ukHVKpSrSA2MCk0lNJSykjUfz7Zg==}
+    engines: {node: '>=10.13.0'}
+    hasBin: true
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
@@ -2816,6 +2880,9 @@ packages:
   require-directory@2.1.1:
     resolution: {integrity: sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==}
     engines: {node: '>=0.10.0'}
+
+  require-main-filename@2.0.0:
+    resolution: {integrity: sha512-NKN5kMDylKuldxYLSUfrbo5Tuzh4hd+2E8NPPX02mZtn1VuREQToYe/ZdlJy+J3uCpfaiGF05e7B8W0iXbQHmg==}
 
   resolve-cwd@3.0.0:
     resolution: {integrity: sha512-OrZaX2Mb+rJCpH/6CpSqt9xFVpN++x01XnN2ie9g6P5/3xelLAkXWVADpdz1IHD/KFfEXyE6V0U01OQ3UO2rEg==}
@@ -2902,6 +2969,9 @@ packages:
   serve-static@1.16.2:
     resolution: {integrity: sha512-VqpjJZKadQB/PEbEwvFdO43Ax5dFBZ2UECszz8bQ7pi7wt//PWe1P6MN7eCnjsatYtBT6EuiClbjSWP2WrIoTw==}
     engines: {node: '>= 0.8.0'}
+
+  set-blocking@2.0.0:
+    resolution: {integrity: sha512-KiKBS8AnWGEyLzofFfmvKwpdPzqiy16LvQfK3yv/fVH7Bj13/wl3JSR1J+rfgRE9q7xUJK4qvgS8raSOeLUehw==}
 
   setprototypeof@1.2.0:
     resolution: {integrity: sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==}
@@ -3219,6 +3289,9 @@ packages:
     resolution: {integrity: sha512-XUguZbDxCA2wBn2LoFtcEhXL6AXo+hVjGonwhSTTTU9SzbWG8Xu3onNIpzf9j/mYUcJQ0f+m37SzG77G851uFw==}
     engines: {node: '>=16.0.0', npm: '>=7.0.0'}
 
+  which-module@2.0.1:
+    resolution: {integrity: sha512-iBdZ57RDvnOR9AGBhML2vFZf7h8vmBjhoaZqODJBFWHVtKkDmKuHai3cx5PgVMrX5YDNp27AofYbAwctSS+vhQ==}
+
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
     engines: {node: '>= 8'}
@@ -3227,6 +3300,10 @@ packages:
   word-wrap@1.2.5:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
+
+  wrap-ansi@6.2.0:
+    resolution: {integrity: sha512-r6lPcBGxZXlIcymEu7InxDMhdW0KDxpLgoFLcguasxCaJ/SOIZwINatK9KY/tf+ZrlywOKU0UDj3ATXUBfxJXA==}
+    engines: {node: '>=8'}
 
   wrap-ansi@7.0.0:
     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
@@ -3278,6 +3355,9 @@ packages:
       utf-8-validate:
         optional: true
 
+  y18n@4.0.3:
+    resolution: {integrity: sha512-JKhqTOwSrqNA1NY5lSztJ1GrBiUodLMmIZuLiDaMRJ+itFd+ABVE8XBjOvIWL+rSqNDC74LCSFmlb/U4UZ4hJQ==}
+
   y18n@5.0.8:
     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
     engines: {node: '>=10'}
@@ -3288,9 +3368,17 @@ packages:
   yallist@4.0.0:
     resolution: {integrity: sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A==}
 
+  yargs-parser@18.1.3:
+    resolution: {integrity: sha512-o50j0JeToy/4K6OZcaQmW6lyXXKhq7csREXcDwk2omFPJEwUNOVtJKvmDr9EI1fAJZUyZcRF7kxGBWmRXudrCQ==}
+    engines: {node: '>=6'}
+
   yargs-parser@21.1.1:
     resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}
     engines: {node: '>=12'}
+
+  yargs@15.4.1:
+    resolution: {integrity: sha512-aePbxDmcYW++PaqBsJ+HYUFwCdv4LVvdnhBy78E57PIor8/OVvhMrADFFEDh8DHDFRv/O9i3lPhsENjO7QX0+A==}
+    engines: {node: '>=8'}
 
   yargs@17.7.2:
     resolution: {integrity: sha512-7dSzzRQ++CKnNI/krKnYRV7JKKPUXMEh61soaHKg9mrWEhzFWhFnxPxGl+69cD1Ou63C13NUPCnmIcrvqCuM6w==}
@@ -3506,7 +3594,7 @@ snapshots:
     dependencies:
       '@chainsafe/as-chacha20poly1305': 0.1.0
       '@chainsafe/as-sha256': 1.2.0
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       '@libp2p/peer-id': 5.1.7
       '@noble/ciphers': 1.3.0
@@ -4105,7 +4193,7 @@ snapshots:
 
   '@libp2p/circuit-relay-v2@3.2.19':
     dependencies:
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       '@libp2p/interface-internal': 2.3.17
       '@libp2p/peer-collections': 6.0.33
@@ -4126,9 +4214,9 @@ snapshots:
       uint8arraylist: 2.4.8
       uint8arrays: 5.1.0
 
-  '@libp2p/crypto@5.1.6':
+  '@libp2p/crypto@5.1.7':
     dependencies:
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@noble/curves': 1.9.2
       '@noble/hashes': 1.8.0
       multiformats: 13.3.7
@@ -4138,7 +4226,7 @@ snapshots:
 
   '@libp2p/identify@3.0.36':
     dependencies:
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       '@libp2p/interface-internal': 2.3.17
       '@libp2p/peer-id': 5.1.7
@@ -4171,9 +4259,20 @@ snapshots:
       progress-events: 1.0.1
       uint8arraylist: 2.4.8
 
+  '@libp2p/interface@2.10.5':
+    dependencies:
+      '@multiformats/dns': 1.0.6
+      '@multiformats/multiaddr': 12.5.0
+      it-pushable: 3.2.3
+      it-stream-types: 2.0.2
+      main-event: 1.0.1
+      multiformats: 13.3.7
+      progress-events: 1.0.1
+      uint8arraylist: 2.4.8
+
   '@libp2p/keychain@5.2.7':
     dependencies:
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       '@libp2p/utils': 6.7.0
       '@noble/hashes': 1.8.0
@@ -4212,14 +4311,14 @@ snapshots:
 
   '@libp2p/peer-id@5.1.7':
     dependencies:
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       multiformats: 13.3.7
       uint8arrays: 5.1.0
 
   '@libp2p/peer-record@8.0.33':
     dependencies:
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       '@libp2p/peer-id': 5.1.7
       '@libp2p/utils': 6.7.0
@@ -4232,7 +4331,7 @@ snapshots:
 
   '@libp2p/peer-store@11.2.5':
     dependencies:
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       '@libp2p/peer-collections': 6.0.33
       '@libp2p/peer-id': 5.1.7
@@ -4265,7 +4364,7 @@ snapshots:
     dependencies:
       '@chainsafe/is-ip': 2.1.0
       '@chainsafe/netmask': 2.0.0
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       '@libp2p/logger': 5.1.20
       '@multiformats/multiaddr': 12.5.0
@@ -4292,7 +4391,7 @@ snapshots:
       '@chainsafe/is-ip': 2.1.0
       '@chainsafe/libp2p-noise': 16.1.3
       '@ipshipyard/node-datachannel': 0.26.6
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       '@libp2p/interface-internal': 2.3.17
       '@libp2p/keychain': 5.2.7
@@ -4542,7 +4641,7 @@ snapshots:
     dependencies:
       '@dao-xyz/borsh': 5.2.3
       '@ethersproject/wallet': 5.8.0
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/peer-id': 5.1.7
       '@peerbit/cache': 2.1.3
       '@stablelib/sha256': 2.0.1
@@ -4883,9 +4982,15 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
+  '@types/libsodium-wrappers@0.7.14': {}
+
   '@types/node@22.15.32':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/qrcode@1.5.5':
+    dependencies:
+      '@types/node': 22.15.32
 
   '@types/retry@0.12.2': {}
 
@@ -5160,6 +5265,10 @@ snapshots:
     dependencies:
       file-uri-to-path: 1.0.0
 
+  bip39@3.1.0:
+    dependencies:
+      '@noble/hashes': 1.8.0
+
   bl@4.1.0:
     dependencies:
       buffer: 5.7.1
@@ -5278,6 +5387,12 @@ snapshots:
       napi-macros: 2.2.2
       node-gyp-build: 4.8.4
 
+  cliui@6.0.0:
+    dependencies:
+      string-width: 4.2.3
+      strip-ansi: 6.0.1
+      wrap-ansi: 6.2.0
+
   cliui@8.0.1:
     dependencies:
       string-width: 4.2.3
@@ -5364,6 +5479,8 @@ snapshots:
     dependencies:
       ms: 2.1.3
 
+  decamelize@1.2.0: {}
+
   decompress-response@6.0.0:
     dependencies:
       mimic-response: 3.1.0
@@ -5389,6 +5506,8 @@ snapshots:
   detect-newline@3.1.0: {}
 
   diff-sequences@29.6.3: {}
+
+  dijkstrajs@1.0.3: {}
 
   dns-packet@5.6.1:
     dependencies:
@@ -5767,6 +5886,8 @@ snapshots:
       - supports-color
 
   human-signals@2.1.0: {}
+
+  idb-keyval@6.2.2: {}
 
   ieee754@1.2.1: {}
 
@@ -6384,7 +6505,7 @@ snapshots:
     dependencies:
       '@chainsafe/is-ip': 2.1.0
       '@chainsafe/netmask': 2.0.0
-      '@libp2p/crypto': 5.1.6
+      '@libp2p/crypto': 5.1.7
       '@libp2p/interface': 2.10.4
       '@libp2p/interface-internal': 2.3.17
       '@libp2p/logger': 5.1.20
@@ -6916,6 +7037,8 @@ snapshots:
     dependencies:
       find-up: 4.1.0
 
+  pngjs@5.0.0: {}
+
   prebuild-install@7.1.3:
     dependencies:
       detect-libc: 2.0.4
@@ -6974,6 +7097,12 @@ snapshots:
       tslib: 2.8.1
 
   pvutils@1.1.3: {}
+
+  qrcode@1.5.4:
+    dependencies:
+      dijkstrajs: 1.0.3
+      pngjs: 5.0.0
+      yargs: 15.4.1
 
   queue-microtask@1.2.3: {}
 
@@ -7087,6 +7216,8 @@ snapshots:
 
   require-directory@2.1.1: {}
 
+  require-main-filename@2.0.0: {}
+
   resolve-cwd@3.0.0:
     dependencies:
       resolve-from: 5.0.0
@@ -7168,6 +7299,8 @@ snapshots:
       send: 0.19.0
     transitivePeerDependencies:
       - supports-color
+
+  set-blocking@2.0.0: {}
 
   setprototypeof@1.2.0: {}
 
@@ -7459,11 +7592,19 @@ snapshots:
     dependencies:
       is-electron: 2.2.2
 
+  which-module@2.0.1: {}
+
   which@2.0.2:
     dependencies:
       isexe: 2.0.0
 
   word-wrap@1.2.5: {}
+
+  wrap-ansi@6.2.0:
+    dependencies:
+      ansi-styles: 4.3.0
+      string-width: 4.2.3
+      strip-ansi: 6.0.1
 
   wrap-ansi@7.0.0:
     dependencies:
@@ -7492,13 +7633,34 @@ snapshots:
 
   ws@8.18.2: {}
 
+  y18n@4.0.3: {}
+
   y18n@5.0.8: {}
 
   yallist@3.1.1: {}
 
   yallist@4.0.0: {}
 
+  yargs-parser@18.1.3:
+    dependencies:
+      camelcase: 5.3.1
+      decamelize: 1.2.0
+
   yargs-parser@21.1.1: {}
+
+  yargs@15.4.1:
+    dependencies:
+      cliui: 6.0.0
+      decamelize: 1.2.0
+      find-up: 4.1.0
+      get-caller-file: 2.0.5
+      require-directory: 2.1.1
+      require-main-filename: 2.0.0
+      set-blocking: 2.0.0
+      string-width: 4.2.3
+      which-module: 2.0.1
+      y18n: 4.0.3
+      yargs-parser: 18.1.3
 
   yargs@17.7.2:
     dependencies:

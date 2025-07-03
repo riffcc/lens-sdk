@@ -26,7 +26,7 @@ import {
   AccessType,
   PublicKeyAccessCondition,
 } from '@peerbit/identity-access-controller';
-import { publicSignKeyFromString } from './utils';
+import { publicSignKeyFromString } from '../utils';
 
 import {
   ID_PROPERTY,
@@ -49,7 +49,7 @@ import {
   SITE_DESCRIPTION_PROPERTY,
   SITE_IMAGE_CID_PROPERTY,
   SITE_ADDRESS_PROPERTY,
-} from './constants';
+} from '../constants';
 
 import type {
   ReleaseData,
@@ -59,8 +59,8 @@ import type {
   BlockedContentData,
   SiteArgs,
   IdData,
-} from './types';
-import { AccountType } from './types';
+} from '../types';
+import { AccountType } from '../types';
 
 @variant('release')
 export class Release {

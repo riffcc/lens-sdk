@@ -1,4 +1,4 @@
-import type { FeaturedRelease, Release, Site, Subscription } from './schema';
+import type { FeaturedRelease, Release, Site, Subscription } from './schemas/site';
 import type {
   ID_PROPERTY,
   RELEASE_NAME_PROPERTY,
