@@ -29,6 +29,7 @@ import { FeaturedRelease, Release, Subscription } from '../programs/site/schemas
 import type { HashResponse, IdResponse, ILensService } from './types';
 import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
+import type { ProgramClient } from '@peerbit/program';
 
 const ACCESS_CHECK_CACHE_TTL = 60000;
 
@@ -108,14 +109,14 @@ export class ElectronLensService implements ILensService {
 }
 
 export class LensService implements ILensService {
-  client: Peerbit | null = null;
+  client: ProgramClient | null = null;
   siteProgram: Site | null = null;
   private accessCheckCache: Map<string, { result: boolean; timestamp: number }> = new Map();
   private federationManager: FederationManager | null = null;
   private logger: Logger;
   private extenarlyManaged: boolean = false;
 
-  constructor(options?: { client?: Peerbit; debug?: boolean, customPrefix?: string }) {
+  constructor(options?: { client?: ProgramClient; debug?: boolean, customPrefix?: string }) {
     this.logger = new Logger({ enabled: options?.debug, prefix: options?.customPrefix || 'LensService' });
 
     if (options?.client) {
@@ -155,7 +156,7 @@ export class LensService implements ILensService {
   }
 
   private _ensureInitialized(): {
-    client: Peerbit;
+    client: ProgramClient;
   } {
     if (!this.client) {
       throw new Error(
@@ -168,7 +169,7 @@ export class LensService implements ILensService {
   }
 
   private _ensureSiteOpened(): {
-    client: Peerbit;
+    client: ProgramClient;
     siteProgram: Site;
   } {
     const { client } = this._ensureInitialized();
@@ -182,6 +183,56 @@ export class LensService implements ILensService {
       siteProgram: this.siteProgram,
     };
   }
+  
+  private async _canPerformCheck(
+    accessController: IdentityAccessController,
+    key: PublicSignKey,
+  ) {
+    const cacheKey = `${accessController.address}_${key.toString()}`;
+    const cached = this.accessCheckCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < ACCESS_CHECK_CACHE_TTL) {
+      return cached.result;
+    }
+
+    const accessWritedOrAny = await accessController.access.index.search(
+      new SearchRequest({
+        query: [
+          new Or([
+            new IntegerCompare({
+              key: ACCESS_TYPE_PROPERTY,
+              compare: Compare.Equal,
+              value: AccessType.Any,
+            }),
+            new IntegerCompare({
+              key: ACCESS_TYPE_PROPERTY,
+              compare: Compare.Equal,
+              value: AccessType.Write,
+            }),
+          ]),
+        ],
+      }),
+    );
+
+    for (const access of accessWritedOrAny) {
+      if (access instanceof Access) {
+        if (
+          access.accessTypes.find(
+            (x) => x === AccessType.Any || x === AccessType.Write,
+          ) !== undefined
+        ) {
+          if (await access.accessCondition.allowed(key)) {
+            this.accessCheckCache.set(cacheKey, { result: true, timestamp: Date.now() });
+            return true;
+          }
+          continue;
+        }
+      }
+    }
+
+    // Cache negative result
+    this.accessCheckCache.set(cacheKey, { result: false, timestamp: Date.now() });
+    return false;
+  };
 
   async openSite(
     siteOrAddress: Site | string,
@@ -553,54 +604,4 @@ export class LensService implements ILensService {
       };
     }
   }
-
-      private async _canPerformCheck(
-    accessController: IdentityAccessController,
-    key: PublicSignKey,
-  ) {
-    const cacheKey = `${accessController.address}_${key.toString()}`;
-    const cached = this.accessCheckCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < ACCESS_CHECK_CACHE_TTL) {
-      return cached.result;
-    }
-
-    const accessWritedOrAny = await accessController.access.index.search(
-      new SearchRequest({
-        query: [
-          new Or([
-            new IntegerCompare({
-              key: ACCESS_TYPE_PROPERTY,
-              compare: Compare.Equal,
-              value: AccessType.Any,
-            }),
-            new IntegerCompare({
-              key: ACCESS_TYPE_PROPERTY,
-              compare: Compare.Equal,
-              value: AccessType.Write,
-            }),
-          ]),
-        ],
-      }),
-    );
-
-    for (const access of accessWritedOrAny) {
-      if (access instanceof Access) {
-        if (
-          access.accessTypes.find(
-            (x) => x === AccessType.Any || x === AccessType.Write,
-          ) !== undefined
-        ) {
-          if (await access.accessCondition.allowed(key)) {
-            this.accessCheckCache.set(cacheKey, { result: true, timestamp: Date.now() });
-            return true;
-          }
-          continue;
-        }
-      }
-    }
-
-    // Cache negative result
-    this.accessCheckCache.set(cacheKey, { result: false, timestamp: Date.now() });
-    return false;
-  };
 }
