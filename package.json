@@ -20,7 +20,7 @@
     "build:js": "esbuild src/index.ts --bundle --outfile=dist/index.mjs --platform=neutral --format=esm --packages=external --sourcemap",
     "build": "pnpm clean && pnpm build:types && pnpm build:js",
     "lint": "eslint .",
-    "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --detectOpenHandles",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "release": "pnpm build && (git commit -a -m 'version' || true) && pnpm publish",
     "demo:federation": "node tests/federation-benchmark.mjs"
