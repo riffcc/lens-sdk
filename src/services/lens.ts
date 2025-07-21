@@ -1,5 +1,4 @@
 import { Peerbit } from 'peerbit';
-import type { Documents, DocumentsChange } from '@peerbit/document';
 import {
   Compare,
   IntegerCompare,
@@ -10,134 +9,28 @@ import {
   StringMatch,
   type WithContext,
 } from '@peerbit/document';
-import type { Site } from '../schemas/site';
-import { FeaturedRelease, FederationUpdate, Release, Subscription } from '../schemas/site';
-import type {
-  BaseResponse,
-  FeaturedReleaseData,
-  HashResponse,
-  IdData,
-  IdResponse,
-  ILensService,
-  ReleaseData,
-  SearchOptions,
-  SiteArgs,
-  SiteMetadata,
-  SubscriptionData,
-} from '../types';
-
-import { AccountType } from '../types';
-import {
-  FEATURED_RELEASE_ID_PROPERTY,
-  ID_PROPERTY,
-  SUBSCRIPTION_NAME_PROPERTY,
-  SITE_NAME_PROPERTY,
-  SITE_DESCRIPTION_PROPERTY,
-  SITE_IMAGE_CID_PROPERTY,
-  SITE_ADDRESS_PROPERTY,
-} from '../constants';
 import type { PublicSignKey } from '@peerbit/crypto';
-import { type IdentityAccessController, ACCESS_TYPE_PROPERTY, AccessType, Access } from '@peerbit/identity-access-controller';
-import { deserialize } from '@dao-xyz/borsh';
-import type { DataEvent } from '@peerbit/pubsub-interface';
-import { AbortError, delay } from '@peerbit/time';
+import {
+  type IdentityAccessController,
+  ACCESS_TYPE_PROPERTY,
+  AccessType,
+  Access,
+} from '@peerbit/identity-access-controller';
+import { FederationManager } from '../programs/site/lib/federation';
+import type { Site } from '../programs/site/program';
+import type {
+  BaseData,
+  FeaturedReleaseData,
+  ReleaseData,
+  SiteArgs,
+} from '../programs/site/types';
+import { AccountType } from '../programs/site/types';
+import { FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
+import type { HashResponse, IdResponse, ILensService } from './types';
+import { Logger } from '../common/logger';
+import type { SearchOptions } from '../common/types';
 
-class _Logger {
-  private prefix: string;
-  public readonly enabled: boolean;
-
-  constructor(options: { enabled?: boolean; prefix?: string }) {
-    this.enabled = options.enabled || false;
-    this.prefix = options.prefix || '[LensService]';
-  }
-
-  debug(...args: unknown[]) {
-    if (this.enabled) {
-      console.log(this.prefix, ...args);
-    }
-  }
-
-  error(...args: unknown[]) {
-    // Errors are always logged for visibility.
-    console.error(this.prefix, '[ERROR]', ...args);
-  }
-
-  time(label: string) {
-    if (this.enabled) {
-      console.time(label);
-    }
-  }
-
-  timeEnd(label: string) {
-    if (this.enabled) {
-      console.timeEnd(label);
-    }
-  }
-}
-
-// Cache for performance optimization
-const accessCheckCache = new Map<string, { result: boolean; timestamp: number }>();
-const CACHE_TTL = 60000; // 1 minute cache
-
-const canPerformCheck = async (accessController: IdentityAccessController, key: PublicSignKey, logger: _Logger) => {
-  const timerLabel = `canPerformCheck on ACL: ${accessController.address?.slice(0, 10)}`;
-  logger.time(timerLabel);
-
-  // Check cache first
-  const cacheKey = `${accessController.address}_${key.toString()}`;
-  const cached = accessCheckCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    logger.debug(`canPerformCheck for ACL ${accessController.address?.slice(0, 10)} - Cache hit`);
-    logger.timeEnd(timerLabel);
-    return cached.result;
-  }
-
-  // Optimized query with specific access types
-  logger.time(`${timerLabel} - index.search`);
-  const accessWritedOrAny = await accessController.access.index.search(
-    new SearchRequest({
-      query: [
-        new Or([
-          new IntegerCompare({
-            key: ACCESS_TYPE_PROPERTY,
-            compare: Compare.Equal,
-            value: AccessType.Any,
-          }),
-          new IntegerCompare({
-            key: ACCESS_TYPE_PROPERTY,
-            compare: Compare.Equal,
-            value: AccessType.Write,
-          }),
-        ]),
-      ],
-    }),
-  );
-  logger.timeEnd(`${timerLabel} - index.search`);
-
-  for (const access of accessWritedOrAny) {
-    if (access instanceof Access) {
-      if (
-        access.accessTypes.find(
-          (x) => x === AccessType.Any || x === AccessType.Write,
-        ) !== undefined
-      ) {
-        // check condition
-        if (await access.accessCondition.allowed(key)) {
-          // Cache the result
-          accessCheckCache.set(cacheKey, { result: true, timestamp: Date.now() });
-          logger.timeEnd(timerLabel);
-          return true;
-        }
-        continue;
-      }
-    }
-  }
-
-  // Cache negative result
-  accessCheckCache.set(cacheKey, { result: false, timestamp: Date.now() });
-  logger.timeEnd(timerLabel);
-  return false;
-};
+const ACCESS_CHECK_CACHE_TTL = 60000;
 
 export class ElectronLensService implements ILensService {
   constructor() { }
@@ -150,91 +43,66 @@ export class ElectronLensService implements ILensService {
     await window.electronLensService.stop();
   }
 
-  async openSite(siteOrAddress: Site | string, options: { siteArgs?: SiteArgs, federate: boolean } = { federate: true }): Promise<void> {
+  async openSite(
+    siteOrAddress: Site | string,
+    options: { siteArgs?: SiteArgs, federate: boolean } = { federate: true },
+  ): Promise<void> {
     await window.electronLensService.openSite(siteOrAddress, options);
-  }
-
-  async getPublicKey() {
-    return window.electronLensService.getPublicKey();
-  }
-
-  async getPeerId() {
-    return window.electronLensService.getPeerId();
   }
 
   async getAccountStatus(): Promise<AccountType> {
     return window.electronLensService.getAccountStatus();
   }
 
-  async getSiteAddress(): Promise<string> {
-    return window.electronLensService.getSiteAddress();
-  }
-
-  async getSiteMetadata(): Promise<SiteMetadata> {
-    return window.electronLensService.getSiteMetadata();
-  }
-
-  async setSiteMetadata(metadata: SiteMetadata): Promise<BaseResponse> {
-    return window.electronLensService.setSiteMetadata(metadata);
-  }
-
-  async getRemoteSiteMetadata(siteId: string): Promise<SiteMetadata | null> {
-    return window.electronLensService.getRemoteSiteMetadata(siteId);
-  }
-
-  async dial(address: string): Promise<boolean> {
-    return window.electronLensService.dial(address);
-  }
-
-  async getRelease(data: IdData): Promise<WithContext<Release> | undefined> {
-    return window.electronLensService.getRelease(data);
+  async getRelease(id: string): Promise<WithContext<Release> | undefined> {
+    return window.electronLensService.getRelease(id);
   }
 
   async getReleases(options?: SearchOptions): Promise<WithContext<Release>[]> {
     return window.electronLensService.getReleases(options);
   }
 
-  async getFeaturedRelease(data: IdData): Promise<WithContext<FeaturedRelease> | undefined> {
-    return window.electronLensService.getFeaturedRelease(data);
+  async getFeaturedRelease(id: string): Promise<WithContext<FeaturedRelease> | undefined> {
+    return window.electronLensService.getFeaturedRelease(id);
   }
 
   async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
     return window.electronLensService.getFeaturedReleases(options);
   }
 
-  async addRelease(data: Omit<ReleaseData, 'siteAddress'>): Promise<HashResponse> {
+  async addRelease(data: BaseData & ReleaseData): Promise<HashResponse> {
     return window.electronLensService.addRelease(data);
   }
   // Admin methods
-  async editRelease(data: IdData & ReleaseData): Promise<HashResponse> {
+  async editRelease(data: BaseData & ReleaseData): Promise<HashResponse> {
     return window.electronLensService.editRelease(data);
   }
 
-  async deleteRelease(data: IdData): Promise<IdResponse> {
-    return window.electronLensService.deleteRelease(data);
+  async deleteRelease(id: string): Promise<IdResponse> {
+    return window.electronLensService.deleteRelease(id);
   }
 
   async addFeaturedRelease(data: Omit<FeaturedReleaseData, 'siteAddress'>): Promise<HashResponse> {
     return window.electronLensService.addFeaturedRelease(data);
   }
 
-  async editFeaturedRelease(data: IdData & FeaturedReleaseData): Promise<HashResponse> {
+  async editFeaturedRelease(data: BaseData & FeaturedReleaseData): Promise<HashResponse> {
     return window.electronLensService.editFeaturedRelease(data);
   }
 
-  async deleteFeaturedRelease(data: IdData): Promise<IdResponse> {
-    return window.electronLensService.deleteFeaturedRelease(data);
+  async deleteFeaturedRelease(id: string): Promise<IdResponse> {
+    return window.electronLensService.deleteFeaturedRelease(id);
   }
 
   async getSubscriptions(options?: SearchOptions): Promise<Subscription[]> {
     return window.electronLensService.getSubscriptions(options);
   }
 
-  async addSubscription(data: Omit<SubscriptionData, 'id'>): Promise<HashResponse> {
+  async addSubscription(data: BaseData): Promise<HashResponse> {
     return window.electronLensService.addSubscription(data);
   }
 
-  async deleteSubscription(data: IdData): Promise<IdResponse> {
+  async deleteSubscription(data: Partial<Pick<BaseData, 'id' | 'siteAddress'>>): Promise<IdResponse> {
     return window.electronLensService.deleteSubscription(data);
   }
 }
@@ -242,13 +110,14 @@ export class ElectronLensService implements ILensService {
 export class LensService implements ILensService {
   client: Peerbit | null = null;
   siteProgram: Site | null = null;
-  private logger: _Logger;
+  private accessCheckCache: Map<string, { result: boolean; timestamp: number }> = new Map();
+  private logger: Logger;
   private extenarlyManaged: boolean = false;
 
   private activeFederations: Map<string, { close: () => Promise<void>; }> = new Map();
 
-  constructor(options?: { client?: Peerbit; debug?: boolean }) {
-    this.logger = new _Logger({ enabled: options?.debug, prefix: '[LensService]' });
+  constructor(options?: { client?: Peerbit; debug?: boolean, customPrefix?: string }) {
+    this.logger = new Logger({ enabled: options?.debug, prefix: options?.customPrefix || 'LensService' });
 
     if (options?.client) {
       this.client = options.client;
@@ -287,7 +156,7 @@ export class LensService implements ILensService {
     this.logger.debug('LensService stopped successfully.');
   }
 
-  private ensureInitialized(): {
+  private _ensureInitialized(): {
     client: Peerbit;
   } {
     if (!this.client) {
@@ -300,11 +169,11 @@ export class LensService implements ILensService {
     };
   }
 
-  private ensureSiteOpened(): {
+  private _ensureSiteOpened(): {
     client: Peerbit;
     siteProgram: Site;
   } {
-    const { client } = this.ensureInitialized();
+    const { client } = this._ensureInitialized();
     if (!this.siteProgram || this.siteProgram.closed) {
       throw new Error(
         'LensService is not properly initialized. call init(directory?).',
@@ -316,12 +185,16 @@ export class LensService implements ILensService {
     };
   }
 
-  async openSite(siteOrAddress: Site | string, options: { siteArgs?: SiteArgs, federate: boolean } = { federate: true }): Promise<void> {
+  async openSite(
+    siteOrAddress: Site | string,
+    options: { siteArgs?: SiteArgs, federate?: boolean },
+  ): Promise<void> {
     if (this.siteProgram) {
       throw new Error('A site is already open. Please close it before opening a new one.');
     }
-    const { client } = this.ensureInitialized();
-    this.siteProgram = await client.open(siteOrAddress, { args: options.siteArgs });
+    const { client } = this._ensureInitialized();
+    const siteProgram = await client.open(siteOrAddress, { args: options.siteArgs });
+    this.siteProgram = siteProgram;
     this.logger.debug(`Site opened successfully at address: ${this.siteProgram.address}`);
 
     if (options.federate) {
@@ -540,26 +413,18 @@ export class LensService implements ILensService {
   async getPublicKey(): Promise<string> {
     const { client } = this.ensureInitialized();
     return client.identity.publicKey.toString();
-  }
+    }
 
-  async getPeerId(): Promise<string> {
-    const { client } = this.ensureInitialized();
-    return client.peerId.toString();
-  }
-
-  async dial(address: string): Promise<boolean> {
-    const { client } = this.ensureInitialized();
-    return client.dial(address);
   }
 
   async getAccountStatus(): Promise<AccountType> {
     this.logger.time('getAccountStatus');
-    const { client, siteProgram } = this.ensureSiteOpened();
+    const { client, siteProgram } = this._ensureSiteOpened();
 
     // Run permission checks in parallel for better performance.
     const [isAdmin, isMember] = await Promise.all([
-      canPerformCheck(siteProgram.administrators, client.identity.publicKey, this.logger),
-      canPerformCheck(siteProgram.members, client.identity.publicKey, this.logger),
+      this._canPerformCheck(siteProgram.administrators, client.identity.publicKey),
+      this._canPerformCheck(siteProgram.members, client.identity.publicKey),
     ]);
 
     // Check from highest to lowest privilege.
@@ -580,78 +445,14 @@ export class LensService implements ILensService {
     return AccountType.GUEST;
   }
 
-  async getSiteAddress(): Promise<string> {
-    const { siteProgram } = this.ensureSiteOpened();
-    return siteProgram.address;
-  }
-
-  async getSiteMetadata(): Promise<SiteMetadata> {
-    const { siteProgram } = this.ensureSiteOpened();
-    return {
-      [SITE_NAME_PROPERTY]: siteProgram[SITE_NAME_PROPERTY],
-      [SITE_DESCRIPTION_PROPERTY]: siteProgram[SITE_DESCRIPTION_PROPERTY],
-      [SITE_IMAGE_CID_PROPERTY]: siteProgram[SITE_IMAGE_CID_PROPERTY],
-    };
-  }
-
-  async setSiteMetadata(metadata: SiteMetadata): Promise<BaseResponse> {
-    try {
-      const { siteProgram } = this.ensureSiteOpened();
-      this.logger.debug('Updating site metadata:', metadata);
-      // Update the site metadata fields
-      if (metadata[SITE_NAME_PROPERTY] !== undefined) {
-        siteProgram[SITE_NAME_PROPERTY] = metadata[SITE_NAME_PROPERTY];
-      }
-      if (metadata[SITE_DESCRIPTION_PROPERTY] !== undefined) {
-        siteProgram[SITE_DESCRIPTION_PROPERTY] = metadata[SITE_DESCRIPTION_PROPERTY];
-      }
-      if (metadata[SITE_IMAGE_CID_PROPERTY] !== undefined) {
-        siteProgram[SITE_IMAGE_CID_PROPERTY] = metadata[SITE_IMAGE_CID_PROPERTY];
-      }
-
-      return { success: true };
-    } catch (error) {
-      this.logger.error('Failed to update site metadata:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to update site metadata',
-      };
-    }
-  }
-
-  async getRemoteSiteMetadata(siteId: string): Promise<SiteMetadata | null> {
-    try {
-      const { client } = this.ensureInitialized();
-      this.logger.debug(`Fetching remote site metadata for: ${siteId}`);
-
-      // Open remote site temporarily to get metadata
-      const remoteSite = await client.open<Site>(siteId);
-
-      const metadata: SiteMetadata = {
-        [SITE_NAME_PROPERTY]: remoteSite[SITE_NAME_PROPERTY],
-        [SITE_DESCRIPTION_PROPERTY]: remoteSite[SITE_DESCRIPTION_PROPERTY],
-        [SITE_IMAGE_CID_PROPERTY]: remoteSite[SITE_IMAGE_CID_PROPERTY],
-      };
-
-      // Close the remote site
-      await remoteSite.close();
-      this.logger.debug(`Successfully fetched and closed remote site handle for: ${siteId}`);
-
-      return metadata;
-    } catch (error) {
-      this.logger.error('Failed to get remote site metadata:', error);
-      return null;
-    }
-  }
-
-  async getRelease({ id }: IdData): Promise<WithContext<Release> | undefined> {
-    const { siteProgram } = this.ensureSiteOpened();
+  async getRelease(id: string): Promise<WithContext<Release> | undefined> {
+    const { siteProgram } = this._ensureSiteOpened();
     return siteProgram.releases.index.get(id);
   }
 
   async getReleases(options?: SearchOptions): Promise<WithContext<Release>[]> {
     this.logger.time('getReleases');
-    const { siteProgram } = this.ensureSiteOpened();
+    const { siteProgram } = this._ensureSiteOpened();
 
     const request = options?.request ?? new SearchRequest({
       sort: options?.sort ?? [
@@ -667,7 +468,9 @@ export class LensService implements ILensService {
 
     while (iterator.done() !== true) {
       const batch = await iterator.next(100); // Fetch 100 releases per page
-      allResults.push(...batch);
+      for (const release of batch) {
+        allResults.push(release);
+      }
       this.logger.debug(`Fetched batch of ${batch.length} releases, total: ${allResults.length}`);
     }
 
@@ -677,14 +480,14 @@ export class LensService implements ILensService {
     return allResults;
   }
 
-  async getFeaturedRelease({ id }: IdData): Promise<WithContext<FeaturedRelease> | undefined> {
-    const { siteProgram } = this.ensureSiteOpened();
+  async getFeaturedRelease(id: string): Promise<WithContext<FeaturedRelease> | undefined> {
+    const { siteProgram } = this._ensureSiteOpened();
     return siteProgram.featuredReleases.index.get(id);
   }
 
   async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
     this.logger.time('getFeaturedReleases');
-    const { siteProgram } = this.ensureSiteOpened();
+    const { siteProgram } = this._ensureSiteOpened();
 
     const request = options?.request ?? new SearchRequest({
       sort: options?.sort ?? [
@@ -700,7 +503,9 @@ export class LensService implements ILensService {
 
     while (iterator.done() !== true) {
       const batch = await iterator.next(100); // Fetch 100 featured releases per page
-      allResults.push(...batch);
+      for (const featuredRelease of batch) {
+        allResults.push(featuredRelease);
+      }
       this.logger.debug(`Fetched batch of ${batch.length} featured releases, total: ${allResults.length}`);
     }
 
@@ -710,13 +515,12 @@ export class LensService implements ILensService {
     return allResults;
   }
 
-  async addRelease(data: Omit<ReleaseData, 'siteAddress'>): Promise<HashResponse> {
+  async addRelease(data: BaseData & ReleaseData): Promise<HashResponse> {
     try {
-      const { siteProgram } = this.ensureSiteOpened();
-
+      const { siteProgram } = this._ensureSiteOpened();
       const release = new Release({
         ...data,
-        [SITE_ADDRESS_PROPERTY]: siteProgram.address,
+        siteAddress: siteProgram.address,
       });
       const result = await siteProgram.releases.put(release);
       this.logger.debug(`Successfully added release with ID: ${release.id}`);
@@ -735,9 +539,9 @@ export class LensService implements ILensService {
   }
 
   // Admin methods
-  async editRelease(data: IdData & ReleaseData): Promise<HashResponse> {
+  async editRelease(data: BaseData & ReleaseData): Promise<HashResponse> {
     try {
-      const { siteProgram } = this.ensureSiteOpened();
+      const { siteProgram } = this._ensureSiteOpened();
       const release = new Release(data);
       const result = await siteProgram.releases.put(release);
       this.logger.debug(`Successfully edited release with ID: ${release.id}`);
@@ -756,9 +560,9 @@ export class LensService implements ILensService {
     }
   }
 
-  async deleteRelease({ id }: IdData): Promise<IdResponse> {
+  async deleteRelease(id: string): Promise<IdResponse> {
     try {
-      const { siteProgram } = this.ensureSiteOpened();
+      const { siteProgram } = this._ensureSiteOpened();
       this.logger.debug(`Attempting to delete release with ID: ${id}`);
       const targetFeaturedReleases = await siteProgram.featuredReleases.index.search(
         new SearchRequest({
@@ -773,7 +577,7 @@ export class LensService implements ILensService {
 
       for (const tfr of targetFeaturedReleases) {
         this.logger.debug(`Deleting associated featured release with ID: ${tfr.id}`);
-        await this.deleteFeaturedRelease({ id: tfr.id });
+        await siteProgram.featuredReleases.del(tfr.id);
       }
 
       await siteProgram.releases.del(id);
@@ -792,20 +596,20 @@ export class LensService implements ILensService {
     }
   }
 
-  async addFeaturedRelease(data: Omit<FeaturedReleaseData, 'siteAddress'>): Promise<HashResponse> {
+  async addFeaturedRelease(data: BaseData & FeaturedReleaseData): Promise<HashResponse> {
     try {
-      const { siteProgram } = this.ensureSiteOpened();
+      const { siteProgram } = this._ensureSiteOpened();
 
-      const targetRelease = await this.getRelease({ id: data[FEATURED_RELEASE_ID_PROPERTY] });
+      const targetRelease = await this.getRelease(data.releaseId);
 
       if (!targetRelease) {
         throw new Error(
-          `Cannot add featured release: The specified release ID ${data[FEATURED_RELEASE_ID_PROPERTY]} does not exist.`,
+          `Cannot add featured release: The specified release ID ${data.releaseId} does not exist.`,
         );
       }
       const featuredRelease = new FeaturedRelease({
         ...data,
-        [SITE_ADDRESS_PROPERTY]: siteProgram.address,
+        siteAddress: siteProgram.address,
       });
       const result = await siteProgram.featuredReleases.put(featuredRelease);
       this.logger.debug(`Successfully added featured release with ID: ${featuredRelease.id}`);
@@ -824,9 +628,9 @@ export class LensService implements ILensService {
     }
   }
 
-  async editFeaturedRelease(data: IdData & FeaturedReleaseData): Promise<HashResponse> {
+  async editFeaturedRelease(data: BaseData & FeaturedReleaseData): Promise<HashResponse> {
     try {
-      const { siteProgram } = this.ensureSiteOpened();
+      const { siteProgram } = this._ensureSiteOpened();
 
       const featuredRelease = new FeaturedRelease(data);
       const result = await siteProgram.featuredReleases.put(featuredRelease);
@@ -847,9 +651,9 @@ export class LensService implements ILensService {
     }
   }
 
-  async deleteFeaturedRelease({ id }: IdData): Promise<IdResponse> {
+  async deleteFeaturedRelease(id: string): Promise<IdResponse> {
     try {
-      const { siteProgram } = this.ensureSiteOpened();
+      const { siteProgram } = this._ensureSiteOpened();
       await siteProgram.featuredReleases.del(id);
       this.logger.debug(`Successfully deleted featured release with ID: ${id}`);
       return {
@@ -868,7 +672,7 @@ export class LensService implements ILensService {
 
   async getSubscriptions(options?: SearchOptions): Promise<Subscription[]> {
     try {
-      const { siteProgram } = this.ensureSiteOpened();
+      const { siteProgram } = this._ensureSiteOpened();
       const request = options?.request ?? new SearchRequest({
         sort: options?.sort ?? [
           new Sort({ key: 'created', direction: SortDirection.DESC }),
@@ -882,11 +686,7 @@ export class LensService implements ILensService {
       while (iterator.done() !== true) {
         const batch = await iterator.next(100);
         for (const subscription of batch) {
-          allResults.push({
-            [ID_PROPERTY]: subscription[ID_PROPERTY],
-            [SITE_ADDRESS_PROPERTY]: subscription[SITE_ADDRESS_PROPERTY],
-            [SUBSCRIPTION_NAME_PROPERTY]: subscription[SUBSCRIPTION_NAME_PROPERTY],
-          });
+          allResults.push(subscription);
         }
         if (options?.fetch && allResults.length >= options.fetch) {
           break;
@@ -900,11 +700,14 @@ export class LensService implements ILensService {
     }
   }
 
-  async addSubscription(data: SubscriptionData): Promise<HashResponse> {
+  async addSubscription(data: BaseData): Promise<HashResponse> {
     try {
-      const { siteProgram } = this.ensureSiteOpened();
+      const { siteProgram } = this._ensureSiteOpened();
       this.logger.debug(`Adding subscription to site: ${data.siteAddress}`);
-      const subscription = new Subscription(data);
+      const subscription = new Subscription({
+        ...data,
+        subcriberSiteAddress: siteProgram.address,
+      });
       const result = await siteProgram.subscriptions.put(subscription);
       return {
         success: true,
@@ -920,9 +723,11 @@ export class LensService implements ILensService {
     }
   }
 
-  async deleteSubscription({ id, siteAddress }: Partial<IdData & { siteAddress: string }>): Promise<IdResponse> {
+  async deleteSubscription(
+    { id, siteAddress }: Partial<Pick<BaseData, 'id' | 'siteAddress'>>,
+  ): Promise<IdResponse> {
     try {
-      const { siteProgram } = this.ensureSiteOpened();
+      const { siteProgram } = this._ensureSiteOpened();
 
       let subscriptionIdToDelete = id;
       if (siteAddress) {
@@ -930,16 +735,16 @@ export class LensService implements ILensService {
           new SearchRequest({
             query: [
               new StringMatch({
-                key: SITE_ADDRESS_PROPERTY,
+                key: 'siteAddress',
                 value: siteAddress,
               }),
             ],
             fetch: 1,
-          }), 
+          }),
         );
         if (subscription[0]) {
           subscriptionIdToDelete = subscription[0].id;
-          
+
         }
       }
       if (!subscriptionIdToDelete) {
@@ -962,4 +767,53 @@ export class LensService implements ILensService {
     }
   }
 
+      private async _canPerformCheck(
+    accessController: IdentityAccessController,
+    key: PublicSignKey,
+  ) {
+    const cacheKey = `${accessController.address}_${key.toString()}`;
+    const cached = this.accessCheckCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < ACCESS_CHECK_CACHE_TTL) {
+      return cached.result;
+    }
+
+    const accessWritedOrAny = await accessController.access.index.search(
+      new SearchRequest({
+        query: [
+          new Or([
+            new IntegerCompare({
+              key: ACCESS_TYPE_PROPERTY,
+              compare: Compare.Equal,
+              value: AccessType.Any,
+            }),
+            new IntegerCompare({
+              key: ACCESS_TYPE_PROPERTY,
+              compare: Compare.Equal,
+              value: AccessType.Write,
+            }),
+          ]),
+        ],
+      }),
+    );
+
+    for (const access of accessWritedOrAny) {
+      if (access instanceof Access) {
+        if (
+          access.accessTypes.find(
+            (x) => x === AccessType.Any || x === AccessType.Write,
+          ) !== undefined
+        ) {
+          if (await access.accessCondition.allowed(key)) {
+            this.accessCheckCache.set(cacheKey, { result: true, timestamp: Date.now() });
+            return true;
+          }
+          continue;
+        }
+      }
+    }
+
+    // Cache negative result
+    this.accessCheckCache.set(cacheKey, { result: false, timestamp: Date.now() });
+    return false;
+  };
 }
