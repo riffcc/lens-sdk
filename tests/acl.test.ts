@@ -9,7 +9,7 @@ import { AccessError } from '@peerbit/crypto';
 // Helper to create a Release document.
 const createReleaseDoc = (client: ProgramClient, siteAddress: string) => {
   return new Release({
-    name: `Release by ${client.identity.publicKey.hashcode().slice(0, 8)}`,
+    name: `Release by ${client.identity.publicKey.hashcode().slice(0, 8)}-${Date.now()}`,
     categoryId: 'test-category',
     contentCID: 'cid-123',
     postedBy: client.identity.publicKey,
@@ -49,10 +49,6 @@ describe('Site Program ACL', () => {
     memberProgram = await memberClient.open<Site>(siteOwnerProgram.address);
     guestProgram = await guestClient.open<Site>(siteOwnerProgram.address);
 
-    // Ensure all peers are aware of each other before tests run
-    await siteOwnerProgram.waitFor(memberClient.peerId);
-    await siteOwnerProgram.waitFor(guestClient.peerId);
-
   }, 30000); // Increase timeout for the whole setup block
 
   afterAll(async () => {
@@ -61,18 +57,6 @@ describe('Site Program ACL', () => {
     await memberProgram?.close();
     await guestProgram?.close();
     await session?.stop();
-  });
-
-  // Clean up documents after each test to ensure test independence
-  afterEach(async () => {
-    const releases = await siteOwnerProgram.releases.index.search({});
-    for (const release of releases) {
-      await siteOwnerProgram.releases.del(release.id);
-    }
-    const subscriptions = await siteOwnerProgram.subscriptions.index.search({});
-    for (const sub of subscriptions) {
-      await siteOwnerProgram.subscriptions.del(sub.id);
-    }
   });
 
   describe('Admin Permissions', () => {
