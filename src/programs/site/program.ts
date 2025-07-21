@@ -59,6 +59,25 @@ export class Site extends Program<SiteArgs> {
       this.administrators.open({
         replicate: args?.administratorsArgs?.replicate ?? { factor: 1 },
       }),
+      this.subscriptions.open({
+        type: Subscription,
+        replicate: args?.subscriptionsArgs?.replicate ?? true,
+        replicas: args?.subscriptionsArgs?.replicas,
+        canPerform: administratorCanPerform,
+        index: {
+          canRead: () => {
+            return true;
+          },
+          type: IndexedSubscription,
+          transform: (release, ctx) => {
+            return new IndexedSubscription({
+              doc: release,
+              created: ctx.created,
+              modified: ctx.modified,
+            });
+          },
+        },
+      }),
     ]);
 
     await Promise.all([
@@ -132,26 +151,6 @@ export class Site extends Program<SiteArgs> {
           type: IndexedContentCategory,
           transform: (release, ctx) => {
             return new IndexedContentCategory({
-              doc: release,
-              created: ctx.created,
-              modified: ctx.modified,
-            });
-          },
-        },
-      }),
-
-      this.subscriptions.open({
-        type: Subscription,
-        replicate: args?.subscriptionsArgs?.replicate ?? true,
-        replicas: args?.subscriptionsArgs?.replicas,
-        canPerform: administratorCanPerform,
-        index: {
-          canRead: () => {
-            return true;
-          },
-          type: IndexedSubscription,
-          transform: (release, ctx) => {
-            return new IndexedSubscription({
               doc: release,
               created: ctx.created,
               modified: ctx.modified,
