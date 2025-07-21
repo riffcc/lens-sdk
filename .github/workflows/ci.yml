@@ -1,0 +1,65 @@
+# This workflow is named "Continuous Integration"
+name: Continuous Integration
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+  
+  # Triggers the workflow on pull request events targeting the "main" branch
+  pull_request:
+    branches: [ "main" ]
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This job is named "build-and-test"
+  build-and-test:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Define the Node.js versions to test against. 
+    # For now, we'll use a recent LTS version. You can add more like '20.x'.
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Step 1: Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up PNPM using the version specified in your package.json
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.3 # From your package.json "packageManager" field
+          run_install: false
+
+      # Step 3: Set up Node.js for the specified version
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm' # Use pnpm's cache for faster dependency installation
+
+      # Step 4: Install all project dependencies
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Step 5: Run the linter to check for code style issues
+      - name: Run linter
+        run: pnpm lint
+
+      # Step 6: Run the TypeScript compiler to check for type errors
+      - name: Run typecheck
+        run: pnpm typecheck
+      
+      # Step 7: Run the build script to ensure the project compiles to JavaScript
+      - name: Build project
+        run: pnpm build
+
+      # Step 8: Run the test suite
+      - name: Run tests
+        run: pnpm test
