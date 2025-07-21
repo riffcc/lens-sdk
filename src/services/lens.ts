@@ -111,10 +111,9 @@ export class LensService implements ILensService {
   client: Peerbit | null = null;
   siteProgram: Site | null = null;
   private accessCheckCache: Map<string, { result: boolean; timestamp: number }> = new Map();
+  private federationManager: FederationManager | null = null;
   private logger: Logger;
   private extenarlyManaged: boolean = false;
-
-  private activeFederations: Map<string, { close: () => Promise<void>; }> = new Map();
 
   constructor(options?: { client?: Peerbit; debug?: boolean, customPrefix?: string }) {
     this.logger = new Logger({ enabled: options?.debug, prefix: options?.customPrefix || 'LensService' });
@@ -137,12 +136,11 @@ export class LensService implements ILensService {
   }
 
   async stop() {
-    const { client } = this.ensureInitialized();
-    this.logger.debug('Stopping LensService...');
-    await Promise.all([...this.activeFederations.values()].map(federation => federation.close()));
-    this.activeFederations.clear();
-    this.removeSubscriptionListener();
-    this.logger.debug('All active federations stopped.');
+    const { client } = this._ensureInitialized();
+    if (this.federationManager) {
+      await this.federationManager.stop();
+      this.federationManager = null;
+    }
 
     if (!this.extenarlyManaged) {
       await client.stop();
@@ -198,221 +196,10 @@ export class LensService implements ILensService {
     this.logger.debug(`Site opened successfully at address: ${this.siteProgram.address}`);
 
     if (options.federate) {
-      this.setupSubscriptionListener();
-      await this.initializeExistingFederations();
-    }
-
-  }
-
-  private setupSubscriptionListener() {
-    const { siteProgram } = this.ensureSiteOpened();
-    this.logger.debug('Setting up subscription listener.');
-    this._handleSubscriptionChange = this._handleSubscriptionChange.bind(this);
-    siteProgram.subscriptions.events.addEventListener('change', this._handleSubscriptionChange);
-  }
-
-  private removeSubscriptionListener() {
-    if (this.siteProgram && !this.siteProgram.closed) {
-      this.logger.debug('Removing subscription listener.');
-      this.siteProgram.subscriptions.events.removeEventListener('change', this._handleSubscriptionChange);
-    }
-  }
-
-  private _handleSubscriptionChange(event: CustomEvent<DocumentsChange<Subscription, Subscription>>) {
-    this.logger.debug(`Subscription change detected: ${event.detail.added.length} added, ${event.detail.removed.length} removed.`);
-    for (const added of event.detail.added) {
-      this.startFederation(added[SITE_ADDRESS_PROPERTY]);
-    }
-    for (const removed of event.detail.removed) {
-      this.stopFederation(removed[SITE_ADDRESS_PROPERTY]);
-    }
-  }
-
-  private async initializeExistingFederations() {
-    const { siteProgram } = this.ensureSiteOpened();
-    const existingSubscriptions = await siteProgram.subscriptions.index.search({});
-    this.logger.debug(`Found ${existingSubscriptions.length} existing subscriptions to initialize.`);
-    for (const sub of existingSubscriptions) {
-      await this.startFederation(sub[SITE_ADDRESS_PROPERTY]);
-    }
-  }
-
-  private async runHistoricalSync(remoteSiteAddress: string, externalSignal: AbortSignal): Promise<void> {
-    const { client, siteProgram: localSiteProgram } = this.ensureSiteOpened();
-    const SYNC_DURATION_MS = 60 * 1000; // 1 minute
-    const SYNC_POLL_INTERVAL_MS = 3 * 1000; // 3 seconds
-    this.logger.debug(`[Federation] Starting historical sync for ${remoteSiteAddress} (max duration: ${SYNC_DURATION_MS}ms)`);
-
-    let remoteSiteProgram: Site | undefined;
-    const timeoutController = new AbortController();
-    const combinedSignal = AbortSignal.any([externalSignal, timeoutController.signal]);
-
-    // REFACTOR: Use setTimeout to trigger the abort signal for a clean timeout.
-    const timeoutId = setTimeout(() => {
-      this.logger.debug(`[Federation] Historical sync timeout reached for ${remoteSiteAddress}.`);
-      timeoutController.abort();
-    }, SYNC_DURATION_MS);
-
-    try {
-      remoteSiteProgram = await client.open<Site>(remoteSiteAddress, {
-        timeout: 15000, // Timeout for opening the remote program
-        args: {
-          releasesArgs: { replicate: { factor: 1 } },
-          featuredReleasesArgs: { replicate: { factor: 1 } },
-          contentCategoriesArgs: { replicate: { factor: 1 } },
-          subscriptionsArgs: { replicate: false },
-          blockedContentArgs: { replicate: false },
-          membersArg: { replicate: false },
-          administratorsArgs: { replicate: false },
-        },
-      });
-
-      // This loop will be broken by the AbortController's signal
-      const syncLoop = async () => {
-        while (!combinedSignal.aborted) {
-          this.logger.debug(`[Federation] Running sync poll for ${remoteSiteAddress}`);
-
-          const [
-            releasesHeads,
-            featuredReleasesHeads,
-            contentCategoriesHeads,
-
-          ] = await Promise.all([
-            remoteSiteProgram!.releases.log.log.getHeads(true).all(),
-            remoteSiteProgram!.featuredReleases.log.log.getHeads(true).all(),
-            remoteSiteProgram!.contentCategories.log.log.getHeads(true).all(),
-          ]);
-
-          const joinPromises: Promise<void>[] = [];
-
-          if (releasesHeads.length > 0) {
-            joinPromises.push(localSiteProgram.releases.log.join(releasesHeads));
-          }
-          if (featuredReleasesHeads.length > 0) {
-            joinPromises.push(localSiteProgram.featuredReleases.log.join(featuredReleasesHeads));
-          }
-          if (contentCategoriesHeads.length > 0) {
-            joinPromises.push(localSiteProgram.contentCategories.log.join(contentCategoriesHeads));
-          }
-
-          await Promise.all(joinPromises);
-
-          await delay(SYNC_POLL_INTERVAL_MS, { signal: combinedSignal });
-        }
-      };
-      await syncLoop();
-    } catch (error) {
-      if (!(error instanceof AbortError)) { // Ignore AbortError as it's expected on timeout
-        this.logger.error(`[Federation] Error during historical sync for ${remoteSiteAddress}:`, error);
-      }
-    } finally {
-      clearTimeout(timeoutId); // Important: always clear the timeout
-      if (remoteSiteProgram) {
-        await remoteSiteProgram.close();
-        this.logger.debug(`[Federation] Historical sync for ${remoteSiteAddress} finished. Remote program closed.`);
-      }
-    }
-  }
-
-  private async startFederation(remoteSiteAddress: string) {
-    const { client, siteProgram: localSiteProgram } = this.ensureSiteOpened();
-
-    if (remoteSiteAddress === localSiteProgram.address || this.activeFederations.has(remoteSiteAddress)) {
-      this.logger.debug(`Federation with ${remoteSiteAddress} is already active or is self, skipping.`);
-      return;
-    }
-
-    this.logger.debug(`Activating federation with site: ${remoteSiteAddress}`);
-    const syncController = new AbortController();
-    // --- PHASE 1: HISTORICAL SYNC (Fire-and-forget) ---
-    // This runs in the background and cleans itself up.
-    this.runHistoricalSync(remoteSiteAddress, syncController.signal).catch(error => {
-      this.logger.error(`[Federation] Unhandled error in historical sync background process for ${remoteSiteAddress}:`, error);
-    });
-
-    // --- PHASE 2: LIVE UPDATES (Pub/Sub) ---
-    const federationTopic = `${remoteSiteAddress}/federation`;
-
-    const onFederationMessage = async (event: CustomEvent<DataEvent>) => {
-      if (!event.detail.data.topics.includes(federationTopic)) {
-        return;
-      }
-      try {
-        const update = deserialize(event.detail.data.data, FederationUpdate);
-        const targetStore = localSiteProgram[update.store].log;
-        if (update.added.length > 0) await targetStore.join(update.added);
-        if (update.removed.length > 0) await targetStore.join(update.removed);
-      } catch { /* Not a FederationUpdate, ignore */ }
-    };
-
-    this.logger.debug(`Subscribing to live updates on topic: ${federationTopic}`);
-    await client.services.pubsub.subscribe(federationTopic);
-    client.services.pubsub.addEventListener('data', onFederationMessage);
-
-    // Store the cleanup logic for the live subscription.
-    this.activeFederations.set(remoteSiteAddress, {
-      close: async () => {
-        this.logger.debug(`Cleaning up live subscription for ${remoteSiteAddress}`);
-        syncController.abort();
-        await client.services.pubsub.unsubscribe(federationTopic);
-        client.services.pubsub.removeEventListener('data', onFederationMessage);
-      },
-    });
-
-    this.logger.debug(`Federation fully active for site: ${remoteSiteAddress}`);
-  }
-
-  private async stopFederation(remoteSiteAddress: string) {
-    const federationHandle = this.activeFederations.get(remoteSiteAddress);
-    if (!federationHandle) {
-      this.logger.debug(`No active federation for site ${remoteSiteAddress}, skipping stop.`);
-      return;
-    }
-
-    try {
-      const { siteProgram: localSiteProgram } = this.ensureSiteOpened();
-      this.logger.debug(`Cleaning up federated documents from site: ${remoteSiteAddress}`);
-      const query = [new StringMatch({ key: SITE_ADDRESS_PROPERTY, value: remoteSiteAddress })];
-
-      // Helper function to iterate and collect all documents from a store matching a query
-      const collectAll = async <T, I extends object>(store: Documents<T, I>) => {
-        const allDocs: WithContext<T>[] = [];
-        const iterator = store.index.iterate({ query });
-        while (!iterator.done()) {
-            const batch = await iterator.next(1000); // Process in batches of 1000
-            allDocs.push(...batch);
-        }
-        return allDocs;
-      };
-
-      const [releasesToRemove, featuredToRemove, contentCategoriesToRemove] = await Promise.all([
-          collectAll(localSiteProgram.releases),
-          collectAll(localSiteProgram.featuredReleases),
-          collectAll(localSiteProgram.contentCategories),
-      ]);
-
-      const deletePromises = [
-        ...releasesToRemove.map(r => localSiteProgram.releases.del(r.id)),
-        ...featuredToRemove.map(fr => localSiteProgram.featuredReleases.del(fr.id)),
-        ...contentCategoriesToRemove.map(fr => localSiteProgram.contentCategories.del(fr.id)),
-      ];
-
-      if (deletePromises.length > 0) {
-        await Promise.all(deletePromises);
-        this.logger.debug(`Cleaned up ${deletePromises.length} federated documents from site: ${remoteSiteAddress}.`);
-      }
-
-      this.logger.debug(`Stopping federation with site: ${remoteSiteAddress}`);
-      await federationHandle.close();
-      this.activeFederations.delete(remoteSiteAddress);
-    } catch (error) {
-      this.logger.error(`Error during federation cleanup for site ${remoteSiteAddress}:`, error);
-    }
-  }
-
-  async getPublicKey(): Promise<string> {
-    const { client } = this.ensureInitialized();
-    return client.identity.publicKey.toString();
+      this.logger.debug('Federation enabled. Initializing FederationManager.');
+      // Create and start the manager. It handles everything from here.
+      this.federationManager = new FederationManager(client, siteProgram, this.logger);
+      await this.federationManager.start();
     }
 
   }
