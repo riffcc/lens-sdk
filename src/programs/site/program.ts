@@ -164,7 +164,13 @@ export class Site extends Program<SiteArgs> {
         type: BlockedContent,
         replicate: args?.blockedContentArgs?.replicate ?? true,
         replicas: args?.blockedContentArgs?.replicas,
-        canPerform: administratorCanPerform,
+        canPerform: async (props) => await canPerformFederatedWrite(
+          this,
+          props,
+          this.blockedContent,
+          BlockedContent,
+          administratorCanPerform,
+        ),
         index: {
           canRead: () => {
             return true;

@@ -213,16 +213,23 @@ export class FederationManager {
         return allDocs;
       };
 
-      const [releasesToRemove, featuredToRemove, contentCategoriesToRemove] = await Promise.all([
+      const [
+        releasesToRemove, 
+        featuredToRemove, 
+        contentCategoriesToRemove,
+        blockedContentToRemove,
+      ] = await Promise.all([
         collectAll(this.siteProgram.releases),
         collectAll(this.siteProgram.featuredReleases),
         collectAll(this.siteProgram.contentCategories),
+        collectAll(this.siteProgram.blockedContent),
       ]);
 
       const deletePromises = [
         ...releasesToRemove.map(r => this.siteProgram.releases.del(r.id)),
         ...featuredToRemove.map(fr => this.siteProgram.featuredReleases.del(fr.id)),
         ...contentCategoriesToRemove.map(fr => this.siteProgram.contentCategories.del(fr.id)),
+        ...blockedContentToRemove.map(bc => this.siteProgram.blockedContent.del(bc.id)),
       ];
 
       if (deletePromises.length > 0) {
@@ -259,8 +266,8 @@ export class FederationManager {
           releasesArgs: { replicate: { factor: 1 } },
           featuredReleasesArgs: { replicate: { factor: 1 } },
           contentCategoriesArgs: { replicate: { factor: 1 } },
+          blockedContentArgs: { replicate: { factor: 1 } },
           subscriptionsArgs: { replicate: false },
-          blockedContentArgs: { replicate: false },
           membersArg: { replicate: false },
           administratorsArgs: { replicate: false },
         },
@@ -275,11 +282,12 @@ export class FederationManager {
             releasesHeads,
             featuredReleasesHeads,
             contentCategoriesHeads,
-
+            blockedContentHeads,
           ] = await Promise.all([
             remoteSiteProgram!.releases.log.log.getHeads(true).all(),
             remoteSiteProgram!.featuredReleases.log.log.getHeads(true).all(),
             remoteSiteProgram!.contentCategories.log.log.getHeads(true).all(),
+            remoteSiteProgram!.blockedContent.log.log.getHeads(true).all(),
           ]);
 
           const joinPromises: Promise<void>[] = [];
@@ -292,6 +300,9 @@ export class FederationManager {
           }
           if (contentCategoriesHeads.length > 0) {
             joinPromises.push(this.siteProgram.contentCategories.log.join(contentCategoriesHeads));
+          }
+          if (blockedContentHeads.length > 0) {
+            joinPromises.push(this.siteProgram.blockedContent.log.join(blockedContentHeads));
           }
 
           await Promise.all(joinPromises);
