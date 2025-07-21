@@ -60,7 +60,7 @@ describe('Site Program ACL', () => {
     await siteOwnerProgram?.close();
     await memberProgram?.close();
     await guestProgram?.close();
-    await session.stop();
+    await session?.stop();
   });
 
   // Clean up documents after each test to ensure test independence

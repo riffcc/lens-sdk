@@ -15,7 +15,7 @@ describe('Site Documents Store', () => {
   });
 
   afterAll(async () => {
-    await session.stop();
+    await session?.stop();
   });
 
   beforeEach(async () => {
@@ -29,9 +29,7 @@ describe('Site Documents Store', () => {
   });
 
   afterEach(async () => {
-    if (siteProgram) {
-      await siteProgram.close();
-    }
+    await siteProgram?.close();
   });
 
   it('can put and get a release document', async () => {
