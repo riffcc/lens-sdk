@@ -26,17 +26,17 @@ export interface HashResponse extends IdResponse {
 export interface ILensService {
   init: (directory?: string) => Promise<void>;
   stop: () => Promise<void>;
-  openSite: (siteOrAddress: Site | string, options: { siteArgs?: SiteArgs, federate: boolean }) => Promise<void>;
+  openSite: (siteOrAddress: Site | string, options?: { siteArgs?: SiteArgs, federate?: boolean }) => Promise<void>;
   getAccountStatus: () => Promise<AccountType>;
   getRelease: (id: string) => Promise<WithContext<Release> | undefined>;
   getReleases: (options?: SearchOptions) => Promise<WithContext<Release>[]>;
   getFeaturedRelease: (id: string) => Promise<WithContext<FeaturedRelease> | undefined>;
   getFeaturedReleases: (options?: SearchOptions) => Promise<WithContext<FeaturedRelease>[]>;
-  addRelease: (data: ReleaseData) => Promise<HashResponse>;
+  addRelease: (data: Omit<ReleaseData, 'siteAddress'>) => Promise<HashResponse>;
   // Admin methods
   editRelease: (data: ReleaseData) => Promise<HashResponse>;
   deleteRelease: (id: string) => Promise<IdResponse>;
-  addFeaturedRelease: (data: FeaturedReleaseData) => Promise<HashResponse>;
+  addFeaturedRelease: (data: Omit<FeaturedReleaseData, 'siteAddress'>) => Promise<HashResponse>;
   editFeaturedRelease: (data: FeaturedReleaseData) => Promise<HashResponse>;
   deleteFeaturedRelease: (id: string) => Promise<IdResponse>;
   getSubscriptions: (options?: SearchOptions) => Promise<Subscription[]>;

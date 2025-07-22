@@ -46,7 +46,7 @@ export class ElectronLensService implements ILensService {
 
   async openSite(
     siteOrAddress: Site | string,
-    options: { siteArgs?: SiteArgs, federate: boolean } = { federate: true },
+    options?: { siteArgs?: SiteArgs, federate?: boolean },
   ): Promise<void> {
     await window.electronLensService.openSite(siteOrAddress, options);
   }
@@ -71,11 +71,11 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.getFeaturedReleases(options);
   }
 
-  async addRelease(data: BaseData & ReleaseData): Promise<HashResponse> {
+  async addRelease(data: Omit<ReleaseData, 'siteAddress'>): Promise<HashResponse> {
     return window.electronLensService.addRelease(data);
   }
   // Admin methods
-  async editRelease(data: BaseData & ReleaseData): Promise<HashResponse> {
+  async editRelease(data: ReleaseData): Promise<HashResponse> {
     return window.electronLensService.editRelease(data);
   }
 
@@ -87,7 +87,7 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.addFeaturedRelease(data);
   }
 
-  async editFeaturedRelease(data: BaseData & FeaturedReleaseData): Promise<HashResponse> {
+  async editFeaturedRelease(data: FeaturedReleaseData): Promise<HashResponse> {
     return window.electronLensService.editFeaturedRelease(data);
   }
 
@@ -183,7 +183,7 @@ export class LensService implements ILensService {
       siteProgram: this.siteProgram,
     };
   }
-  
+
   private async _canPerformCheck(
     accessController: IdentityAccessController,
     key: PublicSignKey,
@@ -236,17 +236,17 @@ export class LensService implements ILensService {
 
   async openSite(
     siteOrAddress: Site | string,
-    options: { siteArgs?: SiteArgs, federate?: boolean },
+    options?: { siteArgs?: SiteArgs, federate?: boolean },
   ): Promise<void> {
     if (this.siteProgram) {
       throw new Error('A site is already open. Please close it before opening a new one.');
     }
     const { peerbit } = this._ensureInitialized();
-    const siteProgram = await peerbit.open(siteOrAddress, { args: options.siteArgs });
+    const siteProgram = await peerbit.open(siteOrAddress, { args: options?.siteArgs });
     this.siteProgram = siteProgram;
     this.logger.debug(`Site opened successfully at address: ${this.siteProgram.address}`);
 
-    if (options.federate) {
+    if (options?.federate) {
       this.logger.debug('Federation enabled. Initializing FederationManager.');
       // Create and start the manager. It handles everything from here.
       this.federationManager = new FederationManager(peerbit, siteProgram, this.logger);
@@ -353,7 +353,7 @@ export class LensService implements ILensService {
     return allResults;
   }
 
-  async addRelease(data: BaseData & ReleaseData): Promise<HashResponse> {
+  async addRelease(data: Omit<ReleaseData, 'siteAddress'>): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
       const release = new Release({
@@ -377,7 +377,7 @@ export class LensService implements ILensService {
   }
 
   // Admin methods
-  async editRelease(data: BaseData & ReleaseData): Promise<HashResponse> {
+  async editRelease(data: ReleaseData): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
       const release = new Release(data);
@@ -434,7 +434,7 @@ export class LensService implements ILensService {
     }
   }
 
-  async addFeaturedRelease(data: BaseData & FeaturedReleaseData): Promise<HashResponse> {
+  async addFeaturedRelease(data: Omit<FeaturedReleaseData, 'siteAddress'>): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
 
@@ -466,7 +466,7 @@ export class LensService implements ILensService {
     }
   }
 
-  async editFeaturedRelease(data: BaseData & FeaturedReleaseData): Promise<HashResponse> {
+  async editFeaturedRelease(data: FeaturedReleaseData): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
 
