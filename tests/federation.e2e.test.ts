@@ -45,7 +45,6 @@ import { waitForResolved } from '@peerbit/time';
           categoryId: 'benchmark-historical',
           contentCID: `cid_historical_${i}`,
           postedBy: serviceA.peerbit!.identity.publicKey,
-          siteAddress: siteAAddress,
         });
       }
 
@@ -74,7 +73,6 @@ import { waitForResolved } from '@peerbit/time';
         categoryId: 'benchmark-live',
         contentCID: 'cid_live_update',
         postedBy: serviceA.peerbit!.identity.publicKey,
-        siteAddress: siteAAddress,
       });
       
       const expectedSize = initialSize + 1;
