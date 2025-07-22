@@ -4,30 +4,19 @@ import { Site } from '../src/programs/site/program';
 import { AccountType, type ReleaseData } from '../src/programs/site/types';
 import { waitFor } from '@peerbit/time';
 import { LensService } from '../src/services';
-import type { BaseData } from '../src/programs/site/types';
 import { findAccessGrant } from '../src/common/utils';
 import { Ed25519Keypair } from '@peerbit/crypto';
 
 // --- Test Helpers ---
 
 // Helper to create valid ReleaseData for service calls.
-const createReleaseData = (client: ProgramClient): Omit<ReleaseData, 'siteAddress'> => {
+const createReleaseData = (client: ProgramClient): ReleaseData => {
   return {
     name: `Release by ${client.identity.publicKey.hashcode().slice(0, 8)}-${Date.now()}`,
     categoryId: 'test-category',
     contentCID: `cid-${Math.random()}`,
-    postedBy: client.identity.publicKey,
   };
 };
-
-// Helper to create valid Subscription data for service calls.
-const createSubscriptionData = (client: ProgramClient, remoteSiteAddress: string): Omit<BaseData, 'id'> => {
-  return {
-    postedBy: client.identity.publicKey,
-    siteAddress: remoteSiteAddress,
-  };
-};
-
 
 // --- Test Suite ---
 
@@ -37,7 +26,7 @@ describe('LensService ACL', () => {
 
   // Each peer interacts with the system through its own LensService instance.
   let siteOwnerService: LensService, memberService: LensService, guestService: LensService;
-  
+
   // We keep a reference to the Site's address to open it on other clients.
   let siteAddress: string;
 
@@ -53,12 +42,12 @@ describe('LensService ACL', () => {
 
     // Site owner creates and opens the site.
     const site = new Site(siteOwnerClient.identity.publicKey);
-    await siteOwnerService.openSite(site);
+    await siteOwnerService.openSite(site, { federate: false });
     siteAddress = siteOwnerService.siteProgram!.address;
 
     // Member and Guest open the same site using its address.
-    await memberService.openSite(siteAddress);
-    await guestService.openSite(siteAddress);
+    await memberService.openSite(siteAddress, { federate: false });
+    await guestService.openSite(siteAddress, { federate: false });
 
     await siteOwnerService.siteProgram?.waitFor(memberService.peerbit!.peerId);
     await guestService.siteProgram?.waitFor(memberService.peerbit!.peerId);
@@ -69,7 +58,7 @@ describe('LensService ACL', () => {
     );
 
     await waitFor(async () => {
-      const status = await memberService.getAccountStatus({ cached: false});
+      const status = await memberService.getAccountStatus({ cached: false });
       return status === AccountType.MEMBER;
     }, { timeout: 10000 });
 
@@ -102,15 +91,15 @@ describe('LensService ACL', () => {
 
     it('can add and delete a subscription', async () => {
       const remoteSite = `remote-site-${Math.random()}`;
-      const subData = createSubscriptionData(siteOwnerClient, remoteSite);
-      
-      const addResponse = await siteOwnerService.addSubscription(subData);
+      const addResponse = await siteOwnerService.addSubscription({
+        to: remoteSite,
+      });
       expect(addResponse.success).toBe(true);
 
       const subscriptions = await siteOwnerService.getSubscriptions();
-      expect(subscriptions.find(s => s.siteAddress === remoteSite)).toBeDefined();
+      expect(subscriptions.find(s => s.to === remoteSite)).toBeDefined();
 
-      const deleteResponse = await siteOwnerService.deleteSubscription({ siteAddress: remoteSite });
+      const deleteResponse = await siteOwnerService.deleteSubscription({ to: remoteSite });
       expect(deleteResponse.success).toBe(true);
     });
 
@@ -121,11 +110,11 @@ describe('LensService ACL', () => {
 
       // Wait for the admin to see the member's document.
       await waitFor(async () => (await siteOwnerService.getRelease(addResponse.id!)) !== undefined);
-      
+
       // Admin deletes it.
       const deleteResponse = await siteOwnerService.deleteRelease(addResponse.id!);
       expect(deleteResponse.success).toBe(true);
-      
+
       // Verify the document is no longer retrievable by anyone.
       await waitFor(async () => (await guestService.getRelease(addResponse.id!)) === undefined);
       expect(await guestService.getRelease(addResponse.id!)).toBeUndefined();
@@ -170,9 +159,9 @@ describe('LensService ACL', () => {
     });
 
     it('CANNOT add a subscription', async () => {
-      const subData = createSubscriptionData(memberClient, 'remote-site-member-fails');
-      // FIXED ASSERTION
-      const response = await memberService.addSubscription(subData);
+      const response = await memberService.addSubscription({
+        to: 'remote-site-member-fails',
+      });
       expect(response.success).toBe(false);
       expect(response.error).toBe('Access denied');
     });
@@ -212,25 +201,25 @@ describe('LensService ACL', () => {
     });
 
     it('CANNOT add a subscription', async () => {
-      const subData = createSubscriptionData(guestClient, 'remote-site-guest-fails');
-      // FIXED ASSERTION
-      const response = await guestService.addSubscription(subData);
+      const response = await guestService.addSubscription({
+        to: 'remote-site-guest-fails',
+      });
       expect(response.success).toBe(false);
       expect(response.error).toBe('Access denied');
     });
-    
+
     it('CANNOT delete a release', async () => {
-        const adminRelease = createReleaseData(siteOwnerClient);
-        const addResponse = await siteOwnerService.addRelease(adminRelease);
-        expect(addResponse.success).toBe(true);
-  
-        // Verify the guest can see it first.
-        await waitFor(() => guestService.getRelease(addResponse.id!));
-        
-        // FIXED ASSERTION
-        const deleteResponse = await guestService.deleteRelease(addResponse.id!);
-        expect(deleteResponse.success).toBe(false);
-        expect(deleteResponse.error).toBe('Access denied');
-      });
+      const adminRelease = createReleaseData(siteOwnerClient);
+      const addResponse = await siteOwnerService.addRelease(adminRelease);
+      expect(addResponse.success).toBe(true);
+
+      // Verify the guest can see it first.
+      await waitFor(() => guestService.getRelease(addResponse.id!));
+
+      // FIXED ASSERTION
+      const deleteResponse = await guestService.deleteRelease(addResponse.id!);
+      expect(deleteResponse.success).toBe(false);
+      expect(deleteResponse.error).toBe('Access denied');
+    });
   });
 });
