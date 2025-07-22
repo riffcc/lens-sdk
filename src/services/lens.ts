@@ -1,4 +1,6 @@
 import { Peerbit } from 'peerbit';
+import type {
+  Documents} from '@peerbit/document';
 import {
   SearchRequest,
   Sort,
@@ -14,14 +16,14 @@ import {
 import { FederationManager } from '../programs/site/lib/federation';
 import type { Site } from '../programs/site/program';
 import type {
-  BaseData,
   FeaturedReleaseData,
   ReleaseData,
   SiteArgs,
+  SubscriptionData,
 } from '../programs/site/types';
 import { AccountType } from '../programs/site/types';
 import { FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
-import type { BaseResponse, HashResponse, IdResponse, ILensService } from './types';
+import type { AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService } from './types';
 import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
 import type { ProgramClient } from '@peerbit/program';
@@ -67,11 +69,11 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.getFeaturedReleases(options);
   }
 
-  async addRelease(data: Omit<ReleaseData, 'siteAddress'>): Promise<HashResponse> {
+  async addRelease(data: AddInput<ReleaseData>): Promise<HashResponse> {
     return window.electronLensService.addRelease(data);
   }
   // Admin methods
-  async editRelease(data: ReleaseData): Promise<HashResponse> {
+  async editRelease(data: EditInput<ReleaseData>): Promise<HashResponse> {
     return window.electronLensService.editRelease(data);
   }
 
@@ -79,11 +81,11 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.deleteRelease(id);
   }
 
-  async addFeaturedRelease(data: Omit<FeaturedReleaseData, 'siteAddress'>): Promise<HashResponse> {
+  async addFeaturedRelease(data: AddInput<FeaturedReleaseData>): Promise<HashResponse> {
     return window.electronLensService.addFeaturedRelease(data);
   }
 
-  async editFeaturedRelease(data: FeaturedReleaseData): Promise<HashResponse> {
+  async editFeaturedRelease(data: EditInput<FeaturedReleaseData>): Promise<HashResponse> {
     return window.electronLensService.editFeaturedRelease(data);
   }
 
@@ -95,11 +97,11 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.getSubscriptions(options);
   }
 
-  async addSubscription(data: BaseData): Promise<HashResponse> {
+  async addSubscription(data: AddInput<SubscriptionData>): Promise<HashResponse> {
     return window.electronLensService.addSubscription(data);
   }
 
-  async deleteSubscription(data: Partial<Pick<BaseData, 'id' | 'siteAddress'>>): Promise<IdResponse> {
+  async deleteSubscription(data: { id?: string, to?: string }): Promise<IdResponse> {
     return window.electronLensService.deleteSubscription(data);
   }
 
@@ -322,11 +324,12 @@ export class LensService implements ILensService {
     return allResults;
   }
 
-  async addRelease(data: Omit<ReleaseData, 'siteAddress'>): Promise<HashResponse> {
+  async addRelease(data: AddInput<ReleaseData>): Promise<HashResponse> {
     try {
-      const { siteProgram } = this._ensureSiteOpened();
+      const { peerbit, siteProgram } = this._ensureSiteOpened();
       const release = new Release({
         ...data,
+        postedBy: data.postedBy ?? peerbit.identity.publicKey,
         siteAddress: siteProgram.address,
       });
       const result = await siteProgram.releases.put(release);
@@ -350,7 +353,7 @@ export class LensService implements ILensService {
   }
 
   // Admin methods
-  async editRelease(data: ReleaseData): Promise<HashResponse> {
+  async editRelease(data: EditInput<ReleaseData>): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
       const release = new Release(data);
@@ -412,9 +415,9 @@ export class LensService implements ILensService {
     }
   }
 
-  async addFeaturedRelease(data: Omit<FeaturedReleaseData, 'siteAddress'>): Promise<HashResponse> {
+  async addFeaturedRelease(data: AddInput<FeaturedReleaseData>): Promise<HashResponse> {
     try {
-      const { siteProgram } = this._ensureSiteOpened();
+      const { peerbit, siteProgram } = this._ensureSiteOpened();
 
       const targetRelease = await this.getRelease(data.releaseId);
 
@@ -425,6 +428,7 @@ export class LensService implements ILensService {
       }
       const featuredRelease = new FeaturedRelease({
         ...data,
+        postedBy: data.postedBy ?? peerbit.identity.publicKey,
         siteAddress: siteProgram.address,
       });
       const result = await siteProgram.featuredReleases.put(featuredRelease);
@@ -448,7 +452,7 @@ export class LensService implements ILensService {
     }
   }
 
-  async editFeaturedRelease(data: FeaturedReleaseData): Promise<HashResponse> {
+  async editFeaturedRelease(data: EditInput<FeaturedReleaseData>): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
 
@@ -526,13 +530,14 @@ export class LensService implements ILensService {
     }
   }
 
-  async addSubscription(data: BaseData): Promise<HashResponse> {
+  async addSubscription(data: AddInput<SubscriptionData>): Promise<HashResponse> {
     try {
-      const { siteProgram } = this._ensureSiteOpened();
-      this.logger.debug(`Adding subscription to site: ${data.siteAddress}`);
+      const { peerbit, siteProgram } = this._ensureSiteOpened();
+      this.logger.debug(`Adding subscription to site: ${data.to}`);
       const subscription = new Subscription({
         ...data,
-        subcriberSiteAddress: siteProgram.address,
+        postedBy: data.postedBy ?? peerbit.identity.publicKey,
+        siteAddress: siteProgram.address,
       });
       const result = await siteProgram.subscriptions.put(subscription);
       return {
@@ -553,20 +558,18 @@ export class LensService implements ILensService {
     }
   }
 
-  async deleteSubscription(
-    { id, siteAddress }: Partial<Pick<BaseData, 'id' | 'siteAddress'>>,
-  ): Promise<IdResponse> {
+  async deleteSubscription(data: { id?: string, to?: string }): Promise<IdResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
 
-      let subscriptionIdToDelete = id;
-      if (siteAddress) {
+      let subscriptionIdToDelete = data.id;
+      if (data.to) {
         const subscription = await siteProgram.subscriptions.index.search(
           new SearchRequest({
             query: [
               new StringMatch({
-                key: 'siteAddress',
-                value: siteAddress,
+                key: 'to',
+                value: data.to,
               }),
             ],
             fetch: 1,
@@ -574,24 +577,23 @@ export class LensService implements ILensService {
         );
         if (subscription[0]) {
           subscriptionIdToDelete = subscription[0].id;
-
         }
       }
       if (!subscriptionIdToDelete) {
         throw new Error('At least one params must be passed. Subscription ID or Site Address');
       }
-      this.logger.debug(`Deleting subscription with ID: ${id}`);
+      this.logger.debug(`Deleting subscription with ID: ${data.id}`);
       await siteProgram.subscriptions.del(subscriptionIdToDelete);
 
       return {
         success: true,
-        id,
+        id: data.id,
       };
     } catch (error) {
       if (error instanceof AccessError) {
-        return { success: false, id, error: 'Access denied' };
+        return { success: false, id: data.id, error: 'Access denied' };
       } else {
-        this.logger.error(`Failed to delete subscription with ID: ${id}`, error);
+        this.logger.error(`Failed to delete subscription with ID: ${data.id}`, error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',

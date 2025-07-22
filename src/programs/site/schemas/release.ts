@@ -1,6 +1,6 @@
 import { variant, field, option } from '@dao-xyz/borsh';
 import { v4 as uuid } from 'uuid';
-import type { ReleaseData } from '../types';
+import type { ReleaseData, DocumentArgs } from '../types';
 
 @variant('release')
 export class Release {
@@ -28,9 +28,9 @@ export class Release {
   @field({ type: option('string') })
   metadata?: string;
 
-  constructor(props: ReleaseData) {
+  constructor(props: DocumentArgs<ReleaseData>) {
     this.id = props.id ?? uuid();
-    this.postedBy = props.postedBy.bytes;
+    this.postedBy = (props.postedBy instanceof Uint8Array) ? props.postedBy : props.postedBy.bytes;;
     this.siteAddress = props.siteAddress;
     this.name = props.name;
     this.categoryId = props.categoryId;

@@ -1,5 +1,5 @@
 import { variant, field, option } from '@dao-xyz/borsh';
-import type { ContentCategoryData } from '../types';
+import type { ContentCategoryData, DocumentArgs } from '../types';
 import { v4 as uuid } from 'uuid';
 
 @variant('content_category')
@@ -25,9 +25,9 @@ export class ContentCategory {
   @field({ type: option('string') })
   metadataSchema?: string;
 
-  constructor(props: ContentCategoryData) {
+  constructor(props: DocumentArgs<ContentCategoryData>) {
     this.id = props.id ?? uuid();
-    this.postedBy = props.postedBy.bytes;
+    this.postedBy = (props.postedBy instanceof Uint8Array) ? props.postedBy : props.postedBy.bytes;;
     this.siteAddress = props.siteAddress;
     this.displayName = props.displayName;
     this.featured = props.featured;

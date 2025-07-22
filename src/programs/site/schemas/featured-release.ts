@@ -1,7 +1,7 @@
 import { variant, field } from '@dao-xyz/borsh';
 import { concat } from 'uint8arrays';
 import { sha256Base64Sync } from '@peerbit/crypto';
-import type { FeaturedReleaseData } from '../types';
+import type { FeaturedReleaseData, DocumentArgs } from '../types';
 
 @variant('featured')
 export class FeaturedRelease {
@@ -26,14 +26,14 @@ export class FeaturedRelease {
   @field({ type: 'bool' })
   promoted: boolean;
 
-  constructor(props: FeaturedReleaseData) {
+  constructor(props: DocumentArgs<FeaturedReleaseData>) {
     this.id = props.id ?? sha256Base64Sync(
       concat([
         new TextEncoder().encode(props.releaseId),
         new TextEncoder().encode(props.siteAddress)],
       ),
     );
-    this.postedBy = props.postedBy.bytes;
+    this.postedBy = (props.postedBy instanceof Uint8Array) ? props.postedBy : props.postedBy.bytes;
     this.siteAddress = props.siteAddress;
     this.releaseId = props.releaseId;
     this.startTime = props.startTime;

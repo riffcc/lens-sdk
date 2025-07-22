@@ -1,5 +1,5 @@
 import { variant, field } from '@dao-xyz/borsh';
-import type { BlockedContentData } from '../types';
+import type { BlockedContentData, DocumentArgs } from '../types';
 import { v4 as uuid } from 'uuid';
 
 @variant('blocked_content')
@@ -16,9 +16,9 @@ export class BlockedContent {
   @field({ type: 'string' })
   cid: string;
 
-  constructor(props: BlockedContentData) {
+  constructor(props: DocumentArgs<BlockedContentData>) {
     this.id = props.id ?? uuid();
-    this.postedBy = props.postedBy.bytes;
+    this.postedBy = (props.postedBy instanceof Uint8Array) ? props.postedBy : props.postedBy.bytes;;
     this.siteAddress = props.siteAddress;
     this.cid = props.cid;
   }
