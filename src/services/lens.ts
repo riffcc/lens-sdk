@@ -42,7 +42,7 @@ export class ElectronLensService implements ILensService {
 
   async openSite(
     siteOrAddress: Site | string,
-    options?: { siteArgs?: SiteArgs, federate?: boolean },
+    options: { siteArgs?: SiteArgs, federate?: boolean } = { federate: true },
   ): Promise<void> {
     await window.electronLensService.openSite(siteOrAddress, options);
   }
@@ -208,7 +208,7 @@ export class LensService implements ILensService {
 
   async openSite(
     siteOrAddress: Site | string,
-    options?: { siteArgs?: SiteArgs, federate?: boolean },
+    options: { siteArgs?: SiteArgs, federate?: boolean } = { federate: true },
   ): Promise<void> {
     if (this.siteProgram) {
       throw new Error('A site is already open. Please close it before opening a new one.');

@@ -26,7 +26,7 @@ export interface HashResponse extends IdResponse {
 export interface ILensService {
   init: (directory?: string) => Promise<void>;
   stop: () => Promise<void>;
-  openSite: (siteOrAddress: Site | string, options?: { siteArgs?: SiteArgs, federate?: boolean }) => Promise<void>;
+  openSite: (siteOrAddress: Site | string, options: { siteArgs?: SiteArgs, federate?: boolean }) => Promise<void>;
   getAccountStatus: (options?: { cached?: boolean }) => Promise<AccountType>;
   getRelease: (id: string) => Promise<WithContext<Release> | undefined>;
   getReleases: (options?: SearchOptions) => Promise<WithContext<Release>[]>;
