@@ -84,9 +84,6 @@ importers:
       '@peerbit/test-utils':
         specifier: ^2.1.51
         version: 2.1.51(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
-      '@riffcc/lens-sdk':
-        specifier: 'link:'
-        version: 'link:'
       '@types/jest':
         specifier: ^29.5.14
         version: 29.5.14

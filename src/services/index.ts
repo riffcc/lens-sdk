@@ -1,2 +1,2 @@
-export * from './identity';
 export * from './lens';
+export * from './types';

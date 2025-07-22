@@ -20,7 +20,7 @@
     "build:js": "esbuild src/index.ts --bundle --outfile=dist/index.mjs --platform=neutral --format=esm --packages=external --sourcemap",
     "build": "pnpm clean && pnpm build:types && pnpm build:js",
     "lint": "eslint .",
-    "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --detectOpenHandles",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "release": "pnpm build && (git commit -a -m 'version' || true) && pnpm publish",
     "demo:federation": "node tests/federation-benchmark.mjs"
@@ -60,7 +60,6 @@
     "@jest/globals": "^29.7.0",
     "@libp2p/interface": "^2.10.4",
     "@peerbit/test-utils": "^2.1.51",
-    "@riffcc/lens-sdk": "link:",
     "@types/jest": "^29.5.14",
     "@types/libsodium-wrappers": "^0.7.14",
     "@types/node": "^22.15.32",
