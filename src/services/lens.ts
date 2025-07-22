@@ -1,20 +1,15 @@
 import { Peerbit } from 'peerbit';
 import {
-  Compare,
-  IntegerCompare,
-  Or,
   SearchRequest,
   Sort,
   SortDirection,
   StringMatch,
   type WithContext,
 } from '@peerbit/document';
-import type { PublicSignKey } from '@peerbit/crypto';
+import { AccessError, type PublicSignKey } from '@peerbit/crypto';
 import {
   type IdentityAccessController,
-  ACCESS_TYPE_PROPERTY,
   AccessType,
-  Access,
 } from '@peerbit/identity-access-controller';
 import { FederationManager } from '../programs/site/lib/federation';
 import type { Site } from '../programs/site/program';
@@ -26,10 +21,11 @@ import type {
 } from '../programs/site/types';
 import { AccountType } from '../programs/site/types';
 import { FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
-import type { HashResponse, IdResponse, ILensService } from './types';
+import type { BaseResponse, HashResponse, IdResponse, ILensService } from './types';
 import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
 import type { ProgramClient } from '@peerbit/program';
+import { findAccessGrant } from '../common/utils';
 
 const ACCESS_CHECK_CACHE_TTL = 60000;
 
@@ -51,8 +47,8 @@ export class ElectronLensService implements ILensService {
     await window.electronLensService.openSite(siteOrAddress, options);
   }
 
-  async getAccountStatus(): Promise<AccountType> {
-    return window.electronLensService.getAccountStatus();
+  async getAccountStatus(options?: { cached?: boolean }): Promise<AccountType> {
+    return window.electronLensService.getAccountStatus(options?.cached);
   }
 
   async getRelease(id: string): Promise<WithContext<Release> | undefined> {
@@ -105,6 +101,14 @@ export class ElectronLensService implements ILensService {
 
   async deleteSubscription(data: Partial<Pick<BaseData, 'id' | 'siteAddress'>>): Promise<IdResponse> {
     return window.electronLensService.deleteSubscription(data);
+  }
+
+  async grantAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse> {
+    return window.electronLensService.grantAccess(accountType, publicKey);
+  }
+
+  async revokeAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse> {
+    return window.electronLensService.revokeAccess(accountType, publicKey);
   }
 }
 
@@ -184,55 +188,23 @@ export class LensService implements ILensService {
     };
   }
 
-  private async _canPerformCheck(
-    accessController: IdentityAccessController,
-    key: PublicSignKey,
-  ) {
+  private async _canPerformCheck(accessController: IdentityAccessController, key: PublicSignKey, cached: boolean = true): Promise<boolean> {
     const cacheKey = `${accessController.address}_${key.toString()}`;
-    const cached = this.accessCheckCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < ACCESS_CHECK_CACHE_TTL) {
-      return cached.result;
+    const isCached = cached && this.accessCheckCache.get(cacheKey);
+    if (isCached && (Date.now() - isCached.timestamp < ACCESS_CHECK_CACHE_TTL)) {
+      return isCached.result;
     }
 
-    const accessWritedOrAny = await accessController.access.index.search(
-      new SearchRequest({
-        query: [
-          new Or([
-            new IntegerCompare({
-              key: ACCESS_TYPE_PROPERTY,
-              compare: Compare.Equal,
-              value: AccessType.Any,
-            }),
-            new IntegerCompare({
-              key: ACCESS_TYPE_PROPERTY,
-              compare: Compare.Equal,
-              value: AccessType.Write,
-            }),
-          ]),
-        ],
-      }),
+    const grant = await findAccessGrant(accessController.access, key);
+
+    const hasPermission = !!grant && (
+      grant.accessTypes.includes(AccessType.Write) ||
+      grant.accessTypes.includes(AccessType.Any)
     );
 
-    for (const access of accessWritedOrAny) {
-      if (access instanceof Access) {
-        if (
-          access.accessTypes.find(
-            (x) => x === AccessType.Any || x === AccessType.Write,
-          ) !== undefined
-        ) {
-          if (await access.accessCondition.allowed(key)) {
-            this.accessCheckCache.set(cacheKey, { result: true, timestamp: Date.now() });
-            return true;
-          }
-          continue;
-        }
-      }
-    }
-
-    // Cache negative result
-    this.accessCheckCache.set(cacheKey, { result: false, timestamp: Date.now() });
-    return false;
-  };
+    this.accessCheckCache.set(cacheKey, { result: hasPermission, timestamp: Date.now() });
+    return hasPermission;
+  }
 
   async openSite(
     siteOrAddress: Site | string,
@@ -255,31 +227,28 @@ export class LensService implements ILensService {
 
   }
 
-  async getAccountStatus(): Promise<AccountType> {
+  async getAccountStatus(options?: { cached?: boolean }): Promise<AccountType> {
     this.logger.time('getAccountStatus');
     const { peerbit, siteProgram } = this._ensureSiteOpened();
 
     // Run permission checks in parallel for better performance.
     const [isAdmin, isMember] = await Promise.all([
-      this._canPerformCheck(siteProgram.administrators, peerbit.identity.publicKey),
-      this._canPerformCheck(siteProgram.members, peerbit.identity.publicKey),
+      this._canPerformCheck(siteProgram.administrators, peerbit.identity.publicKey, options?.cached),
+      this._canPerformCheck(siteProgram.members, peerbit.identity.publicKey, options?.cached),
     ]);
 
     // Check from highest to lowest privilege.
     if (isAdmin) {
       this.logger.debug('User status determined: ADMIN.');
-      this.logger.timeEnd('getAccountStatus');
       return AccountType.ADMIN;
     }
 
     if (isMember) {
       this.logger.debug('User status determined: MEMBER.');
-      this.logger.timeEnd('getAccountStatus');
       return AccountType.MEMBER;
     }
 
     this.logger.debug('User status determined: GUEST.');
-    this.logger.timeEnd('getAccountStatus');
     return AccountType.GUEST;
   }
 
@@ -368,11 +337,15 @@ export class LensService implements ILensService {
         hash: result.entry.hash,
       };
     } catch (error) {
-      this.logger.error('Failed to add release:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to add release',
-      };
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this.logger.error('Failed to add release:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
     }
   }
 
@@ -390,10 +363,12 @@ export class LensService implements ILensService {
       };
     } catch (error) {
       this.logger.error(`Failed to edit release with ID: ${data.id}`, error);
+      if (error instanceof AccessError) {
+        return { success: false, id: data.id, error: 'Access denied' };
+      }
       return {
         success: false,
-        id: data.id,
-        error: error instanceof Error ? error.message : 'Failed to edit release',
+        error: error instanceof Error ? error.message : 'An unknown error occurred',
       };
     }
   }
@@ -425,12 +400,15 @@ export class LensService implements ILensService {
         id,
       };
     } catch (error) {
-      this.logger.error(`Failed to delete release with ID: ${id}`, error);
-      return {
-        success: false,
-        id,
-        error: error instanceof Error ? error.message : 'Failed to delete release',
-      };
+      if (error instanceof AccessError) {
+        return { success: false, id, error: 'Access denied' };
+      } else {
+        this.logger.error(`Failed to delete release with ID: ${id}`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
     }
   }
 
@@ -458,11 +436,15 @@ export class LensService implements ILensService {
         hash: result.entry.hash,
       };
     } catch (error) {
-      this.logger.error('Failed to add featured release:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to add featured release',
-      };
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this.logger.error('Failed to add featured release:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
     }
   }
 
@@ -480,12 +462,15 @@ export class LensService implements ILensService {
         hash: result.entry.hash,
       };
     } catch (error) {
-      this.logger.error(`Failed to edit featured release with ID: ${data.id}`, error);
-      return {
-        success: false,
-        id: data.id,
-        error: error instanceof Error ? error.message : 'Failed to edit featured release',
-      };
+      if (error instanceof AccessError) {
+        return { success: false, id: data.id, error: 'Access denied' };
+      } else {
+        this.logger.error(`Failed to edit featured release with ID: ${data.id}`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
     }
   }
 
@@ -499,12 +484,15 @@ export class LensService implements ILensService {
         id,
       };
     } catch (error) {
-      this.logger.error(`Failed to delete featured release with ID: ${id}`, error);
-      return {
-        success: false,
-        id,
-        error: error instanceof Error ? error.message : 'Failed to delete featured release',
-      };
+      if (error instanceof AccessError) {
+        return { success: false, id, error: 'Access denied' };
+      } else {
+        this.logger.error(`Failed to delete featured release with ID: ${id}`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
     }
   }
 
@@ -553,11 +541,15 @@ export class LensService implements ILensService {
         hash: result.entry.hash,
       };
     } catch (error) {
-      this.logger.error('Failed to add subscription:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to add subscription',
-      };
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this.logger.error('Failed to add subscription:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
     }
   }
 
@@ -596,12 +588,70 @@ export class LensService implements ILensService {
         id,
       };
     } catch (error) {
-      this.logger.error(`Failed to delete subscription with ID: ${id}`, error);
-      return {
-        success: false,
-        id,
-        error: error instanceof Error ? error.message : 'Failed to delete subscription',
-      };
+      if (error instanceof AccessError) {
+        return { success: false, id, error: 'Access denied' };
+      } else {
+        this.logger.error(`Failed to delete subscription with ID: ${id}`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
+    }
+  }
+
+  async grantAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse> {
+    this.logger.debug(`Attempting to grant ${AccountType[accountType]} access to key: ${publicKey}`);
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+
+      // Call the internal program method
+      await siteProgram._authorise(accountType, publicKey);
+
+      this.logger.debug(`Successfully granted ${AccountType[accountType]} access.`);
+      return { success: true };
+
+    } catch (error: unknown) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this.logger.error('Failed to grant access:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
+    }
+  }
+
+  async revokeAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse> {
+    this.logger.debug(`Attempting to revoke ${AccountType[accountType]} access for key: ${publicKey}`);
+    try {
+      const { peerbit, siteProgram } = this._ensureSiteOpened();
+
+      if (accountType === AccountType.GUEST) {
+        return { success: false, error: 'Cannot revoke GUEST access, it is the default role.' };
+      }
+      if (publicKey === peerbit.identity.publicKey.toString()) {
+        return { success: false, error: 'Cannot revoke access from yourself.' };
+      }
+
+      // Call the internal program method
+      await siteProgram._revoke(accountType, publicKey);
+
+      this.logger.debug(`Successfully revoked ${AccountType[accountType]} access.`);
+      return { success: true };
+
+    } catch (error: unknown) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this.logger.error('Failed to revoke access:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
     }
   }
 }
