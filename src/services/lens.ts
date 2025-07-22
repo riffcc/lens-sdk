@@ -28,7 +28,7 @@ import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
 import type { ProgramClient } from '@peerbit/program';
 import { findAccessGrant } from '../common/utils';
-
+import { equals as uint8arraysEquals } from 'uint8arrays';
 const ACCESS_CHECK_CACHE_TTL = 60000;
 
 export class ElectronLensService implements ILensService {
@@ -208,6 +208,41 @@ export class LensService implements ILensService {
     return hasPermission;
   }
 
+  private async _verifyImmutableProperties<T, I extends {
+    id: string;
+    postedBy: Uint8Array;
+    siteAddress: string;
+  }>(
+    store: Documents<T, I>,
+    incomingData: {
+      id: string,
+      postedBy: PublicSignKey | Uint8Array,
+      siteAddress: string
+    },
+  ): Promise<void> {
+
+    // 1. Fetch the original document
+    const originalDoc = await store.index.get(incomingData.id);
+
+    if (!originalDoc) {
+      throw new Error(`Document with ID "${incomingData.id}" not found. Cannot edit.`);
+    }
+
+    // 2. Verify immutable properties
+    const incomingPostedByBytes = (incomingData.postedBy instanceof Uint8Array)
+      ? incomingData.postedBy
+      : incomingData.postedBy.bytes;
+
+    // Using Buffer.compare for a robust byte-by-byte comparison
+    if (!uint8arraysEquals(originalDoc.__indexed.postedBy, incomingPostedByBytes)) {
+      throw new Error("Cannot change the 'postedBy' field during an edit.");
+    }
+
+    if (originalDoc.__indexed.siteAddress !== incomingData.siteAddress) {
+      throw new Error("Cannot change the 'siteAddress' field during an edit.");
+    }
+  }
+
   async openSite(
     siteOrAddress: Site | string,
     options: { siteArgs?: SiteArgs, federate?: boolean } = { federate: true },
@@ -356,6 +391,7 @@ export class LensService implements ILensService {
   async editRelease(data: EditInput<ReleaseData>): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
+      await this._verifyImmutableProperties(siteProgram.releases, data);
       const release = new Release(data);
       const result = await siteProgram.releases.put(release);
       this.logger.debug(`Successfully edited release with ID: ${release.id}`);
@@ -456,6 +492,7 @@ export class LensService implements ILensService {
     try {
       const { siteProgram } = this._ensureSiteOpened();
 
+      await this._verifyImmutableProperties(siteProgram.featuredReleases, data);
       const featuredRelease = new FeaturedRelease(data);
       const result = await siteProgram.featuredReleases.put(featuredRelease);
       this.logger.debug(`Successfully edited featured release with ID: ${featuredRelease.id}`);
