@@ -3,12 +3,12 @@ import { Site, LensService } from '../dist/index.mjs';
 
 /**
  * A helper function to create a new Site instance.
- * @param {Peerbit} client - The peerbit client instance.
+ * @param {Peerbit} peerbit - The peerbit client instance.
  * @returns {Site} A new Site object.
  */
-const createNewSite = (client) => {
-  // The client's public key is used as the root of trust for the new site's access control.
-  const rootTrust = client.identity.publicKey;
+const createNewSite = (peerbit) => {
+  // The peerbit's public key is used as the root of trust for the new site's access control.
+  const rootTrust = peerbit.identity.publicKey;
   return new Site(rootTrust);
 };
 
@@ -28,8 +28,8 @@ const run = async () => {
     console.log('\n-'.repeat(20) + ' SETUP ' + '-'.repeat(20));
     console.log('🏗️ Opening Site A (source) and Site B (follower)...');
 
-    await serviceA.openSite(createNewSite(serviceA.client), { federate: false });
-    await serviceB.openSite(createNewSite(serviceB.client), { federate: true });
+    await serviceA.openSite(createNewSite(serviceA.peerbit), { federate: false });
+    await serviceB.openSite(createNewSite(serviceB.peerbit), { federate: true });
 
     const siteAAddress = serviceA.siteProgram.address;
 
@@ -37,7 +37,7 @@ const run = async () => {
     console.log(`- Site B Address: ${serviceB.siteProgram.address}`);
 
     console.log('🔗 Connecting peers...');
-    await serviceA.client?.dial(serviceB.client.getMultiaddrs());
+    await serviceA.peerbit?.dial(serviceB.peerbit.getMultiaddrs());
 
     // --- PHASE 1: HISTORICAL DATA SYNC ---
     console.log('\n' + '-'.repeat(20) + ' PHASE 1: HISTORICAL SYNC ' + '-'.repeat(20));
@@ -48,7 +48,7 @@ const run = async () => {
         name: `Historical Release #${i}`,
         categoryId: 'benchmark-historical',
         contentCID: `cid_historical_${i}`,
-        postedBy: serviceA.client.identity.publicKey,
+        postedBy: serviceA.peerbit.identity.publicKey,
       });
     }
 
@@ -71,7 +71,7 @@ const run = async () => {
 
     await serviceB.addSubscription({
       siteAddress: siteAAddress,
-      postedBy: serviceB.client.identity.publicKey,
+      postedBy: serviceB.peerbit.identity.publicKey,
     });
 
     await waitForResolved(
@@ -97,7 +97,7 @@ const run = async () => {
       name: 'Live Update Release',
       categoryId: 'benchmark-live',
       contentCID: 'cid_live_update',
-      postedBy: serviceA.client.identity.publicKey,
+      postedBy: serviceA.peerbit.identity.publicKey,
     });
 
     const expectedLiveSize = BATCH_SIZE + 1;

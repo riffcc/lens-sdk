@@ -13,12 +13,12 @@ import { waitForResolved } from '@peerbit/time';
     beforeAll(async () => {
       session = await TestSession.connected(2);
 
-      serviceA = new LensService({ client: session.peers[0] });
-      serviceB = new LensService({ client: session.peers[1] });
+      serviceA = new LensService({ peerbit: session.peers[0] });
+      serviceB = new LensService({ peerbit: session.peers[1] });
       
       // 4. Create and open the sites. This part remains the same.
-      const siteA = new Site(serviceA.client!.identity.publicKey);
-      const siteB = new Site(serviceB.client!.identity.publicKey);
+      const siteA = new Site(serviceA.peerbit!.identity.publicKey);
+      const siteB = new Site(serviceB.peerbit!.identity.publicKey);
       
       // Both services need federation enabled to broadcast and listen.
       await serviceA.openSite(siteA, { federate: true });
@@ -44,7 +44,7 @@ import { waitForResolved } from '@peerbit/time';
           name: `Historical Release #${i}`,
           categoryId: 'benchmark-historical',
           contentCID: `cid_historical_${i}`,
-          postedBy: serviceA.client!.identity.publicKey,
+          postedBy: serviceA.peerbit!.identity.publicKey,
           siteAddress: siteAAddress,
         });
       }
@@ -55,7 +55,7 @@ import { waitForResolved } from '@peerbit/time';
       // 2. Site B subscribes to Site A
       await serviceB.addSubscription({
         siteAddress: siteAAddress,
-        postedBy: serviceB.client!.identity.publicKey,
+        postedBy: serviceB.peerbit!.identity.publicKey,
       });
       
       // 3. Wait for synchronization and assert
@@ -73,7 +73,7 @@ import { waitForResolved } from '@peerbit/time';
         name: 'Live Update Release',
         categoryId: 'benchmark-live',
         contentCID: 'cid_live_update',
-        postedBy: serviceA.client!.identity.publicKey,
+        postedBy: serviceA.peerbit!.identity.publicKey,
         siteAddress: siteAAddress,
       });
       

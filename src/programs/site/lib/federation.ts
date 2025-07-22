@@ -41,7 +41,7 @@ export class FederationManager {
   private activeFederations: Map<string, { close: () => Promise<void> }> = new Map();
 
   constructor(
-    private client: ProgramClient,
+    private peerbit: ProgramClient,
     private siteProgram: Site,
     private logger: Logger,
   ) { }
@@ -113,7 +113,7 @@ export class FederationManager {
     });
 
     // Publish to this site's unique federation topic
-    await this.client.services.pubsub.publish(
+    await this.peerbit.services.pubsub.publish(
       serialize(updateMessage),
       { topics: [this.siteProgram.federationTopic] },
     );
@@ -178,15 +178,15 @@ export class FederationManager {
       } catch { /* Not a FederationUpdate, ignore */ }
     };
 
-    await this.client.services.pubsub.subscribe(federationTopic);
-    this.client.services.pubsub.addEventListener('data', onFederationMessage);
+    await this.peerbit.services.pubsub.subscribe(federationTopic);
+    this.peerbit.services.pubsub.addEventListener('data', onFederationMessage);
 
     this.activeFederations.set(remoteSiteAddress, {
       close: async () => {
         this.logger.debug(`[FederationManager] Closing federation resources for ${remoteSiteAddress}`);
         syncController.abort();
-        await this.client.services.pubsub.unsubscribe(federationTopic);
-        this.client.services.pubsub.removeEventListener('data', onFederationMessage);
+        await this.peerbit.services.pubsub.unsubscribe(federationTopic);
+        this.peerbit.services.pubsub.removeEventListener('data', onFederationMessage);
       },
     });
 
@@ -260,7 +260,7 @@ export class FederationManager {
     }, SYNC_DURATION_MS);
 
     try {
-      remoteSiteProgram = await this.client.open<Site>(remoteSiteAddress, {
+      remoteSiteProgram = await this.peerbit.open<Site>(remoteSiteAddress, {
         timeout: 15000, // Timeout for opening the remote program
         args: {
           releasesArgs: { replicate: { factor: 1 } },

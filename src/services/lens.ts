@@ -109,77 +109,77 @@ export class ElectronLensService implements ILensService {
 }
 
 export class LensService implements ILensService {
-  client: ProgramClient | null = null;
+  peerbit: ProgramClient | null = null;
   siteProgram: Site | null = null;
   private accessCheckCache: Map<string, { result: boolean; timestamp: number }> = new Map();
   private federationManager: FederationManager | null = null;
   private logger: Logger;
   private extenarlyManaged: boolean = false;
 
-  constructor(options?: { client?: ProgramClient; debug?: boolean, customPrefix?: string }) {
+  constructor(options?: { peerbit?: ProgramClient; debug?: boolean, customPrefix?: string }) {
     this.logger = new Logger({ enabled: options?.debug, prefix: options?.customPrefix || 'LensService' });
 
-    if (options?.client) {
-      this.client = options.client;
+    if (options?.peerbit) {
+      this.peerbit = options.peerbit;
       this.extenarlyManaged = true;
     }
   }
 
   async init(directory?: string): Promise<void> {
-    if (this.client) {
+    if (this.peerbit) {
       throw new Error(
-        'LensService: Already configured with an external client. Do not call init().',
+        'LensService: Already configured with an external Peerbit client. Do not call init().',
       );
     }
     this.logger.debug(`Initializing new Peerbit client in directory: ${directory || 'in-memory'}`);
-    this.client = await Peerbit.create({ directory });
+    this.peerbit = await Peerbit.create({ directory });
     this.extenarlyManaged = false;
   }
 
   async stop() {
-    const { client } = this._ensureInitialized();
+    const { peerbit } = this._ensureInitialized();
     if (this.federationManager) {
       await this.federationManager.stop();
       this.federationManager = null;
     }
 
     if (!this.extenarlyManaged) {
-      await client.stop();
+      await peerbit.stop();
       this.logger.debug('Internal Peerbit client stopped.');
     }
     if (this.siteProgram) {
       await this.siteProgram.close();
     }
-    this.client = null;
+    this.peerbit = null;
     this.siteProgram = null;
     this.logger.debug('LensService stopped successfully.');
   }
 
   private _ensureInitialized(): {
-    client: ProgramClient;
+    peerbit: ProgramClient;
   } {
-    if (!this.client) {
+    if (!this.peerbit) {
       throw new Error(
         'LensService is not properly initialized. call init(directory?).',
       );
     }
     return {
-      client: this.client,
+      peerbit: this.peerbit,
     };
   }
 
   private _ensureSiteOpened(): {
-    client: ProgramClient;
+    peerbit: ProgramClient;
     siteProgram: Site;
   } {
-    const { client } = this._ensureInitialized();
+    const { peerbit } = this._ensureInitialized();
     if (!this.siteProgram || this.siteProgram.closed) {
       throw new Error(
         'LensService is not properly initialized. call init(directory?).',
       );
     }
     return {
-      client: client,
+      peerbit,
       siteProgram: this.siteProgram,
     };
   }
@@ -241,15 +241,15 @@ export class LensService implements ILensService {
     if (this.siteProgram) {
       throw new Error('A site is already open. Please close it before opening a new one.');
     }
-    const { client } = this._ensureInitialized();
-    const siteProgram = await client.open(siteOrAddress, { args: options.siteArgs });
+    const { peerbit } = this._ensureInitialized();
+    const siteProgram = await peerbit.open(siteOrAddress, { args: options.siteArgs });
     this.siteProgram = siteProgram;
     this.logger.debug(`Site opened successfully at address: ${this.siteProgram.address}`);
 
     if (options.federate) {
       this.logger.debug('Federation enabled. Initializing FederationManager.');
       // Create and start the manager. It handles everything from here.
-      this.federationManager = new FederationManager(client, siteProgram, this.logger);
+      this.federationManager = new FederationManager(peerbit, siteProgram, this.logger);
       await this.federationManager.start();
     }
 
@@ -257,12 +257,12 @@ export class LensService implements ILensService {
 
   async getAccountStatus(): Promise<AccountType> {
     this.logger.time('getAccountStatus');
-    const { client, siteProgram } = this._ensureSiteOpened();
+    const { peerbit, siteProgram } = this._ensureSiteOpened();
 
     // Run permission checks in parallel for better performance.
     const [isAdmin, isMember] = await Promise.all([
-      this._canPerformCheck(siteProgram.administrators, client.identity.publicKey),
-      this._canPerformCheck(siteProgram.members, client.identity.publicKey),
+      this._canPerformCheck(siteProgram.administrators, peerbit.identity.publicKey),
+      this._canPerformCheck(siteProgram.members, peerbit.identity.publicKey),
     ]);
 
     // Check from highest to lowest privilege.
