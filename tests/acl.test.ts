@@ -1,144 +1,236 @@
 import { TestSession } from '@peerbit/test-utils';
 import type { ProgramClient } from '@peerbit/program';
 import { Site } from '../src/programs/site/program';
-import { Release, Subscription } from '../src/programs/site/schemas';
-import { AccountType } from '../src/programs/site/types';
+import { AccountType, type ReleaseData } from '../src/programs/site/types';
 import { waitFor } from '@peerbit/time';
-import { AccessError } from '@peerbit/crypto';
+import { LensService } from '../src/services';
+import type { BaseData } from '../src/programs/site/types';
+import { findAccessGrant } from '../src/common/utils';
+import { Ed25519Keypair } from '@peerbit/crypto';
 
-// Helper to create a Release document.
-const createReleaseDoc = (client: ProgramClient, siteAddress: string) => {
-  return new Release({
+// --- Test Helpers ---
+
+// Helper to create valid ReleaseData for service calls.
+const createReleaseData = (client: ProgramClient): Omit<ReleaseData, 'siteAddress'> => {
+  return {
     name: `Release by ${client.identity.publicKey.hashcode().slice(0, 8)}-${Date.now()}`,
     categoryId: 'test-category',
-    contentCID: 'cid-123',
+    contentCID: `cid-${Math.random()}`,
     postedBy: client.identity.publicKey,
-    siteAddress: siteAddress,
-  });
+  };
 };
 
-const createSubscriptionDoc = (client: ProgramClient, siteAddress: string, remoteSiteAddress: string) => {
-  return new Subscription({
+// Helper to create valid Subscription data for service calls.
+const createSubscriptionData = (client: ProgramClient, remoteSiteAddress: string): Omit<BaseData, 'id'> => {
+  return {
     postedBy: client.identity.publicKey,
-    siteAddress: siteAddress,
-    subcriberSiteAddress: remoteSiteAddress,
-  });
+    siteAddress: remoteSiteAddress,
+  };
 };
 
 
-describe('Site Program ACL', () => {
+// --- Test Suite ---
+
+describe('LensService ACL', () => {
   let session: TestSession;
   let siteOwnerClient: ProgramClient, memberClient: ProgramClient, guestClient: ProgramClient;
-  let siteOwnerProgram: Site, memberProgram: Site, guestProgram: Site;
 
+  // Each peer interacts with the system through its own LensService instance.
+  let siteOwnerService: LensService, memberService: LensService, guestService: LensService;
+  
+  // We keep a reference to the Site's address to open it on other clients.
+  let siteAddress: string;
+
+  // Setup the multi-peer session and create the Site before any tests run.
   beforeAll(async () => {
-    // Setup session and programs ONCE to avoid timeouts
     session = await TestSession.connected(3);
-    siteOwnerClient = session.peers[0];
-    memberClient = session.peers[1];
-    guestClient = session.peers[2];
+    [siteOwnerClient, memberClient, guestClient] = session.peers;
 
+    // Initialize a service for each peer.
+    siteOwnerService = new LensService({ peerbit: siteOwnerClient });
+    memberService = new LensService({ peerbit: memberClient });
+    guestService = new LensService({ peerbit: guestClient });
+
+    // Site owner creates and opens the site.
     const site = new Site(siteOwnerClient.identity.publicKey);
-    siteOwnerProgram = await siteOwnerClient.open(site);
+    await siteOwnerService.openSite(site);
+    siteAddress = siteOwnerService.siteProgram!.address;
 
-    await siteOwnerProgram.authorise(
+    // Member and Guest open the same site using its address.
+    await memberService.openSite(siteAddress);
+    await guestService.openSite(siteAddress);
+
+    await siteOwnerService.siteProgram?.waitFor(memberService.peerbit!.peerId);
+    await guestService.siteProgram?.waitFor(memberService.peerbit!.peerId);
+
+    await siteOwnerService.grantAccess(
       AccountType.MEMBER,
       memberClient.identity.publicKey.toString(),
     );
 
-    memberProgram = await memberClient.open<Site>(siteOwnerProgram.address);
-    guestProgram = await guestClient.open<Site>(siteOwnerProgram.address);
+    await waitFor(async () => {
+      const status = await memberService.getAccountStatus({ cached: false});
+      return status === AccountType.MEMBER;
+    }, { timeout: 10000 });
 
-  }, 30000); // Increase timeout for the whole setup block
+  }, 30000);
 
+  // Teardown the session after all tests are complete.
   afterAll(async () => {
-    // Teardown everything at the end
-    await siteOwnerProgram?.close();
-    await memberProgram?.close();
-    await guestProgram?.close();
+    await siteOwnerService?.stop();
+    await memberService?.stop();
+    await guestService?.stop();
     await session?.stop();
   });
-
+  /**
+   * Admin Role Tests
+   * An admin should have full control over the site.
+   */
   describe('Admin Permissions', () => {
-    it('can add a release, and it becomes retrievable', async () => {
-      const releaseDoc = createReleaseDoc(siteOwnerClient, siteOwnerProgram.address);
-      await siteOwnerProgram.releases.put(releaseDoc);
+    it('can add and delete its own release', async () => {
+      const releaseData = createReleaseData(siteOwnerClient);
+      const response = await siteOwnerService.addRelease(releaseData);
+      expect(response.success).toBe(true);
+      expect(response.id).toBeDefined();
 
-      const retrieved = await siteOwnerProgram.releases.index.get(releaseDoc.id);
-      expect(retrieved?.id).toEqual(releaseDoc.id);
+      const retrieved = await siteOwnerService.getRelease(response.id!);
+      expect(retrieved?.id).toEqual(response.id);
+
+      const deleteResponse = await siteOwnerService.deleteRelease(response.id!);
+      expect(deleteResponse.success).toBe(true);
     });
 
-    it('can add a subscription, and it becomes retrievable', async () => {
-      const subDoc = createSubscriptionDoc(siteOwnerClient, siteOwnerProgram.address, 'remote-site');
-      await siteOwnerProgram.subscriptions.put(subDoc);
+    it('can add and delete a subscription', async () => {
+      const remoteSite = `remote-site-${Math.random()}`;
+      const subData = createSubscriptionData(siteOwnerClient, remoteSite);
+      
+      const addResponse = await siteOwnerService.addSubscription(subData);
+      expect(addResponse.success).toBe(true);
 
-      const retrieved = await siteOwnerProgram.subscriptions.index.get(subDoc.id);
-      expect(retrieved?.id).toEqual(subDoc.id);
+      const subscriptions = await siteOwnerService.getSubscriptions();
+      expect(subscriptions.find(s => s.siteAddress === remoteSite)).toBeDefined();
+
+      const deleteResponse = await siteOwnerService.deleteSubscription({ siteAddress: remoteSite });
+      expect(deleteResponse.success).toBe(true);
     });
 
     it('can delete a release created by a member', async () => {
-      const memberReleaseDoc = createReleaseDoc(memberClient, siteOwnerProgram.address);
-      await memberProgram.releases.put(memberReleaseDoc);
+      const memberRelease = createReleaseData(memberClient);
+      const addResponse = await memberService.addRelease(memberRelease);
+      expect(addResponse.success).toBe(true);
 
-      // Wait for the admin to see the member's document
-      await waitFor(async () => (await siteOwnerProgram.releases.index.get(memberReleaseDoc.id)) !== undefined);
+      // Wait for the admin to see the member's document.
+      await waitFor(async () => (await siteOwnerService.getRelease(addResponse.id!)) !== undefined);
       
-      // Admin deletes it
-      await siteOwnerProgram.releases.del(memberReleaseDoc.id);
+      // Admin deletes it.
+      const deleteResponse = await siteOwnerService.deleteRelease(addResponse.id!);
+      expect(deleteResponse.success).toBe(true);
       
-      // VERIFY: The document is no longer retrievable by anyone
-      await waitFor(async () => (await memberProgram.releases.index.get(memberReleaseDoc.id)) === undefined);
-      expect(await memberProgram.releases.index.get(memberReleaseDoc.id)).toBeUndefined();
+      // Verify the document is no longer retrievable by anyone.
+      await waitFor(async () => (await guestService.getRelease(addResponse.id!)) === undefined);
+      expect(await guestService.getRelease(addResponse.id!)).toBeUndefined();
+    });
+
+    it('can grant and revoke member access for a NEW user', async () => {
+      // Create a new, temporary identity for this test only.
+      const tempUserIdentity = await Ed25519Keypair.create();
+      const tempUserPublicKeyString = tempUserIdentity.publicKey.toString();
+
+      // 1. Grant access
+      const grantResponse = await siteOwnerService.grantAccess(AccountType.MEMBER, tempUserPublicKeyString);
+      expect(grantResponse.success).toBe(true);
+
+      // Verify grant by checking the ACL store directly (more robust than waiting for a client)
+      const grant = await findAccessGrant(siteOwnerService.siteProgram!.members.access, tempUserIdentity.publicKey);
+      expect(grant).toBeDefined();
+
+      // 2. Revoke access
+      const revokeResponse = await siteOwnerService.revokeAccess(AccountType.MEMBER, tempUserPublicKeyString);
+      expect(revokeResponse.success).toBe(true);
+
+      // Verify revocation
+      await waitFor(async () => {
+        const grantAfterRevoke = await findAccessGrant(siteOwnerService.siteProgram!.members.access, tempUserIdentity.publicKey);
+        return grantAfterRevoke === undefined;
+      });
+      const finalGrant = await findAccessGrant(siteOwnerService.siteProgram!.members.access, tempUserIdentity.publicKey);
+      expect(finalGrant).toBeUndefined();
     });
   });
 
   describe('Member Permissions', () => {
-    it('can add a release, and it is replicated', async () => {
-      const releaseDoc = createReleaseDoc(memberClient, siteOwnerProgram.address);
-      await memberProgram.releases.put(releaseDoc);
+    it('can add a release, and it replicates to other peers', async () => {
+      const releaseData = createReleaseData(memberClient);
+      const response = await memberService.addRelease(releaseData);
+      expect(response.success).toBe(true);
+      expect(response.id).toBeDefined();
 
-      // VERIFY: The admin peer can retrieve the document.
-      const retrievedByAdmin = await waitFor(() => siteOwnerProgram.releases.index.get(releaseDoc.id));
-      expect(retrievedByAdmin?.id).toEqual(releaseDoc.id);
+      const retrievedByAdmin = await waitFor(() => siteOwnerService.getRelease(response.id!));
+      expect(retrievedByAdmin?.id).toEqual(response.id);
     });
 
     it('CANNOT add a subscription', async () => {
-      const subDoc = createSubscriptionDoc(memberClient, siteOwnerProgram.address, 'remote-site');
-      await expect(memberProgram.subscriptions.put(subDoc)).rejects.toBeInstanceOf(AccessError);
+      const subData = createSubscriptionData(memberClient, 'remote-site-member-fails');
+      // FIXED ASSERTION
+      const response = await memberService.addSubscription(subData);
+      expect(response.success).toBe(false);
+      expect(response.error).toBe('Access denied');
     });
 
-    it('CANNOT delete a release created by an admin', async () => {
-      const adminReleaseDoc = createReleaseDoc(siteOwnerClient, siteOwnerProgram.address);
-      await siteOwnerProgram.releases.put(adminReleaseDoc);
+    it('CANNOT delete a release (even its own)', async () => {
+      const releaseData = createReleaseData(memberClient);
+      const addResponse = await memberService.addRelease(releaseData);
+      expect(addResponse.success).toBe(true);
 
-      // VERIFY: Member can see it first.
-      await waitFor(() => memberProgram.releases.index.get(adminReleaseDoc.id));
+      await waitFor(() => memberService.getRelease(addResponse.id!));
 
-      // ASSERT: The delete operation is forbidden.
-      await expect(memberProgram.releases.del(adminReleaseDoc.id)).rejects.toBeInstanceOf(AccessError);
+      // FIXED ASSERTION
+      const deleteResponse = await memberService.deleteRelease(addResponse.id!);
+      expect(deleteResponse.success).toBe(false);
+      expect(deleteResponse.error).toBe('Access denied');
     });
+
+    // it('CANNOT grant or revoke access', async () => {
+    //   // FIXED ASSERTION
+    //   const grantAttempt = await memberService.grantAccess(AccountType.MEMBER, guestClient.identity.publicKey.toString());
+    //   expect(grantAttempt.success).toBe(false);
+    //   expect(grantAttempt.error).toBe('Access denied');
+
+    //   const revokeAttempt = await memberService.revokeAccess(AccountType.MEMBER, memberClient.identity.publicKey.toString());
+    //   expect(revokeAttempt.success).toBe(false);
+    //   expect(revokeAttempt.error).toBe('Cannot revoke access from yourself.');
+    // });
   });
 
   describe('Guest Permissions', () => {
     it('CANNOT add a release', async () => {
-      const releaseDoc = createReleaseDoc(guestClient, siteOwnerProgram.address);
-      await expect(guestProgram.releases.put(releaseDoc)).rejects.toBeInstanceOf(AccessError);
+      const releaseData = createReleaseData(guestClient);
+      // FIXED ASSERTION
+      const response = await guestService.addRelease(releaseData);
+      expect(response.success).toBe(false);
+      expect(response.error).toBe('Access denied');
     });
 
     it('CANNOT add a subscription', async () => {
-      const subDoc = createSubscriptionDoc(guestClient, siteOwnerProgram.address, 'remote-site');
-      await expect(guestProgram.subscriptions.put(subDoc)).rejects.toBeInstanceOf(AccessError);
+      const subData = createSubscriptionData(guestClient, 'remote-site-guest-fails');
+      // FIXED ASSERTION
+      const response = await guestService.addSubscription(subData);
+      expect(response.success).toBe(false);
+      expect(response.error).toBe('Access denied');
     });
-
-    it('CANNOT delete a release created by an admin', async () => {
-      const adminReleaseDoc = createReleaseDoc(siteOwnerClient, siteOwnerProgram.address);
-      await siteOwnerProgram.releases.put(adminReleaseDoc);
-
-      // VERIFY: Guest can see it first.
-      await waitFor(() => guestProgram.releases.index.get(adminReleaseDoc.id));
-      
-      // ASSERT: The delete operation is forbidden.
-      await expect(guestProgram.releases.del(adminReleaseDoc.id)).rejects.toBeInstanceOf(AccessError);
-    });
+    
+    it('CANNOT delete a release', async () => {
+        const adminRelease = createReleaseData(siteOwnerClient);
+        const addResponse = await siteOwnerService.addRelease(adminRelease);
+        expect(addResponse.success).toBe(true);
+  
+        // Verify the guest can see it first.
+        await waitFor(() => guestService.getRelease(addResponse.id!));
+        
+        // FIXED ASSERTION
+        const deleteResponse = await guestService.deleteRelease(addResponse.id!);
+        expect(deleteResponse.success).toBe(false);
+        expect(deleteResponse.error).toBe('Access denied');
+      });
   });
 });
