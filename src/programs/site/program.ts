@@ -6,7 +6,7 @@ import type { PublicSignKey } from '@peerbit/crypto';
 import type { PeerId } from '@libp2p/interface';
 import { AccountType, type SiteArgs } from './types';
 import { BlockedContent, ContentCategory, FeaturedRelease, IndexedBlockedContent, IndexedContentCategory, IndexedFeaturedRelease, IndexedRelease, IndexedSubscription, Release, Subscription } from './schemas';
-import { publicSignKeyFromString } from '../../common/utils';
+import { findAccessGrant, publicSignKeyFromString } from '../../common/utils';
 import { canPerformFederatedWrite } from './lib';
 
 @variant('site')
@@ -27,11 +27,11 @@ export class Site extends Program<SiteArgs> {
   blockedContent: Documents<BlockedContent, IndexedBlockedContent>;
 
   @field({ type: IdentityAccessController })
-  members: IdentityAccessController;
-
-  @field({ type: IdentityAccessController })
   administrators: IdentityAccessController;
 
+  @field({ type: IdentityAccessController })
+  members: IdentityAccessController;
+  
   get federationTopic(): string {
     return `${this.address}/federation`;
   }
@@ -43,25 +43,26 @@ export class Site extends Program<SiteArgs> {
     this.contentCategories = new Documents();
     this.subscriptions = new Documents();
     this.blockedContent = new Documents();
-    this.members = new IdentityAccessController({ rootTrust });
     this.administrators = new IdentityAccessController({ rootTrust });
+    this.members = new IdentityAccessController({ rootTrust });
   }
 
   async open(args?: SiteArgs): Promise<void> {
-    const memberCanPerform = this.members.canPerform.bind(this.members);
     const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
+    const memberCanPerform = this.members.canPerform.bind(this.members);
 
+    
     await Promise.all([
       // Access controllers need to be opened first for permission checks
-      this.members.open({
-        replicate: args?.membersArg?.replicate ?? { factor: 1 },
-      }),
       this.administrators.open({
         replicate: args?.administratorsArgs?.replicate ?? { factor: 1 },
       }),
+      this.members.open({
+        replicate: args?.membersArg?.replicate ?? { factor: 1 },
+      }),
       this.subscriptions.open({
         type: Subscription,
-        replicate: args?.subscriptionsArgs?.replicate ?? true,
+        replicate: args?.subscriptionsArgs?.replicate ?? { factor: 1 },
         replicas: args?.subscriptionsArgs?.replicas,
         canPerform: administratorCanPerform,
         index: {
@@ -188,32 +189,52 @@ export class Site extends Program<SiteArgs> {
 
   }
 
-  async authorise(
-    accountType: AccountType,
-    stringPublicKey: string,
-  ): Promise<void> {
+  /**
+   * @internal
+   * Grants a role to a user. Called by the service layer.
+   * This is the low-level method that performs the database write.
+   */
+  async _authorise(accountType: AccountType, stringPublicKey: string): Promise<void> {
     const publicSignKey = publicSignKeyFromString(stringPublicKey);
     const accessCondition = new PublicKeyAccessCondition({ key: publicSignKey });
     const accessTypes: AccessType[] = [AccessType.Read, AccessType.Write];
 
     if (accountType === AccountType.MEMBER) {
-      const access = new Access({
-        accessCondition,
-        accessTypes,
-      });
+      const access = new Access({ accessCondition, accessTypes });
       await this.members.access.put(access);
-
     } else if (accountType === AccountType.ADMIN) {
-      const access = new Access({
-        accessCondition,
-        accessTypes,
-      });
+      const access = new Access({ accessCondition, accessTypes });
       await this.members.access.put(access);
       await this.administrators.access.put(access);
-
     } else {
-      throw new Error('authorization for this account type is not implemented yet.');
+      throw new Error('Authorization for this account type is not implemented yet.');
     }
   }
 
+  /**
+   * @internal
+   * Revokes a role from a user. Called by the service layer.
+   * This is the low-level method that performs the database search and delete.
+   */
+  async _revoke(accountType: AccountType, stringPublicKey: string): Promise<void> {
+    const publicSignKey = publicSignKeyFromString(stringPublicKey);
+
+    // Helper to find and delete the grant.
+    const findAndDel = async (acl: IdentityAccessController['access'], key: PublicSignKey) => {
+      const grant = await findAccessGrant(acl, key); // Use the new common utility!
+      if (grant) {
+        await acl.del(grant.id);
+      }
+    };
+
+    if (accountType === AccountType.MEMBER) {
+      await findAndDel(this.members.access, publicSignKey);
+    } else if (accountType === AccountType.ADMIN) {
+      // Revoking ADMIN must revoke from both lists.
+      await findAndDel(this.administrators.access, publicSignKey);
+      await findAndDel(this.members.access, publicSignKey);
+    } else {
+      throw new Error('Revocation for this account type is not implemented or invalid.');
+    }
+  }
 }
