@@ -1,14 +1,15 @@
 import { variant, field, option } from '@dao-xyz/borsh';
-import type { ContentCategoryData } from '../types';
+import type { ContentCategoryData, DocumentArgs } from '../types';
 import { v4 as uuid } from 'uuid';
+import { PublicSignKey } from '@peerbit/crypto';
 
 @variant('content_category')
 export class ContentCategory {
   @field({ type: 'string' })
   id: string;
 
-  @field({ type: Uint8Array })
-  postedBy: Uint8Array;
+  @field({ type: PublicSignKey })
+  postedBy: PublicSignKey;
 
   @field({ type: 'string' })
   siteAddress: string;
@@ -25,9 +26,9 @@ export class ContentCategory {
   @field({ type: option('string') })
   metadataSchema?: string;
 
-  constructor(props: ContentCategoryData) {
+  constructor(props: DocumentArgs<ContentCategoryData>) {
     this.id = props.id ?? uuid();
-    this.postedBy = props.postedBy.bytes;
+    this.postedBy = props.postedBy;
     this.siteAddress = props.siteAddress;
     this.displayName = props.displayName;
     this.featured = props.featured;
@@ -74,7 +75,7 @@ export class IndexedContentCategory {
     modified: bigint;
   }) {
     this.id = props.doc.id;
-    this.postedBy = props.doc.postedBy;
+    this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;
     this.displayName = props.doc.displayName;
     this.featured = props.doc.featured;

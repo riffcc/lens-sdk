@@ -1,14 +1,15 @@
 import { variant, field, option } from '@dao-xyz/borsh';
 import { v4 as uuid } from 'uuid';
-import type { ReleaseData } from '../types';
+import type { ReleaseData, DocumentArgs } from '../types';
+import { PublicSignKey } from '@peerbit/crypto';
 
 @variant('release')
 export class Release {
   @field({ type: 'string' })
   id: string;
 
-  @field({ type: Uint8Array })
-  postedBy: Uint8Array;
+  @field({ type: PublicSignKey })
+  postedBy: PublicSignKey;
 
   @field({ type: 'string' })
   siteAddress: string;
@@ -28,9 +29,9 @@ export class Release {
   @field({ type: option('string') })
   metadata?: string;
 
-  constructor(props: ReleaseData) {
+  constructor(props: DocumentArgs<ReleaseData>) {
     this.id = props.id ?? uuid();
-    this.postedBy = props.postedBy.bytes;
+    this.postedBy = props.postedBy;
     this.siteAddress = props.siteAddress;
     this.name = props.name;
     this.categoryId = props.categoryId;
@@ -81,7 +82,7 @@ export class IndexedRelease {
     modified: bigint;
   }) {
     this.id = props.doc.id;
-    this.postedBy = props.doc.postedBy;
+    this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;
     this.name = props.doc.name;
     this.categoryId = props.doc.categoryId;

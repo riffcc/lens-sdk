@@ -1,4 +1,4 @@
-import type { CanPerformOperations, Documents, DocumentsChange, Operation, WithContext } from '@peerbit/document';
+import type { CanPerformOperations, Documents, DocumentsChange, Operation, WithContext, WithIndexedContext } from '@peerbit/document';
 import { isPutOperation, SearchRequest, StringMatch, StringMatchMethod } from '@peerbit/document';
 import { Entry } from '@peerbit/log';
 import type { AbstractType } from '@dao-xyz/borsh';
@@ -6,7 +6,7 @@ import { deserialize, field, vec, variant, serialize } from '@dao-xyz/borsh';
 import { AbortError, delay } from '@peerbit/time';
 import type { MaybePromise } from '@peerbit/crypto';
 import type { DataEvent } from '@peerbit/pubsub-interface';
-import type { FederatedStoreKey } from '../types';
+import type { FederatedStoreKey, ImmutableProps } from '../types';
 import type { Logger } from '../../../common/logger';
 import type { ProgramClient } from '@peerbit/program';
 import type { IndexedSubscription, Subscription } from '../schemas/subscription';
@@ -39,7 +39,12 @@ export class FederationUpdate {
  */
 export class FederationManager {
   private activeFederations: Map<string, { close: () => Promise<void> }> = new Map();
-
+  private _federatedStores: FederatedStoreKey[] = [
+    'releases',
+    'featuredReleases',
+    'contentCategories',
+    'blockedContent',
+  ];
   constructor(
     private peerbit: ProgramClient,
     private siteProgram: Site,
@@ -70,22 +75,15 @@ export class FederationManager {
 
   // --- Private Lifecycle and Setup Methods ---
   private setupFederationBroadcasts() {
-    // Listen for local changes and broadcast them
-    this.siteProgram.releases.events.addEventListener('change', (event) => {
-      this.broadcastFederationUpdate('releases', event.detail);
-    });
-
-    this.siteProgram.featuredReleases.events.addEventListener('change', (event) => {
-      this.broadcastFederationUpdate('featuredReleases', event.detail);
-    });
-
-    this.siteProgram.contentCategories.events.addEventListener('change', (event) => {
-      this.broadcastFederationUpdate('contentCategories', event.detail);
-    });
+    for (const storeName of this._federatedStores) {
+      this.siteProgram[storeName].events.addEventListener('change', (event: CustomEvent<DocumentsChange<unknown, unknown>>) => {
+        this.broadcastFederationUpdate(storeName, event.detail);
+      });
+    }
   }
 
   private async broadcastFederationUpdate(
-    storeName: 'releases' | 'featuredReleases' | 'contentCategories',
+    storeName: FederatedStoreKey,
     change: DocumentsChange<unknown, unknown>,
   ) {
     // We need the full Entry<Operation> object to broadcast
@@ -132,13 +130,13 @@ export class FederationManager {
     }
   }
 
-  private _handleSubscriptionChange(event: CustomEvent<DocumentsChange<Subscription, Subscription>>) {
+  private _handleSubscriptionChange(event: CustomEvent<DocumentsChange<Subscription, IndexedSubscription>>) {
     this.logger.debug(`[FederationManager] Subscription change: ${event.detail.added.length} added, ${event.detail.removed.length} removed.`);
     for (const added of event.detail.added) {
-      this.startFederation(added.siteAddress);
+      this.startFederation(added.to);
     }
     for (const removed of event.detail.removed) {
-      this.stopFederation(removed.siteAddress);
+      this.stopFederation(removed.to);
     }
   }
 
@@ -146,7 +144,7 @@ export class FederationManager {
     const existingSubscriptions = await this.siteProgram.subscriptions.index.search({});
     this.logger.debug(`[FederationManager] Initializing ${existingSubscriptions.length} existing federations.`);
     for (const sub of existingSubscriptions) {
-      await this.startFederation(sub.siteAddress);
+      await this.startFederation(sub.to);
     }
   }
 
@@ -203,8 +201,8 @@ export class FederationManager {
       const query = [new StringMatch({ key: 'siteAddress', value: remoteSiteAddress })];
 
       // Helper function to iterate and collect all documents from a store matching a query
-      const collectAll = async <T, I extends object>(store: Documents<T, I>) => {
-        const allDocs: WithContext<T>[] = [];
+      const collectAll = async <T, I extends { id: string }>(store: Documents<T, I>) => {
+        const allDocs: WithIndexedContext<T, I>[] = [];
         const iterator = store.index.iterate({ query });
         while (!iterator.done()) {
           const batch = await iterator.next(1000); // Process in batches of 1000
@@ -213,24 +211,14 @@ export class FederationManager {
         return allDocs;
       };
 
-      const [
-        releasesToRemove, 
-        featuredToRemove, 
-        contentCategoriesToRemove,
-        blockedContentToRemove,
-      ] = await Promise.all([
-        collectAll(this.siteProgram.releases),
-        collectAll(this.siteProgram.featuredReleases),
-        collectAll(this.siteProgram.contentCategories),
-        collectAll(this.siteProgram.blockedContent),
-      ]);
+      const cleanupPromises = this._federatedStores.map(async (storeName) => {
+        const store = this.siteProgram[storeName];
+        const documentsToRemove = await collectAll((store as Documents<unknown>));
+        return documentsToRemove.map(doc => store.del((doc as unknown as { id: string }).id));
+      });
 
-      const deletePromises = [
-        ...releasesToRemove.map(r => this.siteProgram.releases.del(r.id)),
-        ...featuredToRemove.map(fr => this.siteProgram.featuredReleases.del(fr.id)),
-        ...contentCategoriesToRemove.map(fr => this.siteProgram.contentCategories.del(fr.id)),
-        ...blockedContentToRemove.map(bc => this.siteProgram.blockedContent.del(bc.id)),
-      ];
+      // Flatten the array of promises and execute them
+      const deletePromises = (await Promise.all(cleanupPromises)).flat();
 
       if (deletePromises.length > 0) {
         await Promise.all(deletePromises);
@@ -263,49 +251,27 @@ export class FederationManager {
       remoteSiteProgram = await this.peerbit.open<Site>(remoteSiteAddress, {
         timeout: 15000, // Timeout for opening the remote program
         args: {
-          releasesArgs: { replicate: { factor: 1 } },
-          featuredReleasesArgs: { replicate: { factor: 1 } },
-          contentCategoriesArgs: { replicate: { factor: 1 } },
-          blockedContentArgs: { replicate: { factor: 1 } },
+          ...Object.fromEntries(this._federatedStores.map(key => [`${key}Args`, { replicate: { factor: 1 } }])),
           subscriptionsArgs: { replicate: false },
           membersArg: { replicate: false },
           administratorsArgs: { replicate: false },
         },
       });
 
-      // This loop will be broken by the AbortController's signal
       const syncLoop = async () => {
         while (!combinedSignal.aborted) {
           this.logger.debug(`[Federation] Running sync poll for ${remoteSiteAddress}`);
 
-          const [
-            releasesHeads,
-            featuredReleasesHeads,
-            contentCategoriesHeads,
-            blockedContentHeads,
-          ] = await Promise.all([
-            remoteSiteProgram!.releases.log.log.getHeads(true).all(),
-            remoteSiteProgram!.featuredReleases.log.log.getHeads(true).all(),
-            remoteSiteProgram!.contentCategories.log.log.getHeads(true).all(),
-            remoteSiteProgram!.blockedContent.log.log.getHeads(true).all(),
-          ]);
+          // --- REFACTOR: Dynamically get heads and join logs ---
+          await Promise.all(this._federatedStores.map(async (storeName) => {
+            const remoteStore = remoteSiteProgram![storeName];
+            const localStore = this.siteProgram[storeName];
 
-          const joinPromises: Promise<void>[] = [];
-
-          if (releasesHeads.length > 0) {
-            joinPromises.push(this.siteProgram.releases.log.join(releasesHeads));
-          }
-          if (featuredReleasesHeads.length > 0) {
-            joinPromises.push(this.siteProgram.featuredReleases.log.join(featuredReleasesHeads));
-          }
-          if (contentCategoriesHeads.length > 0) {
-            joinPromises.push(this.siteProgram.contentCategories.log.join(contentCategoriesHeads));
-          }
-          if (blockedContentHeads.length > 0) {
-            joinPromises.push(this.siteProgram.blockedContent.log.join(blockedContentHeads));
-          }
-
-          await Promise.all(joinPromises);
+            const heads = await remoteStore.log.log.getHeads(true).all();
+            if (heads.length > 0) {
+              await localStore.log.join(heads);
+            }
+          }));
 
           await delay(SYNC_POLL_INTERVAL_MS, { signal: combinedSignal });
         }
@@ -326,15 +292,15 @@ export class FederationManager {
 }
 
 const isSubscribed = async (
-  originSiteAddress: string,
+  to: string,
   subscriptionsStore: Documents<Subscription, IndexedSubscription>,
 ): Promise<boolean> => {
 
   const results = await subscriptionsStore.index.search(new SearchRequest({
     query: [
       new StringMatch({
-        key: 'siteAddress',
-        value: originSiteAddress,
+        key: 'to',
+        value: to,
         caseInsensitive: false,
         method: StringMatchMethod.exact,
       }),
@@ -346,7 +312,7 @@ const isSubscribed = async (
 };
 
 export const canPerformFederatedWrite = async <
-  T extends { siteAddress: string },
+  T extends ImmutableProps,
   I extends object = T
 >(
   site: Site,
@@ -355,29 +321,33 @@ export const canPerformFederatedWrite = async <
   docClass: AbstractType<T>,
   localPermissionCheck: (props: CanPerformOperations<T>) => MaybePromise<boolean>,
 ): Promise<boolean> => {
-  
   // Step 1: Determine the origin of the data.
-  let originSiteAddress: string | undefined;
+  let doc: ImmutableProps | undefined;
 
   if (isPutOperation(props.operation)) {
-    const doc = deserialize(props.operation.data, docClass);
-    originSiteAddress = doc.siteAddress;
+    doc = deserialize(props.operation.data, docClass);
   } else { // This block now handles DELETE operations.
-    const docToDelete = await targetStore.index.get(props.operation.key.key);
-    if (!docToDelete) {
-      return false; // If the document to delete doesn't exist, deny.
-    }
-    originSiteAddress = docToDelete.siteAddress;
+    doc = await targetStore.index.get(props.operation.key.key);
   }
+  if (!doc) {
+      return false;
+  }
+  const originSiteAddress = doc.siteAddress;
 
   // If no origin, it's an invalid state. Deny.
   if (!originSiteAddress) {
-    return false; 
+    return false;
   }
 
   // Step 2: If the data's origin is the local site, always use the local permission check.
   if (originSiteAddress === site.address) {
-    return localPermissionCheck(props);
+    const signerPublicKey = props.entry.signatures[0].publicKey;
+    if (signerPublicKey.equals(doc.postedBy)) {
+      return localPermissionCheck(props);
+    } else {
+      return site.administrators.trustedNetwork.rootTrust.equals(signerPublicKey);
+    }
+
   }
 
   // Step 3: At this point, we know the data is from a remote site.

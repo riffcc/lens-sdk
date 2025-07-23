@@ -48,7 +48,6 @@ const run = async () => {
         name: `Historical Release #${i}`,
         categoryId: 'benchmark-historical',
         contentCID: `cid_historical_${i}`,
-        postedBy: serviceA.peerbit.identity.publicKey,
       });
     }
 
@@ -70,8 +69,7 @@ const run = async () => {
     console.time('federation-initial-sync-benchmark');
 
     await serviceB.addSubscription({
-      siteAddress: siteAAddress,
-      postedBy: serviceB.peerbit.identity.publicKey,
+      to: siteAAddress,
     });
 
     await waitForResolved(
@@ -97,7 +95,6 @@ const run = async () => {
       name: 'Live Update Release',
       categoryId: 'benchmark-live',
       contentCID: 'cid_live_update',
-      postedBy: serviceA.peerbit.identity.publicKey,
     });
 
     const expectedLiveSize = BATCH_SIZE + 1;
@@ -144,7 +141,7 @@ const run = async () => {
     console.log('🔌 Site B unsubscribing from Site A...');
     console.time('unsubscription-cleanup-latency');
 
-    await serviceB.deleteSubscription({ siteAddress: siteAAddress });
+    await serviceB.deleteSubscription({ to: siteAAddress });
     
     const expectedCleanupSize = 0; // After unsubscribing, all federated data should be gone.
 

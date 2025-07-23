@@ -44,7 +44,6 @@ import { waitForResolved } from '@peerbit/time';
           name: `Historical Release #${i}`,
           categoryId: 'benchmark-historical',
           contentCID: `cid_historical_${i}`,
-          postedBy: serviceA.peerbit!.identity.publicKey,
         });
       }
 
@@ -53,8 +52,7 @@ import { waitForResolved } from '@peerbit/time';
       
       // 2. Site B subscribes to Site A
       await serviceB.addSubscription({
-        siteAddress: siteAAddress,
-        postedBy: serviceB.peerbit!.identity.publicKey,
+        to: siteAAddress,
       });
       
       // 3. Wait for synchronization and assert
@@ -72,7 +70,6 @@ import { waitForResolved } from '@peerbit/time';
         name: 'Live Update Release',
         categoryId: 'benchmark-live',
         contentCID: 'cid_live_update',
-        postedBy: serviceA.peerbit!.identity.publicKey,
       });
       
       const expectedSize = initialSize + 1;
@@ -105,7 +102,7 @@ import { waitForResolved } from '@peerbit/time';
 
     test('PHASE 4: should clean up federated data on unsubscription', async () => {
       // 1. Site B unsubscribes from Site A
-      await serviceB.deleteSubscription({ siteAddress: siteAAddress });
+      await serviceB.deleteSubscription({ to: siteAAddress });
       
       const expectedCleanupSize = 0; // All federated data should be gone from Site B
 

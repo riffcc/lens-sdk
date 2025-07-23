@@ -4,30 +4,19 @@ import { Site } from '../src/programs/site/program';
 import { AccountType, type ReleaseData } from '../src/programs/site/types';
 import { waitFor } from '@peerbit/time';
 import { LensService } from '../src/services';
-import type { BaseData } from '../src/programs/site/types';
 import { findAccessGrant } from '../src/common/utils';
 import { Ed25519Keypair } from '@peerbit/crypto';
 
 // --- Test Helpers ---
 
 // Helper to create valid ReleaseData for service calls.
-const createReleaseData = (client: ProgramClient): Omit<ReleaseData, 'siteAddress'> => {
+const createReleaseData = (client: ProgramClient): ReleaseData => {
   return {
     name: `Release by ${client.identity.publicKey.hashcode().slice(0, 8)}-${Date.now()}`,
     categoryId: 'test-category',
     contentCID: `cid-${Math.random()}`,
-    postedBy: client.identity.publicKey,
   };
 };
-
-// Helper to create valid Subscription data for service calls.
-const createSubscriptionData = (client: ProgramClient, remoteSiteAddress: string): Omit<BaseData, 'id'> => {
-  return {
-    postedBy: client.identity.publicKey,
-    siteAddress: remoteSiteAddress,
-  };
-};
-
 
 // --- Test Suite ---
 
@@ -37,7 +26,7 @@ describe('LensService ACL', () => {
 
   // Each peer interacts with the system through its own LensService instance.
   let siteOwnerService: LensService, memberService: LensService, guestService: LensService;
-  
+
   // We keep a reference to the Site's address to open it on other clients.
   let siteAddress: string;
 
@@ -53,12 +42,12 @@ describe('LensService ACL', () => {
 
     // Site owner creates and opens the site.
     const site = new Site(siteOwnerClient.identity.publicKey);
-    await siteOwnerService.openSite(site);
+    await siteOwnerService.openSite(site, { federate: false });
     siteAddress = siteOwnerService.siteProgram!.address;
 
     // Member and Guest open the same site using its address.
-    await memberService.openSite(siteAddress);
-    await guestService.openSite(siteAddress);
+    await memberService.openSite(siteAddress, { federate: false });
+    await guestService.openSite(siteAddress, { federate: false });
 
     await siteOwnerService.siteProgram?.waitFor(memberService.peerbit!.peerId);
     await guestService.siteProgram?.waitFor(memberService.peerbit!.peerId);
@@ -69,7 +58,7 @@ describe('LensService ACL', () => {
     );
 
     await waitFor(async () => {
-      const status = await memberService.getAccountStatus({ cached: false});
+      const status = await memberService.getAccountStatus({ cached: false });
       return status === AccountType.MEMBER;
     }, { timeout: 10000 });
 
@@ -100,17 +89,36 @@ describe('LensService ACL', () => {
       expect(deleteResponse.success).toBe(true);
     });
 
+    it('can post a release on behalf of another user (impersonation)', async () => {
+      const releaseData = {
+        ...createReleaseData(siteOwnerClient),
+        postedBy: memberClient.identity.publicKey, // Admin is posting, but attributing it to the member
+      };
+
+      const response = await siteOwnerService.addRelease(releaseData);
+      expect(response.success).toBe(true);
+      expect(response.id).toBeDefined();
+
+      const retrieved = await siteOwnerService.getRelease(response.id!);
+      expect(retrieved).toBeDefined();
+      // Crucial check: verify the 'postedBy' field is the one we set, not the signer's
+      expect(retrieved!.postedBy.equals(memberClient.identity.publicKey)).toBe(true);
+
+      // Cleanup
+      await siteOwnerService.deleteRelease(response.id!);
+    });
+
     it('can add and delete a subscription', async () => {
       const remoteSite = `remote-site-${Math.random()}`;
-      const subData = createSubscriptionData(siteOwnerClient, remoteSite);
-      
-      const addResponse = await siteOwnerService.addSubscription(subData);
+      const addResponse = await siteOwnerService.addSubscription({
+        to: remoteSite,
+      });
       expect(addResponse.success).toBe(true);
 
       const subscriptions = await siteOwnerService.getSubscriptions();
-      expect(subscriptions.find(s => s.siteAddress === remoteSite)).toBeDefined();
+      expect(subscriptions.find(s => s.to === remoteSite)).toBeDefined();
 
-      const deleteResponse = await siteOwnerService.deleteSubscription({ siteAddress: remoteSite });
+      const deleteResponse = await siteOwnerService.deleteSubscription({ to: remoteSite });
       expect(deleteResponse.success).toBe(true);
     });
 
@@ -121,11 +129,11 @@ describe('LensService ACL', () => {
 
       // Wait for the admin to see the member's document.
       await waitFor(async () => (await siteOwnerService.getRelease(addResponse.id!)) !== undefined);
-      
+
       // Admin deletes it.
       const deleteResponse = await siteOwnerService.deleteRelease(addResponse.id!);
       expect(deleteResponse.success).toBe(true);
-      
+
       // Verify the document is no longer retrievable by anyone.
       await waitFor(async () => (await guestService.getRelease(addResponse.id!)) === undefined);
       expect(await guestService.getRelease(addResponse.id!)).toBeUndefined();
@@ -169,10 +177,24 @@ describe('LensService ACL', () => {
       expect(retrievedByAdmin?.id).toEqual(response.id);
     });
 
+    it('CANNOT post a release on behalf of another user (impersonation)', async () => {
+      const releaseData = {
+        ...createReleaseData(memberClient),
+        postedBy: siteOwnerClient.identity.publicKey, // Member attempting to post as the Admin
+      };
+
+      const response = await memberService.addRelease(releaseData);
+      // The operation should fail because the signer (member) is not the root trust,
+      // and the signer's key does not match the `postedBy` key. The framework throws
+      // an AccessError, which the service correctly translates to 'Access denied'.
+      expect(response.success).toBe(false);
+      expect(response.error).toBe('Access denied');
+    });
+
     it('CANNOT add a subscription', async () => {
-      const subData = createSubscriptionData(memberClient, 'remote-site-member-fails');
-      // FIXED ASSERTION
-      const response = await memberService.addSubscription(subData);
+      const response = await memberService.addSubscription({
+        to: 'remote-site-member-fails',
+      });
       expect(response.success).toBe(false);
       expect(response.error).toBe('Access denied');
     });
@@ -184,7 +206,6 @@ describe('LensService ACL', () => {
 
       await waitFor(() => memberService.getRelease(addResponse.id!));
 
-      // FIXED ASSERTION
       const deleteResponse = await memberService.deleteRelease(addResponse.id!);
       expect(deleteResponse.success).toBe(false);
       expect(deleteResponse.error).toBe('Access denied');
@@ -205,32 +226,43 @@ describe('LensService ACL', () => {
   describe('Guest Permissions', () => {
     it('CANNOT add a release', async () => {
       const releaseData = createReleaseData(guestClient);
-      // FIXED ASSERTION
       const response = await guestService.addRelease(releaseData);
       expect(response.success).toBe(false);
       expect(response.error).toBe('Access denied');
     });
 
-    it('CANNOT add a subscription', async () => {
-      const subData = createSubscriptionData(guestClient, 'remote-site-guest-fails');
-      // FIXED ASSERTION
-      const response = await guestService.addSubscription(subData);
+    it('CANNOT post a release on behalf of another user (impersonation)', async () => {
+      const releaseData = {
+        ...createReleaseData(guestClient),
+        postedBy: siteOwnerClient.identity.publicKey, // Guest attempting to post as the Admin
+      };
+
+      const response = await guestService.addRelease(releaseData);
+      // The operation fails at the basic role check before even considering impersonation.
       expect(response.success).toBe(false);
       expect(response.error).toBe('Access denied');
     });
-    
-    it('CANNOT delete a release', async () => {
-        const adminRelease = createReleaseData(siteOwnerClient);
-        const addResponse = await siteOwnerService.addRelease(adminRelease);
-        expect(addResponse.success).toBe(true);
-  
-        // Verify the guest can see it first.
-        await waitFor(() => guestService.getRelease(addResponse.id!));
-        
-        // FIXED ASSERTION
-        const deleteResponse = await guestService.deleteRelease(addResponse.id!);
-        expect(deleteResponse.success).toBe(false);
-        expect(deleteResponse.error).toBe('Access denied');
+
+
+    it('CANNOT add a subscription', async () => {
+      const response = await guestService.addSubscription({
+        to: 'remote-site-guest-fails',
       });
+      expect(response.success).toBe(false);
+      expect(response.error).toBe('Access denied');
+    });
+
+    it('CANNOT delete a release', async () => {
+      const adminRelease = createReleaseData(siteOwnerClient);
+      const addResponse = await siteOwnerService.addRelease(adminRelease);
+      expect(addResponse.success).toBe(true);
+
+      // Verify the guest can see it first.
+      await waitFor(() => guestService.getRelease(addResponse.id!));
+
+      const deleteResponse = await guestService.deleteRelease(addResponse.id!);
+      expect(deleteResponse.success).toBe(false);
+      expect(deleteResponse.error).toBe('Access denied');
+    });
   });
 });

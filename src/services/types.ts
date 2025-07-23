@@ -2,10 +2,12 @@ import type { WithContext } from '@peerbit/document';
 import type { Site } from '../programs/site/program';
 import type {
   AccountType,
-  BaseData,
   FeaturedReleaseData,
+  ImmutableProps,
   ReleaseData,
   SiteArgs,
+  SubscriptionData,
+  WithOptionalPostedBy,
 } from '../programs/site/types';
 import type { FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
 import type { SearchOptions } from '../common/types';
@@ -23,6 +25,10 @@ export interface HashResponse extends IdResponse {
   hash?: string;
 }
 
+export type AddInput<T> = WithOptionalPostedBy<T>;
+
+export type EditInput<T> = T & ImmutableProps;
+
 export interface ILensService {
   init: (directory?: string) => Promise<void>;
   stop: () => Promise<void>;
@@ -32,16 +38,16 @@ export interface ILensService {
   getReleases: (options?: SearchOptions) => Promise<WithContext<Release>[]>;
   getFeaturedRelease: (id: string) => Promise<WithContext<FeaturedRelease> | undefined>;
   getFeaturedReleases: (options?: SearchOptions) => Promise<WithContext<FeaturedRelease>[]>;
-  addRelease: (data: Omit<ReleaseData, 'siteAddress'>) => Promise<HashResponse>;
+  addRelease: (data: AddInput<ReleaseData>) => Promise<HashResponse>;
   // Admin methods
-  editRelease: (data: ReleaseData) => Promise<HashResponse>;
+  editRelease: (data: EditInput<ReleaseData>) => Promise<HashResponse>;
   deleteRelease: (id: string) => Promise<IdResponse>;
-  addFeaturedRelease: (data: Omit<FeaturedReleaseData, 'siteAddress'>) => Promise<HashResponse>;
-  editFeaturedRelease: (data: FeaturedReleaseData) => Promise<HashResponse>;
+  addFeaturedRelease: (data: AddInput<FeaturedReleaseData>) => Promise<HashResponse>;
+  editFeaturedRelease: (data: EditInput<FeaturedReleaseData>) => Promise<HashResponse>;
   deleteFeaturedRelease: (id: string) => Promise<IdResponse>;
   getSubscriptions: (options?: SearchOptions) => Promise<Subscription[]>;
-  addSubscription: (data: BaseData) => Promise<HashResponse>;
-  deleteSubscription: (data: Partial<Pick<BaseData, 'id' | 'siteAddress'>>) => Promise<IdResponse>;
+  addSubscription: (data: AddInput<SubscriptionData>) => Promise<HashResponse>;
+  deleteSubscription: (data: { id?: string, to?: string }) => Promise<IdResponse>;
   grantAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse>;
   revokeAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse>;
 }
