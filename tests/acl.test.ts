@@ -89,6 +89,25 @@ describe('LensService ACL', () => {
       expect(deleteResponse.success).toBe(true);
     });
 
+    it('can post a release on behalf of another user (impersonation)', async () => {
+      const releaseData = {
+        ...createReleaseData(siteOwnerClient),
+        postedBy: memberClient.identity.publicKey, // Admin is posting, but attributing it to the member
+      };
+
+      const response = await siteOwnerService.addRelease(releaseData);
+      expect(response.success).toBe(true);
+      expect(response.id).toBeDefined();
+
+      const retrieved = await siteOwnerService.getRelease(response.id!);
+      expect(retrieved).toBeDefined();
+      // Crucial check: verify the 'postedBy' field is the one we set, not the signer's
+      expect(retrieved!.postedBy.equals(memberClient.identity.publicKey)).toBe(true);
+
+      // Cleanup
+      await siteOwnerService.deleteRelease(response.id!);
+    });
+
     it('can add and delete a subscription', async () => {
       const remoteSite = `remote-site-${Math.random()}`;
       const addResponse = await siteOwnerService.addSubscription({
@@ -158,6 +177,20 @@ describe('LensService ACL', () => {
       expect(retrievedByAdmin?.id).toEqual(response.id);
     });
 
+    it('CANNOT post a release on behalf of another user (impersonation)', async () => {
+      const releaseData = {
+        ...createReleaseData(memberClient),
+        postedBy: siteOwnerClient.identity.publicKey, // Member attempting to post as the Admin
+      };
+
+      const response = await memberService.addRelease(releaseData);
+      // The operation should fail because the signer (member) is not the root trust,
+      // and the signer's key does not match the `postedBy` key. The framework throws
+      // an AccessError, which the service correctly translates to 'Access denied'.
+      expect(response.success).toBe(false);
+      expect(response.error).toBe('Access denied');
+    });
+
     it('CANNOT add a subscription', async () => {
       const response = await memberService.addSubscription({
         to: 'remote-site-member-fails',
@@ -173,7 +206,6 @@ describe('LensService ACL', () => {
 
       await waitFor(() => memberService.getRelease(addResponse.id!));
 
-      // FIXED ASSERTION
       const deleteResponse = await memberService.deleteRelease(addResponse.id!);
       expect(deleteResponse.success).toBe(false);
       expect(deleteResponse.error).toBe('Access denied');
@@ -194,11 +226,23 @@ describe('LensService ACL', () => {
   describe('Guest Permissions', () => {
     it('CANNOT add a release', async () => {
       const releaseData = createReleaseData(guestClient);
-      // FIXED ASSERTION
       const response = await guestService.addRelease(releaseData);
       expect(response.success).toBe(false);
       expect(response.error).toBe('Access denied');
     });
+
+    it('CANNOT post a release on behalf of another user (impersonation)', async () => {
+      const releaseData = {
+        ...createReleaseData(guestClient),
+        postedBy: siteOwnerClient.identity.publicKey, // Guest attempting to post as the Admin
+      };
+
+      const response = await guestService.addRelease(releaseData);
+      // The operation fails at the basic role check before even considering impersonation.
+      expect(response.success).toBe(false);
+      expect(response.error).toBe('Access denied');
+    });
+
 
     it('CANNOT add a subscription', async () => {
       const response = await guestService.addSubscription({
@@ -216,7 +260,6 @@ describe('LensService ACL', () => {
       // Verify the guest can see it first.
       await waitFor(() => guestService.getRelease(addResponse.id!));
 
-      // FIXED ASSERTION
       const deleteResponse = await guestService.deleteRelease(addResponse.id!);
       expect(deleteResponse.success).toBe(false);
       expect(deleteResponse.error).toBe('Access denied');
