@@ -17,6 +17,7 @@ import { FederationManager } from '../programs/site/lib/federation';
 import type { Site } from '../programs/site/program';
 import type {
   FeaturedReleaseData,
+  ImmutableProps,
   ReleaseData,
   SiteArgs,
   SubscriptionData,
@@ -208,17 +209,9 @@ export class LensService implements ILensService {
     return hasPermission;
   }
 
-  private async _verifyImmutableProperties<T, I extends {
-    id: string;
-    postedBy: Uint8Array;
-    siteAddress: string;
-  }>(
+  private async _verifyImmutableProperties<T extends ImmutableProps, I extends object = T>(
     store: Documents<T, I>,
-    incomingData: {
-      id: string,
-      postedBy: PublicSignKey | Uint8Array,
-      siteAddress: string
-    },
+    incomingData: ImmutableProps,
   ): Promise<void> {
 
     // 1. Fetch the original document
@@ -228,17 +221,11 @@ export class LensService implements ILensService {
       throw new Error(`Document with ID "${incomingData.id}" not found. Cannot edit.`);
     }
 
-    // 2. Verify immutable properties
-    const incomingPostedByBytes = (incomingData.postedBy instanceof Uint8Array)
-      ? incomingData.postedBy
-      : incomingData.postedBy.bytes;
-
-    // Using Buffer.compare for a robust byte-by-byte comparison
-    if (!uint8arraysEquals(originalDoc.__indexed.postedBy, incomingPostedByBytes)) {
+    if (!originalDoc.postedBy.equals(incomingData.postedBy)) {
       throw new Error("Cannot change the 'postedBy' field during an edit.");
     }
 
-    if (originalDoc.__indexed.siteAddress !== incomingData.siteAddress) {
+    if (originalDoc.siteAddress !== incomingData.siteAddress) {
       throw new Error("Cannot change the 'siteAddress' field during an edit.");
     }
   }

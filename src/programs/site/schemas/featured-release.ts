@@ -1,6 +1,6 @@
 import { variant, field } from '@dao-xyz/borsh';
 import { concat } from 'uint8arrays';
-import { sha256Base64Sync } from '@peerbit/crypto';
+import { PublicSignKey, sha256Base64Sync } from '@peerbit/crypto';
 import type { FeaturedReleaseData, DocumentArgs } from '../types';
 
 @variant('featured')
@@ -8,8 +8,8 @@ export class FeaturedRelease {
   @field({ type: 'string' })
   id: string;
 
-  @field({ type: Uint8Array })
-  postedBy: Uint8Array;
+  @field({ type: PublicSignKey })
+  postedBy: PublicSignKey;
 
   @field({ type: 'string' })
   siteAddress: string;
@@ -33,7 +33,7 @@ export class FeaturedRelease {
         new TextEncoder().encode(props.siteAddress)],
       ),
     );
-    this.postedBy = (props.postedBy instanceof Uint8Array) ? props.postedBy : props.postedBy.bytes;
+    this.postedBy = props.postedBy;
     this.siteAddress = props.siteAddress;
     this.releaseId = props.releaseId;
     this.startTime = props.startTime;
@@ -76,7 +76,7 @@ export class IndexedFeaturedRelease {
     modified: bigint;
   }) {
     this.id = props.doc.id;
-    this.postedBy = props.doc.postedBy;
+    this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;
     this.releaseId = props.doc.releaseId;
     this.startTime = props.doc.startTime;

@@ -3,13 +3,11 @@ import type { Site } from '../programs/site/program';
 import type {
   AccountType,
   FeaturedReleaseData,
+  ImmutableProps,
   ReleaseData,
   SiteArgs,
   SubscriptionData,
-  WithId,
   WithOptionalPostedBy,
-  WithPostedBy,
-  WithSiteAddress,
 } from '../programs/site/types';
 import type { FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
 import type { SearchOptions } from '../common/types';
@@ -29,7 +27,7 @@ export interface HashResponse extends IdResponse {
 
 export type AddInput<T> = WithOptionalPostedBy<T>;
 
-export type EditInput<T> = WithId<T> & WithPostedBy<T> & WithSiteAddress<T>;
+export type EditInput<T> = T & ImmutableProps;
 
 export interface ILensService {
   init: (directory?: string) => Promise<void>;

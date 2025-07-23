@@ -1,13 +1,16 @@
 import type { PublicSignKey } from '@peerbit/crypto';
 import type { ReplicationLimitsOptions, ReplicationOptions } from '@peerbit/shared-log';
 
-export type WithId<T> = T & { id: string };
-export type WithOptionalId<T> = T & { id?: string };
-export type WithSiteAddress<T> = T & { siteAddress: string };
-export type WithPostedBy<T> = T & { postedBy: PublicSignKey | Uint8Array };
-export type WithOptionalPostedBy<T> = T & { postedBy?: PublicSignKey | Uint8Array };
+export type ImmutableProps = {
+  id: string;
+  postedBy: PublicSignKey;
+  siteAddress: string;
+}
 
-export type DocumentArgs<T> = WithOptionalId<T> & WithSiteAddress<T> & WithPostedBy<T>;
+export type WithOptionalId<T> = T & { id?: string };
+export type WithOptionalPostedBy<T> = T & { postedBy?: PublicSignKey };
+
+export type DocumentArgs<T> = T & Omit<ImmutableProps, 'id'> & { id?: string };
 
 export type ReleaseData<T = string> = {
   name: string;

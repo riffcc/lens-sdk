@@ -1,6 +1,6 @@
 import { field, variant } from '@dao-xyz/borsh';
 import type { DocumentArgs, SubscriptionData } from '../types';
-import { sha256Base64Sync } from '@peerbit/crypto';
+import { PublicSignKey, sha256Base64Sync } from '@peerbit/crypto';
 import { concat } from 'uint8arrays';
 
 @variant('subscription')
@@ -8,8 +8,8 @@ export class Subscription {
   @field({ type: 'string' })
   id: string;
 
-  @field({ type: Uint8Array })
-  postedBy: Uint8Array;
+  @field({ type: PublicSignKey })
+  postedBy: PublicSignKey;
 
   @field({ type: 'string' })
   siteAddress: string;
@@ -22,7 +22,7 @@ export class Subscription {
       new TextEncoder().encode(props.siteAddress),
       new TextEncoder().encode(props.to),
     ]));
-    this.postedBy = (props.postedBy instanceof Uint8Array) ? props.postedBy : props.postedBy.bytes;;
+    this.postedBy = props.postedBy;
     this.siteAddress = props.siteAddress;
     this.to = props.to;
   }
@@ -53,7 +53,7 @@ export class IndexedSubscription {
     modified: bigint;
   }) {
     this.id = props.doc.id;
-    this.postedBy = props.doc.postedBy;
+    this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;
     this.to = props.doc.to;
     this.created = props.created;
