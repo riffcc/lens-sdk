@@ -1,12 +1,10 @@
-import type { CanPerformOperations, Documents, DocumentsChange, Operation, WithContext, WithIndexedContext } from '@peerbit/document';
-import { isPutOperation, SearchRequest, StringMatch, StringMatchMethod } from '@peerbit/document';
+import type { Documents, DocumentsChange, Operation, WithContext, WithIndexedContext } from '@peerbit/document';
+import { StringMatch } from '@peerbit/document';
 import { Entry } from '@peerbit/log';
-import type { AbstractType } from '@dao-xyz/borsh';
 import { deserialize, field, vec, variant, serialize } from '@dao-xyz/borsh';
 import { AbortError, delay } from '@peerbit/time';
-import type { MaybePromise } from '@peerbit/crypto';
 import type { DataEvent } from '@peerbit/pubsub-interface';
-import type { FederatedStoreKey, ImmutableProps } from '../types';
+import type { FederatedStoreKey } from '../types';
 import type { Logger } from '../../../common/logger';
 import type { ProgramClient } from '@peerbit/program';
 import type { IndexedSubscription, Subscription } from '../schemas/subscription';
@@ -290,73 +288,3 @@ export class FederationManager {
     }
   }
 }
-
-const isSubscribed = async (
-  to: string,
-  subscriptionsStore: Documents<Subscription, IndexedSubscription>,
-): Promise<boolean> => {
-
-  const results = await subscriptionsStore.index.search(new SearchRequest({
-    query: [
-      new StringMatch({
-        key: 'to',
-        value: to,
-        caseInsensitive: false,
-        method: StringMatchMethod.exact,
-      }),
-    ],
-    fetch: 1,
-  }));
-
-  return results.length > 0;
-};
-
-export const canPerformFederatedWrite = async <
-  T extends ImmutableProps,
-  I extends object = T
->(
-  site: Site,
-  props: CanPerformOperations<T>,
-  targetStore: Documents<T, I>,
-  docClass: AbstractType<T>,
-  localPermissionCheck: (props: CanPerformOperations<T>) => MaybePromise<boolean>,
-): Promise<boolean> => {
-  // Step 1: Determine the origin of the data.
-  let doc: ImmutableProps | undefined;
-
-  if (isPutOperation(props.operation)) {
-    doc = deserialize(props.operation.data, docClass);
-  } else { // This block now handles DELETE operations.
-    doc = await targetStore.index.get(props.operation.key.key);
-  }
-  if (!doc) {
-      return false;
-  }
-  const originSiteAddress = doc.siteAddress;
-
-  // If no origin, it's an invalid state. Deny.
-  if (!originSiteAddress) {
-    return false;
-  }
-
-  // Step 2: If the data's origin is the local site, always use the local permission check.
-  if (originSiteAddress === site.address) {
-    const signerPublicKey = props.entry.signatures[0].publicKey;
-    if (signerPublicKey.equals(doc.postedBy)) {
-      return localPermissionCheck(props);
-    } else {
-      return site.administrators.trustedNetwork.rootTrust.equals(signerPublicKey);
-    }
-
-  }
-
-  // Step 3: At this point, we know the data is from a remote site.
-  // Apply the simplified rules for federated data.
-  if (isPutOperation(props.operation)) {
-    // For a remote PUT, we must be subscribed to the origin.
-    return isSubscribed(originSiteAddress, site.subscriptions);
-  } else {
-    // For a remote DELETE, we trust our federated partner. Allow.
-    return true;
-  }
-};
