@@ -6,7 +6,7 @@ import { deserialize, field, vec, variant, serialize } from '@dao-xyz/borsh';
 import { AbortError, delay } from '@peerbit/time';
 import type { MaybePromise } from '@peerbit/crypto';
 import type { DataEvent } from '@peerbit/pubsub-interface';
-import type { FederatedStoreKey } from '../types';
+import type { FederatedStoreKey, ImmutableProps } from '../types';
 import type { Logger } from '../../../common/logger';
 import type { ProgramClient } from '@peerbit/program';
 import type { IndexedSubscription, Subscription } from '../schemas/subscription';
@@ -130,7 +130,7 @@ export class FederationManager {
     }
   }
 
-  private _handleSubscriptionChange(event: CustomEvent<DocumentsChange<Subscription, Subscription>>) {
+  private _handleSubscriptionChange(event: CustomEvent<DocumentsChange<Subscription, IndexedSubscription>>) {
     this.logger.debug(`[FederationManager] Subscription change: ${event.detail.added.length} added, ${event.detail.removed.length} removed.`);
     for (const added of event.detail.added) {
       this.startFederation(added.to);
@@ -214,7 +214,7 @@ export class FederationManager {
       const cleanupPromises = this._federatedStores.map(async (storeName) => {
         const store = this.siteProgram[storeName];
         const documentsToRemove = await collectAll((store as Documents<unknown>));
-        return documentsToRemove.map(doc => store.del((doc as unknown as { id: string}).id));
+        return documentsToRemove.map(doc => store.del((doc as unknown as { id: string }).id));
       });
 
       // Flatten the array of promises and execute them
@@ -261,18 +261,18 @@ export class FederationManager {
       const syncLoop = async () => {
         while (!combinedSignal.aborted) {
           this.logger.debug(`[Federation] Running sync poll for ${remoteSiteAddress}`);
-  
+
           // --- REFACTOR: Dynamically get heads and join logs ---
           await Promise.all(this._federatedStores.map(async (storeName) => {
             const remoteStore = remoteSiteProgram![storeName];
             const localStore = this.siteProgram[storeName];
-            
+
             const heads = await remoteStore.log.log.getHeads(true).all();
             if (heads.length > 0) {
               await localStore.log.join(heads);
             }
           }));
-  
+
           await delay(SYNC_POLL_INTERVAL_MS, { signal: combinedSignal });
         }
       };
@@ -312,7 +312,7 @@ const isSubscribed = async (
 };
 
 export const canPerformFederatedWrite = async <
-  T extends { siteAddress: string },
+  T extends ImmutableProps,
   I extends object = T
 >(
   site: Site,
@@ -321,20 +321,18 @@ export const canPerformFederatedWrite = async <
   docClass: AbstractType<T>,
   localPermissionCheck: (props: CanPerformOperations<T>) => MaybePromise<boolean>,
 ): Promise<boolean> => {
-
   // Step 1: Determine the origin of the data.
-  let originSiteAddress: string | undefined;
+  let doc: ImmutableProps | undefined;
 
   if (isPutOperation(props.operation)) {
-    const doc = deserialize(props.operation.data, docClass);
-    originSiteAddress = doc.siteAddress;
+    doc = deserialize(props.operation.data, docClass);
   } else { // This block now handles DELETE operations.
-    const docToDelete = await targetStore.index.get(props.operation.key.key);
-    if (!docToDelete) {
-      return false; // If the document to delete doesn't exist, deny.
-    }
-    originSiteAddress = docToDelete.siteAddress;
+    doc = await targetStore.index.get(props.operation.key.key);
   }
+  if (!doc) {
+      return false;
+  }
+  const originSiteAddress = doc.siteAddress;
 
   // If no origin, it's an invalid state. Deny.
   if (!originSiteAddress) {
@@ -343,7 +341,13 @@ export const canPerformFederatedWrite = async <
 
   // Step 2: If the data's origin is the local site, always use the local permission check.
   if (originSiteAddress === site.address) {
-    return localPermissionCheck(props);
+    const signerPublicKey = props.entry.signatures[0].publicKey;
+    if (signerPublicKey.equals(doc.postedBy)) {
+      return localPermissionCheck(props);
+    } else {
+      return site.administrators.trustedNetwork.rootTrust.equals(signerPublicKey);
+    }
+
   }
 
   // Step 3: At this point, we know the data is from a remote site.

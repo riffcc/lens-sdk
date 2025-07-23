@@ -29,7 +29,6 @@ import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
 import type { ProgramClient } from '@peerbit/program';
 import { findAccessGrant } from '../common/utils';
-import { equals as uint8arraysEquals } from 'uint8arrays';
 const ACCESS_CHECK_CACHE_TTL = 60000;
 
 export class ElectronLensService implements ILensService {
@@ -230,16 +229,6 @@ export class LensService implements ILensService {
     }
   }
 
-  private async _verifyAdminForImpersonation(postedBy?: PublicSignKey | Uint8Array): Promise<void> {
-    if (postedBy) {
-      const accountStatus = await this.getAccountStatus({ cached: false });
-      if (accountStatus !== AccountType.ADMIN) {
-        this.logger.error('Security violation: A non-admin user attempted to add a document with a specified "postedBy" field.');
-        throw new Error('Only administrators can specify a "postedBy" field.');
-      }
-    }
-  }
-
   async openSite(
     siteOrAddress: Site | string,
     options: { siteArgs?: SiteArgs, federate?: boolean } = { federate: true },
@@ -359,7 +348,6 @@ export class LensService implements ILensService {
   async addRelease(data: AddInput<ReleaseData>): Promise<HashResponse> {
     try {
       const { peerbit, siteProgram } = this._ensureSiteOpened();
-      await this._verifyAdminForImpersonation(data.postedBy);
 
       const release = new Release({
         ...data,
