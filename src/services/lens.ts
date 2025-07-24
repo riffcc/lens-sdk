@@ -403,14 +403,15 @@ export class LensService implements ILensService {
         hash: result.entry.hash,
       };
     } catch (error) {
-      this.logger.error(`Failed to edit release with ID: ${data.id}`, error);
       if (error instanceof AccessError) {
         return { success: false, id: data.id, error: 'Access denied' };
+      } else {
+        this.logger.error(`Failed to edit release with ID: ${data.id}`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
       }
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      };
     }
   }
 
