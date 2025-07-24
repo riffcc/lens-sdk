@@ -72,17 +72,16 @@ export class Site extends Program<SiteArgs> {
       doc: T,
       existingDoc?: T,
       signer: PublicSignKey,
-      isLocal: boolean,
     }> => {
       const signer = props.entry.signatures[0].publicKey;
       if (isPutOperation(props.operation)) {
         const doc = deserialize(props.operation.data, docClass);
         const existingDoc = await store.index.get(doc.id);
-        return { doc, existingDoc, signer, isLocal: doc.siteAddress === this.address };
+        return { doc, existingDoc, signer };
       }
       // Delete operation
       const doc = await store.index.get(props.operation.key.key);
-      return { doc: doc!, existingDoc: doc, signer, isLocal: doc.siteAddress === this.address };
+      return { doc: doc!, existingDoc: doc, signer };
     };
 
     await Promise.all([
@@ -119,11 +118,11 @@ export class Site extends Program<SiteArgs> {
         replicate: args?.releasesArgs?.replicate ?? { factor: 1 },
         replicas: args?.releasesArgs?.replicas,
         canPerform: async (props) => {
-          const { doc, existingDoc, signer, isLocal } = await getDoc(props, this.releases, Release);
+          const { doc, existingDoc, signer } = await getDoc(props, this.releases, Release);
           if (!doc) return false; // Delete on a non-existent doc
 
           // ROUTER: Check if local or federated
-          if (!isLocal) {
+          if (doc.siteAddress !== this.address) {
             return this._isFederatedWriteAllowed(
               doc, 
               signer, 
@@ -167,9 +166,9 @@ export class Site extends Program<SiteArgs> {
         replicas: args?.featuredReleasesArgs?.replicas,
         canPerform: async (props) => {
           const requiredPermission = 'featured:manage';
-          const { doc, signer, isLocal } = await getDoc(props, this.featuredReleases, FeaturedRelease);
+          const { doc, signer } = await getDoc(props, this.featuredReleases, FeaturedRelease);
           if (!doc) return false;
-          return !isLocal
+          return doc.siteAddress !== this.address
             ? this._isFederatedWriteAllowed(doc, signer, requiredPermission)
             : this.access.can({ permission: requiredPermission, identity: signer });
         },
@@ -194,9 +193,9 @@ export class Site extends Program<SiteArgs> {
         replicas: args?.contentCategoriesArgs?.replicas,
         canPerform: async (props) => {
           const requiredPermission = 'category:manage';
-          const { doc, signer, isLocal } = await getDoc(props, this.contentCategories, ContentCategory);
+          const { doc, signer } = await getDoc(props, this.contentCategories, ContentCategory);
           if (!doc) return false;
-          return !isLocal
+          return doc.siteAddress !== this.address
             ? this._isFederatedWriteAllowed(doc, signer, requiredPermission)
             : this.access.can({ permission: requiredPermission, identity: signer });
         },
@@ -221,9 +220,9 @@ export class Site extends Program<SiteArgs> {
         replicas: args?.blockedContentArgs?.replicas,
         canPerform: async (props) => {
           const requiredPermission = 'blocklist:manage';
-          const { doc, signer, isLocal } = await getDoc(props, this.blockedContent, BlockedContent);
+          const { doc, signer } = await getDoc(props, this.blockedContent, BlockedContent);
           if (!doc) return false;
-          return !isLocal
+          return doc.siteAddress !== this.address
             ? this._isFederatedWriteAllowed(doc, signer, requiredPermission)
             : this.access.can({ permission: requiredPermission, identity: signer });
         },
