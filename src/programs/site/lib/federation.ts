@@ -251,8 +251,6 @@ export class FederationManager {
         args: {
           ...Object.fromEntries(this._federatedStores.map(key => [`${key}Args`, { replicate: { factor: 1 } }])),
           subscriptionsArgs: { replicate: false },
-          membersArg: { replicate: false },
-          administratorsArgs: { replicate: false },
         },
       });
 

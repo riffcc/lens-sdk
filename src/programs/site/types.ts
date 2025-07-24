@@ -63,7 +63,4 @@ export interface SiteArgs {
   contentCategoriesArgs?: StoreArgs
   subscriptionsArgs?: StoreArgs;
   blockedContentArgs?: StoreArgs;
-  syncSitesArgs?: StoreArgs;
-  membersArg?: StoreArgs;
-  administratorsArgs?: StoreArgs;
 }
