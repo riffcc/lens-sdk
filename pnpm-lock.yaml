@@ -47,6 +47,9 @@ importers:
       '@peerbit/time':
         specifier: ^2.1.0
         version: 2.1.0
+      '@peerbit/trusted-network':
+        specifier: ^4.1.110
+        version: 4.1.110(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
       bip39:
         specifier: ^3.1.0
         version: 3.1.0
