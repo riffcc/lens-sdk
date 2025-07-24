@@ -3,7 +3,7 @@ import { Ed25519Keypair } from '@peerbit/crypto';
 import type { ProgramClient } from '@peerbit/program';
 import { Site } from '../src/programs/site/program';
 import { Documents } from '@peerbit/document';
-import { IdentityAccessController } from '@peerbit/identity-access-controller';
+import { RoleBasedccessController } from '../src/programs/acl/rbac/program';
 
 describe('Site Program', () => {
   let session: TestSession;
@@ -62,12 +62,10 @@ describe('Site Program', () => {
     });
 
     it('initializes its Access Controllers correctly', () => {
-      expect(siteProgram.members).toBeInstanceOf(IdentityAccessController);
-      expect(siteProgram.administrators).toBeInstanceOf(IdentityAccessController);
+      expect(siteProgram.access).toBeInstanceOf(RoleBasedccessController);
 
       // Check if the ACLs are open
-      expect(siteProgram.members.closed).toBe(false);
-      expect(siteProgram.administrators.closed).toBe(false);
+      expect(siteProgram.access.closed).toBe(false);
     });
   });
 

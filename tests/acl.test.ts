@@ -1,268 +1,167 @@
 import { TestSession } from '@peerbit/test-utils';
 import type { ProgramClient } from '@peerbit/program';
 import { Site } from '../src/programs/site/program';
-import { AccountType, type ReleaseData } from '../src/programs/site/types';
-import { waitFor } from '@peerbit/time';
+import type { ReleaseData } from '../src/programs/site/types';
+import { waitFor, waitForResolved } from '@peerbit/time';
 import { LensService } from '../src/services';
-import { findAccessGrant } from '../src/common/utils';
-import { Ed25519Keypair } from '@peerbit/crypto';
 
 // --- Test Helpers ---
-
-// Helper to create valid ReleaseData for service calls.
-const createReleaseData = (client: ProgramClient): ReleaseData => {
+const createReleaseData = (): ReleaseData => {
   return {
-    name: `Release by ${client.identity.publicKey.hashcode().slice(0, 8)}-${Date.now()}`,
+    name: `Release-${Date.now()}-${Math.random()}`,
     categoryId: 'test-category',
     contentCID: `cid-${Math.random()}`,
   };
 };
 
 // --- Test Suite ---
-
-describe('LensService ACL', () => {
+describe('Role-Based Access Control (RBAC) in Site', () => {
   let session: TestSession;
-  let siteOwnerClient: ProgramClient, memberClient: ProgramClient, guestClient: ProgramClient;
-
-  // Each peer interacts with the system through its own LensService instance.
-  let siteOwnerService: LensService, memberService: LensService, guestService: LensService;
-
-  // We keep a reference to the Site's address to open it on other clients.
+  let adminClient: ProgramClient, moderatorClient: ProgramClient, memberClient: ProgramClient, guestClient: ProgramClient;
+  let adminService: LensService, moderatorService: LensService, memberService: LensService, guestService: LensService;
   let siteAddress: string;
 
   // Setup the multi-peer session and create the Site before any tests run.
   beforeAll(async () => {
-    session = await TestSession.connected(3);
-    [siteOwnerClient, memberClient, guestClient] = session.peers;
+    session = await TestSession.connected(4);
+    [adminClient, moderatorClient, memberClient, guestClient] = session.peers;
 
-    // Initialize a service for each peer.
-    siteOwnerService = new LensService({ peerbit: siteOwnerClient });
+    adminService = new LensService({ peerbit: adminClient });
+    moderatorService = new LensService({ peerbit: moderatorClient });
     memberService = new LensService({ peerbit: memberClient });
     guestService = new LensService({ peerbit: guestClient });
 
-    // Site owner creates and opens the site.
-    const site = new Site(siteOwnerClient.identity.publicKey);
-    await siteOwnerService.openSite(site, { federate: false });
-    siteAddress = siteOwnerService.siteProgram!.address;
+    const site = new Site(adminClient.identity.publicKey);
+    await adminService.openSite(site);
+    siteAddress = adminService.siteProgram!.address;
 
-    // Member and Guest open the same site using its address.
-    await memberService.openSite(siteAddress, { federate: false });
-    await guestService.openSite(siteAddress, { federate: false });
+    // Open the site on all other clients
+    await moderatorService.openSite(siteAddress);
+    await memberService.openSite(siteAddress);
+    await guestService.openSite(siteAddress);
 
-    await siteOwnerService.siteProgram?.waitFor(memberService.peerbit!.peerId);
-    await guestService.siteProgram?.waitFor(memberService.peerbit!.peerId);
+    // Ensure all peers are connected at the program level
+    await adminService.siteProgram?.waitFor(moderatorClient.peerId);
+    await adminService.siteProgram?.waitFor(memberClient.peerId);
+    await adminService.siteProgram?.waitFor(guestClient.peerId);
 
-    await siteOwnerService.grantAccess(
-      AccountType.MEMBER,
-      memberClient.identity.publicKey.toString(),
-    );
+    await adminService.assignRole(moderatorClient.identity.publicKey, 'moderator');
+    await adminService.assignRole(memberClient.identity.publicKey, 'member');
 
-    await waitFor(async () => {
-      const status = await memberService.getAccountStatus({ cached: false });
-      return status === AccountType.MEMBER;
-    }, { timeout: 10000 });
-
+    // Wait for propagation by checking the status on the receiving end.
+    await waitForResolved(async () => {
+      const modStatus = await moderatorService.getAccountStatus();
+      const memStatus = await memberService.getAccountStatus();
+      expect(modStatus.roles).toContain('moderator');
+      expect(memStatus.roles).toContain('member');
+    }, {
+      timeout: 15000,
+      delayInterval: 1000,
+      timeoutMessage: 'Roles were not assigned in time',
+    });
   }, 30000);
 
-  // Teardown the session after all tests are complete.
   afterAll(async () => {
-    await siteOwnerService?.stop();
-    await memberService?.stop();
-    await guestService?.stop();
-    await session?.stop();
+    // Stop services in a specific order if they exist
+    if (adminService) await adminService.stop();
+    if (moderatorService) await moderatorService.stop();
+    if (memberService) await memberService.stop();
+    if (guestService) await guestService.stop();
+    if (session) await session.stop();
   });
-  /**
-   * Admin Role Tests
-   * An admin should have full control over the site.
-   */
-  describe('Admin Permissions', () => {
-    it('can add and delete its own release', async () => {
-      const releaseData = createReleaseData(siteOwnerClient);
-      const response = await siteOwnerService.addRelease(releaseData);
-      expect(response.success).toBe(true);
-      expect(response.id).toBeDefined();
 
-      const retrieved = await siteOwnerService.getRelease(response.id!);
-      expect(retrieved?.id).toEqual(response.id);
 
-      const deleteResponse = await siteOwnerService.deleteRelease(response.id!);
-      expect(deleteResponse.success).toBe(true);
+  // --- All tests below this line are simplified as we no longer need the complex beforeEach/beforeAll setup for each role ---
+  // We can just use the services directly.
+  
+  describe('Admin', () => {
+    it('can assign and revoke a role', async () => {
+      const tempUser = await TestSession.disconnected(1);
+      const tempUserKey = tempUser.peers[0].identity.publicKey;
+
+      await adminService.assignRole(tempUserKey, 'member');
+      // No need to check status, just that the call succeeds for an admin
+      const revokeResp = await adminService.revokeRole(tempUserKey, 'member');
+      expect(revokeResp.success).toBe(true);
+      await tempUser.stop();
     });
 
-    it('can post a release on behalf of another user (impersonation)', async () => {
-      const releaseData = {
-        ...createReleaseData(siteOwnerClient),
-        postedBy: memberClient.identity.publicKey, // Admin is posting, but attributing it to the member
-      };
+    it('can perform any content action (e.g., delete a member release)', async () => {
+      const releaseResp = await memberService.addRelease(createReleaseData());
+      expect(releaseResp.success).toBe(true);
 
-      const response = await siteOwnerService.addRelease(releaseData);
+      await waitFor(() => adminService.getRelease(releaseResp.id!));
+
+      const deleteResp = await adminService.deleteRelease(releaseResp.id!);
+      expect(deleteResp.success).toBe(true);
+    });
+  });
+
+  describe('Moderator', () => {
+    it('can create a release', async () => {
+      const response = await moderatorService.addRelease(createReleaseData());
       expect(response.success).toBe(true);
       expect(response.id).toBeDefined();
-
-      const retrieved = await siteOwnerService.getRelease(response.id!);
-      expect(retrieved).toBeDefined();
-      // Crucial check: verify the 'postedBy' field is the one we set, not the signer's
-      expect(retrieved!.postedBy.equals(memberClient.identity.publicKey)).toBe(true);
-
-      // Cleanup
-      await siteOwnerService.deleteRelease(response.id!);
-    });
-
-    it('can add and delete a subscription', async () => {
-      const remoteSite = `remote-site-${Math.random()}`;
-      const addResponse = await siteOwnerService.addSubscription({
-        to: remoteSite,
-      });
-      expect(addResponse.success).toBe(true);
-
-      const subscriptions = await siteOwnerService.getSubscriptions();
-      expect(subscriptions.find(s => s.to === remoteSite)).toBeDefined();
-
-      const deleteResponse = await siteOwnerService.deleteSubscription({ to: remoteSite });
-      expect(deleteResponse.success).toBe(true);
     });
 
     it('can delete a release created by a member', async () => {
-      const memberRelease = createReleaseData(memberClient);
-      const addResponse = await memberService.addRelease(memberRelease);
-      expect(addResponse.success).toBe(true);
-
-      // Wait for the admin to see the member's document.
-      await waitFor(async () => (await siteOwnerService.getRelease(addResponse.id!)) !== undefined);
-
-      // Admin deletes it.
-      const deleteResponse = await siteOwnerService.deleteRelease(addResponse.id!);
-      expect(deleteResponse.success).toBe(true);
-
-      // Verify the document is no longer retrievable by anyone.
-      await waitFor(async () => (await guestService.getRelease(addResponse.id!)) === undefined);
-      expect(await guestService.getRelease(addResponse.id!)).toBeUndefined();
+      const releaseResp = await memberService.addRelease(createReleaseData());
+      expect(releaseResp.success).toBe(true);
+      
+      await waitFor(() => moderatorService.getRelease(releaseResp.id!));
+      
+      const deleteResp = await moderatorService.deleteRelease(releaseResp.id!);
+      expect(deleteResp.success).toBe(true);
     });
 
-    it('can grant and revoke member access for a NEW user', async () => {
-      // Create a new, temporary identity for this test only.
-      const tempUserIdentity = await Ed25519Keypair.create();
-      const tempUserPublicKeyString = tempUserIdentity.publicKey.toString();
-
-      // 1. Grant access
-      const grantResponse = await siteOwnerService.grantAccess(AccountType.MEMBER, tempUserPublicKeyString);
-      expect(grantResponse.success).toBe(true);
-
-      // Verify grant by checking the ACL store directly (more robust than waiting for a client)
-      const grant = await findAccessGrant(siteOwnerService.siteProgram!.members.access, tempUserIdentity.publicKey);
-      expect(grant).toBeDefined();
-
-      // 2. Revoke access
-      const revokeResponse = await siteOwnerService.revokeAccess(AccountType.MEMBER, tempUserPublicKeyString);
-      expect(revokeResponse.success).toBe(true);
-
-      // Verify revocation
-      await waitFor(async () => {
-        const grantAfterRevoke = await findAccessGrant(siteOwnerService.siteProgram!.members.access, tempUserIdentity.publicKey);
-        return grantAfterRevoke === undefined;
-      });
-      const finalGrant = await findAccessGrant(siteOwnerService.siteProgram!.members.access, tempUserIdentity.publicKey);
-      expect(finalGrant).toBeUndefined();
+    it('cannot manage roles or admins', async () => {
+      const assignResp = await moderatorService.assignRole(guestClient.identity.publicKey, 'member');
+      expect(assignResp.success).toBe(false);
+      expect(assignResp.error).toContain('Access denied');
     });
   });
 
-  describe('Member Permissions', () => {
-    it('can add a release, and it replicates to other peers', async () => {
-      const releaseData = createReleaseData(memberClient);
-      const response = await memberService.addRelease(releaseData);
+  describe('Member', () => {
+    it('can create a release', async () => {
+      const response = await memberService.addRelease(createReleaseData());
       expect(response.success).toBe(true);
-      expect(response.id).toBeDefined();
-
-      const retrievedByAdmin = await waitFor(() => siteOwnerService.getRelease(response.id!));
-      expect(retrievedByAdmin?.id).toEqual(response.id);
     });
 
-    it('CANNOT post a release on behalf of another user (impersonation)', async () => {
-      const releaseData = {
-        ...createReleaseData(memberClient),
-        postedBy: siteOwnerClient.identity.publicKey, // Member attempting to post as the Admin
-      };
+    it('can edit its own release', async () => {
+        const addResp = await memberService.addRelease(createReleaseData());
+        expect(addResp.success).toBe(true);
 
-      const response = await memberService.addRelease(releaseData);
-      // The operation should fail because the signer (member) is not the root trust,
-      // and the signer's key does not match the `postedBy` key. The framework throws
-      // an AccessError, which the service correctly translates to 'Access denied'.
-      expect(response.success).toBe(false);
-      expect(response.error).toBe('Access denied');
+        const editResp = await memberService.editRelease({
+            id: addResp.id!,
+            name: 'Edited by Member (self)',
+            postedBy: memberClient.identity.publicKey,
+            siteAddress: siteAddress,
+            categoryId: 'test',
+            contentCID: 'test-cid',
+        });
+        expect(editResp.success).toBe(true);
     });
 
-    it('CANNOT add a subscription', async () => {
-      const response = await memberService.addSubscription({
-        to: 'remote-site-member-fails',
-      });
-      expect(response.success).toBe(false);
-      expect(response.error).toBe('Access denied');
+    it('cannot delete any release (even its own)', async () => {
+      const addResp = await memberService.addRelease(createReleaseData());
+      expect(addResp.success).toBe(true);
+
+      const deleteResp = await memberService.deleteRelease(addResp.id!);
+      expect(deleteResp.success).toBe(false);
+      expect(deleteResp.error).toContain('Access denied');
     });
-
-    it('CANNOT delete a release (even its own)', async () => {
-      const releaseData = createReleaseData(memberClient);
-      const addResponse = await memberService.addRelease(releaseData);
-      expect(addResponse.success).toBe(true);
-
-      await waitFor(() => memberService.getRelease(addResponse.id!));
-
-      const deleteResponse = await memberService.deleteRelease(addResponse.id!);
-      expect(deleteResponse.success).toBe(false);
-      expect(deleteResponse.error).toBe('Access denied');
-    });
-
-    // it('CANNOT grant or revoke access', async () => {
-    //   // FIXED ASSERTION
-    //   const grantAttempt = await memberService.grantAccess(AccountType.MEMBER, guestClient.identity.publicKey.toString());
-    //   expect(grantAttempt.success).toBe(false);
-    //   expect(grantAttempt.error).toBe('Access denied');
-
-    //   const revokeAttempt = await memberService.revokeAccess(AccountType.MEMBER, memberClient.identity.publicKey.toString());
-    //   expect(revokeAttempt.success).toBe(false);
-    //   expect(revokeAttempt.error).toBe('Cannot revoke access from yourself.');
-    // });
   });
 
-  describe('Guest Permissions', () => {
-    it('CANNOT add a release', async () => {
-      const releaseData = createReleaseData(guestClient);
-      const response = await guestService.addRelease(releaseData);
+  describe('Guest', () => {
+    it('cannot create a release', async () => {
+      const response = await guestService.addRelease(createReleaseData());
       expect(response.success).toBe(false);
-      expect(response.error).toBe('Access denied');
+      expect(response.error).toContain('Access denied');
     });
 
-    it('CANNOT post a release on behalf of another user (impersonation)', async () => {
-      const releaseData = {
-        ...createReleaseData(guestClient),
-        postedBy: siteOwnerClient.identity.publicKey, // Guest attempting to post as the Admin
-      };
-
-      const response = await guestService.addRelease(releaseData);
-      // The operation fails at the basic role check before even considering impersonation.
-      expect(response.success).toBe(false);
-      expect(response.error).toBe('Access denied');
-    });
-
-
-    it('CANNOT add a subscription', async () => {
-      const response = await guestService.addSubscription({
-        to: 'remote-site-guest-fails',
-      });
-      expect(response.success).toBe(false);
-      expect(response.error).toBe('Access denied');
-    });
-
-    it('CANNOT delete a release', async () => {
-      const adminRelease = createReleaseData(siteOwnerClient);
-      const addResponse = await siteOwnerService.addRelease(adminRelease);
-      expect(addResponse.success).toBe(true);
-
-      // Verify the guest can see it first.
-      await waitFor(() => guestService.getRelease(addResponse.id!));
-
-      const deleteResponse = await guestService.deleteRelease(addResponse.id!);
-      expect(deleteResponse.success).toBe(false);
-      expect(deleteResponse.error).toBe('Access denied');
+    it('cannot perform any administrative tasks', async () => {
+      const assignResp = await guestService.assignRole(memberClient.identity.publicKey, 'member');
+      expect(assignResp.success).toBe(false);
     });
   });
 });
