@@ -1,18 +1,16 @@
 import { Peerbit } from 'peerbit';
 import type {
-  Documents} from '@peerbit/document';
+  Documents,
+} from '@peerbit/document';
 import {
+  ByteMatchQuery,
   SearchRequest,
   Sort,
   SortDirection,
   StringMatch,
   type WithContext,
 } from '@peerbit/document';
-import { AccessError, type PublicSignKey } from '@peerbit/crypto';
-import {
-  type IdentityAccessController,
-  AccessType,
-} from '@peerbit/identity-access-controller';
+import { AccessError, PublicSignKey } from '@peerbit/crypto';
 import { FederationManager } from '../programs/site/lib/federation';
 import type { Site } from '../programs/site/program';
 import type {
@@ -22,17 +20,15 @@ import type {
   SiteArgs,
   SubscriptionData,
 } from '../programs/site/types';
-import { AccountType } from '../programs/site/types';
 import { FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
-import type { AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService } from './types';
+import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService } from './types';
 import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
 import type { ProgramClient } from '@peerbit/program';
-import { findAccessGrant } from '../common/utils';
-const ACCESS_CHECK_CACHE_TTL = 60000;
+import { publicSignKeyFromString } from '../common/utils';
 
 export class ElectronLensService implements ILensService {
-  constructor() { }
+  constructor() {}
 
   async init(directory?: string): Promise<void> {
     await window.electronLensService.init(directory);
@@ -49,8 +45,8 @@ export class ElectronLensService implements ILensService {
     await window.electronLensService.openSite(siteOrAddress, options);
   }
 
-  async getAccountStatus(options?: { cached?: boolean }): Promise<AccountType> {
-    return window.electronLensService.getAccountStatus(options?.cached);
+  async getAccountStatus(): Promise<AccountStatusResponse> {
+    return window.electronLensService.getAccountStatus();
   }
 
   async getRelease(id: string): Promise<WithContext<Release> | undefined> {
@@ -105,19 +101,22 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.deleteSubscription(data);
   }
 
-  async grantAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse> {
-    return window.electronLensService.grantAccess(accountType, publicKey);
+  async addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse> {
+    return window.electronLensService.addAdmin(publicKey);
   }
 
-  async revokeAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse> {
-    return window.electronLensService.revokeAccess(accountType, publicKey);
+  async assignRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse> {
+    return window.electronLensService.assignRole(publicKey, roleId);
+  }
+
+  async revokeRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse> {
+    return window.electronLensService.revokeRole(publicKey, roleId);
   }
 }
 
 export class LensService implements ILensService {
   peerbit: ProgramClient | null = null;
   siteProgram: Site | null = null;
-  private accessCheckCache: Map<string, { result: boolean; timestamp: number }> = new Map();
   private federationManager: FederationManager | null = null;
   private logger: Logger;
   private extenarlyManaged: boolean = false;
@@ -190,24 +189,6 @@ export class LensService implements ILensService {
     };
   }
 
-  private async _canPerformCheck(accessController: IdentityAccessController, key: PublicSignKey, cached: boolean = true): Promise<boolean> {
-    const cacheKey = `${accessController.address}_${key.toString()}`;
-    const isCached = cached && this.accessCheckCache.get(cacheKey);
-    if (isCached && (Date.now() - isCached.timestamp < ACCESS_CHECK_CACHE_TTL)) {
-      return isCached.result;
-    }
-
-    const grant = await findAccessGrant(accessController.access, key);
-
-    const hasPermission = !!grant && (
-      grant.accessTypes.includes(AccessType.Write) ||
-      grant.accessTypes.includes(AccessType.Any)
-    );
-
-    this.accessCheckCache.set(cacheKey, { result: hasPermission, timestamp: Date.now() });
-    return hasPermission;
-  }
-
   private async _verifyImmutableProperties<T extends ImmutableProps, I extends object = T>(
     store: Documents<T, I>,
     incomingData: ImmutableProps,
@@ -250,29 +231,63 @@ export class LensService implements ILensService {
 
   }
 
-  async getAccountStatus(options?: { cached?: boolean }): Promise<AccountType> {
+  async getAccountStatus(): Promise<AccountStatusResponse> {
     this.logger.time('getAccountStatus');
     const { peerbit, siteProgram } = this._ensureSiteOpened();
+    const identity = peerbit.identity.publicKey;
 
-    // Run permission checks in parallel for better performance.
-    const [isAdmin, isMember] = await Promise.all([
-      this._canPerformCheck(siteProgram.administrators, peerbit.identity.publicKey, options?.cached),
-      this._canPerformCheck(siteProgram.members, peerbit.identity.publicKey, options?.cached),
-    ]);
+    const response: AccountStatusResponse = {
+      isAdmin: false,
+      roles: [],
+      permissions: [],
+    };
 
-    // Check from highest to lowest privilege.
-    if (isAdmin) {
-      this.logger.debug('User status determined: ADMIN.');
-      return AccountType.ADMIN;
+    response.isAdmin = await siteProgram.access.admins.isTrusted(identity);
+    if (response.isAdmin) {
+      // Admin logic is correct and can remain.
+      const allRoles = await siteProgram.access.roles.index.search({});
+      const allPermissions = new Set<string>();
+      for (const role of allRoles) {
+        // FIX: The role's name is in the `name` property, not `id`.
+        response.roles.push(role.name); 
+        role.permissions.forEach(p => allPermissions.add(p));
+      }
+      response.permissions = [...allPermissions];
+      this.logger.debug('User status determined: ADMIN', response);
+      this.logger.timeEnd('getAccountStatus');
+      return response;
     }
 
-    if (isMember) {
-      this.logger.debug('User status determined: MEMBER.');
-      return AccountType.MEMBER;
+    const userAssignments = await siteProgram.access.assignments.index.search(new SearchRequest({
+      query: [new ByteMatchQuery({ key: 'user', value: identity.bytes })],
+    }));
+
+    if (userAssignments.length === 0) {
+      response.roles.push('guest');
+      this.logger.debug('User status determined: GUEST', response);
+      this.logger.timeEnd('getAccountStatus');
+      return response;
     }
 
-    this.logger.debug('User status determined: GUEST.');
-    return AccountType.GUEST;
+    const assignedRoleIds = userAssignments.map(a => a.roleId);
+    response.roles = assignedRoleIds;
+    const allPermissions = new Set<string>();
+
+    for (const roleId of assignedRoleIds) {
+      const rolesFound = await siteProgram.access.roles.index.search(new SearchRequest({
+        query: [new StringMatch({ key: 'name', value: roleId, caseInsensitive: true })],
+        fetch: 1,
+      }));
+      const role = rolesFound[0];
+      if (role) {
+        role.permissions.forEach(p => allPermissions.add(p));
+      }
+    }
+
+    response.permissions = [...allPermissions];
+    this.logger.debug(`User status determined: ${response.roles.join(', ')}`, response);
+    this.logger.timeEnd('getAccountStatus');
+    return response;
   }
 
   async getRelease(id: string): Promise<WithContext<Release> | undefined> {
@@ -626,58 +641,76 @@ export class LensService implements ILensService {
     }
   }
 
-  async grantAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse> {
-    this.logger.debug(`Attempting to grant ${AccountType[accountType]} access to key: ${publicKey}`);
+  async addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse> {
+    this.logger.debug(`Attempting to promote user to admin: ${publicKey}`);
     try {
       const { siteProgram } = this._ensureSiteOpened();
+      const userKey = publicKey instanceof PublicSignKey ? publicKey : publicSignKeyFromString(publicKey);
 
-      // Call the internal program method
-      await siteProgram._authorise(accountType, publicKey);
+      // This call is already protected by the RBAC controller's internal admin check.
+      await siteProgram.access.addAdmin(userKey);
 
-      this.logger.debug(`Successfully granted ${AccountType[accountType]} access.`);
+      this.logger.debug('Successfully promoted user to admin.');
       return { success: true };
-
     } catch (error: unknown) {
       if (error instanceof AccessError) {
-        return { success: false, error: 'Access denied' };
-      } else {
-        this.logger.error('Failed to grant access:', error);
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'An unknown error occurred',
-        };
+        return { success: false, error: 'Access denied. Only an existing admin can add another.' };
       }
+      this.logger.error('Failed to add admin:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
     }
   }
 
-  async revokeAccess(accountType: AccountType, publicKey: string): Promise<BaseResponse> {
-    this.logger.debug(`Attempting to revoke ${AccountType[accountType]} access for key: ${publicKey}`);
+  async assignRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse> {
+    this.logger.debug(`Attempting to assign role "${roleId}" to key: ${publicKey}`);
     try {
-      const { peerbit, siteProgram } = this._ensureSiteOpened();
+      const { siteProgram } = this._ensureSiteOpened();
+      const userKey = publicKey instanceof PublicSignKey ? publicKey : publicSignKeyFromString(publicKey);
 
-      if (accountType === AccountType.GUEST) {
-        return { success: false, error: 'Cannot revoke GUEST access, it is the default role.' };
-      }
-      if (publicKey === peerbit.identity.publicKey.toString()) {
-        return { success: false, error: 'Cannot revoke access from yourself.' };
-      }
+      // This call is protected by the RBAC controller's internal admin check.
+      await siteProgram.access.assignRole(userKey, roleId);
 
-      // Call the internal program method
-      await siteProgram._revoke(accountType, publicKey);
-
-      this.logger.debug(`Successfully revoked ${AccountType[accountType]} access.`);
+      this.logger.debug(`Successfully assigned role "${roleId}".`);
       return { success: true };
 
     } catch (error: unknown) {
       if (error instanceof AccessError) {
-        return { success: false, error: 'Access denied' };
-      } else {
-        this.logger.error('Failed to revoke access:', error);
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'An unknown error occurred',
-        };
+        return { success: false, error: `Access denied. Could not assign role "${roleId}".` };
       }
+      this.logger.error(`Failed to assign role "${roleId}":`, error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'An unknown error occurred',
+      };
     }
   }
+
+  async revokeRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse> {
+    this.logger.debug(`Attempting to revoke role "${roleId}" for key: ${publicKey}`);
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      const userKey = publicKey instanceof PublicSignKey ? publicKey : publicSignKeyFromString(publicKey);
+
+      // To revoke, we must find the specific RoleAssignment document and delete it.
+      // We'll add a helper method to our RBAC controller to make this cleaner.
+      const success = await siteProgram.access.revokeRole(userKey, roleId);
+
+      if (success) {
+        this.logger.debug(`Successfully revoked role "${roleId}".`);
+        return { success: true };
+      } else {
+        return { success: false, error: 'Role assignment not found for the specified user and role.' };
+      }
+    } catch (error: unknown) {
+      if (error instanceof AccessError) {
+        return { success: false, error: `Access denied. Could not revoke role "${roleId}".` };
+      }
+      this.logger.error(`Failed to revoke role "${roleId}":`, error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'An unknown error occurred',
+      };
+    }
+  }
+
 }

@@ -1,4 +1,4 @@
-import type { ILensService } from './src/types';
+import type { ILensService } from './src/services/types.ts';
 
 declare global {
   interface Window {
