@@ -3,13 +3,28 @@ import { deserialize, field, variant } from '@dao-xyz/borsh';
 import { Program } from '@peerbit/program';
 import type { CanPerformOperations } from '@peerbit/document';
 import { Documents, isPutOperation, SearchRequest, StringMatch, StringMatchMethod } from '@peerbit/document';
-import { Access, AccessType, IdentityAccessController, PublicKeyAccessCondition } from '@peerbit/identity-access-controller';
-import type { MaybePromise, PublicSignKey } from '@peerbit/crypto';
-import type { PeerId } from '@libp2p/interface';
+import type { PublicSignKey } from '@peerbit/crypto';
 import type { ImmutableProps } from './types';
-import { AccountType, type SiteArgs } from './types';
+import { type SiteArgs } from './types';
 import { BlockedContent, ContentCategory, FeaturedRelease, IndexedBlockedContent, IndexedContentCategory, IndexedFeaturedRelease, IndexedRelease, IndexedSubscription, Release, Subscription } from './schemas';
-import { findAccessGrant, publicSignKeyFromString } from '../../common/utils';
+import { Role } from '../acl/rbac/schemas';
+import { RoleBasedccessController } from '../acl/rbac/program';
+
+export const defaultSiteRoles = [
+  new Role('moderator', [
+    'release:create',
+    'release:edit:any',
+    'release:delete',
+    'featured:manage',
+    'category:manage',
+    'blocklist:manage',
+    'subscription:manage',
+  ]),
+  new Role('member', [
+    'release:create',
+    'release:edit:own',
+  ]),
+];
 
 @variant('site')
 export class Site extends Program<SiteArgs> {
@@ -28,44 +43,60 @@ export class Site extends Program<SiteArgs> {
   @field({ type: Documents })
   blockedContent: Documents<BlockedContent, IndexedBlockedContent>;
 
-  @field({ type: IdentityAccessController })
-  administrators: IdentityAccessController;
-
-  @field({ type: IdentityAccessController })
-  members: IdentityAccessController;
+  @field({ type: RoleBasedccessController })
+  access: RoleBasedccessController;
 
   get federationTopic(): string {
     return `${this.address}/federation`;
   }
 
-  constructor(rootTrust: PublicSignKey | PeerId) {
+  constructor(rootTrust: PublicSignKey) {
     super();
     this.releases = new Documents();
     this.featuredReleases = new Documents();
     this.contentCategories = new Documents();
     this.subscriptions = new Documents();
     this.blockedContent = new Documents();
-    this.administrators = new IdentityAccessController({ rootTrust });
-    this.members = new IdentityAccessController({ rootTrust });
+    this.access = new RoleBasedccessController({
+      rootAdmin: rootTrust,
+      defaultRoles: defaultSiteRoles,
+    });
   }
 
   async open(args?: SiteArgs): Promise<void> {
-    const administratorCanPerform = this.administrators.canPerform.bind(this.administrators);
-    const memberCanPerform = this.members.canPerform.bind(this.members);
+    const getDoc = async <T extends ImmutableProps, I extends object = T>(
+      props: CanPerformOperations<T>,
+      store: Documents<T, I>,
+      docClass: AbstractType<T>,
+    ): Promise<{
+      doc: T,
+      existingDoc?: T,
+      signer: PublicSignKey,
+      isLocal: boolean,
+    }> => {
+      const signer = props.entry.signatures[0].publicKey;
+      if (isPutOperation(props.operation)) {
+        const doc = deserialize(props.operation.data, docClass);
+        const existingDoc = await store.index.get(doc.id);
+        return { doc, existingDoc, signer, isLocal: doc.siteAddress === this.address };
+      }
+      // Delete operation
+      const doc = await store.index.get(props.operation.key.key);
+      return { doc: doc!, existingDoc: doc, signer, isLocal: doc.siteAddress === this.address };
+    };
 
     await Promise.all([
-      // Access controllers need to be opened first for permission checks
-      this.administrators.open({
-        replicate: args?.administratorsArgs?.replicate ?? { factor: 1 },
-      }),
-      this.members.open({
-        replicate: args?.membersArg?.replicate ?? { factor: 1 },
-      }),
+      this.access.open(),
+
       this.subscriptions.open({
         type: Subscription,
         replicate: args?.subscriptionsArgs?.replicate ?? { factor: 1 },
         replicas: args?.subscriptionsArgs?.replicas,
-        canPerform: administratorCanPerform,
+        canPerform: async (props) => {
+          // Subscriptions are always local, no federation check needed.
+          const { signer } = await getDoc(props, this.subscriptions, Subscription);
+          return this.access.can({ permission: 'subscription:manage', identity: signer });
+        },
         index: {
           canRead: () => {
             return true;
@@ -87,25 +118,34 @@ export class Site extends Program<SiteArgs> {
         type: Release,
         replicate: args?.releasesArgs?.replicate ?? { factor: 1 },
         replicas: args?.releasesArgs?.replicas,
-        canPerform: (props) => this._canPerformFederatedWrite(
-          props,
-          (_doc, existingDoc) => {
-            // Local logic for Releases
-            if (props.type === 'delete') {
-              return administratorCanPerform(props);
+        canPerform: async (props) => {
+          const { doc, existingDoc, signer, isLocal } = await getDoc(props, this.releases, Release);
+          if (!doc) return false; // Delete on a non-existent doc
+
+          // ROUTER: Check if local or federated
+          if (!isLocal) {
+            return this._isFederatedWriteAllowed(
+              doc, 
+              signer, 
+              isPutOperation(props.operation) ? 'release:edit:any' : 'release:delete',
+          );
+          }
+
+          // --- LOCAL RBAC LOGIC ---
+          if (isPutOperation(props.operation)) {
+            if (!signer.equals(doc.postedBy)) {
+              // Impersonation attempt, must have 'edit:any' permission
+              return this.access.can({ permission: 'release:edit:any', identity: signer });
             }
-            if (!existingDoc) { // Create
-              return memberCanPerform(props);
+            if (existingDoc) { // Editing own release
+              return this.access.can({ permission: 'release:edit:own', identity: signer });
             }
-            // Edit
-            const signer = props.entry.signatures[0].publicKey;
-            return signer.equals(existingDoc.postedBy)
-              ? memberCanPerform(props)
-              : administratorCanPerform(props);
-          },
-          this.releases,
-          Release,
-        ),
+            // Creating new release
+            return this.access.can({ permission: 'release:create', identity: signer });
+          }
+          // Local delete
+          return this.access.can({ permission: 'release:delete', identity: signer });
+        },
         index: {
           canRead: () => {
             return true;
@@ -125,12 +165,14 @@ export class Site extends Program<SiteArgs> {
         type: FeaturedRelease,
         replicate: args?.featuredReleasesArgs?.replicate ?? { factor: 1 },
         replicas: args?.featuredReleasesArgs?.replicas,
-        canPerform: (props) => this._canPerformFederatedWrite(
-          props,
-          () => administratorCanPerform(props), // Local logic for FeaturedReleases is always admin
-          this.featuredReleases,
-          FeaturedRelease,
-        ),
+        canPerform: async (props) => {
+          const requiredPermission = 'featured:manage';
+          const { doc, signer, isLocal } = await getDoc(props, this.featuredReleases, FeaturedRelease);
+          if (!doc) return false;
+          return !isLocal
+            ? this._isFederatedWriteAllowed(doc, signer, requiredPermission)
+            : this.access.can({ permission: requiredPermission, identity: signer });
+        },
         index: {
           canRead: () => {
             return true;
@@ -150,12 +192,14 @@ export class Site extends Program<SiteArgs> {
         type: ContentCategory,
         replicate: args?.contentCategoriesArgs?.replicate ?? { factor: 1 },
         replicas: args?.contentCategoriesArgs?.replicas,
-        canPerform: (props) => this._canPerformFederatedWrite(
-          props,
-          () => administratorCanPerform(props), // Local logic is always admin
-          this.contentCategories,
-          ContentCategory,
-        ),
+        canPerform: async (props) => {
+          const requiredPermission = 'category:manage';
+          const { doc, signer, isLocal } = await getDoc(props, this.contentCategories, ContentCategory);
+          if (!doc) return false;
+          return !isLocal
+            ? this._isFederatedWriteAllowed(doc, signer, requiredPermission)
+            : this.access.can({ permission: requiredPermission, identity: signer });
+        },
         index: {
           canRead: () => {
             return true;
@@ -175,12 +219,14 @@ export class Site extends Program<SiteArgs> {
         type: BlockedContent,
         replicate: args?.blockedContentArgs?.replicate ?? true,
         replicas: args?.blockedContentArgs?.replicas,
-        canPerform: (props) => this._canPerformFederatedWrite(
-          props,
-          () => administratorCanPerform(props), // Local logic is always admin
-          this.blockedContent,
-          BlockedContent,
-        ),
+        canPerform: async (props) => {
+          const requiredPermission = 'blocklist:manage';
+          const { doc, signer, isLocal } = await getDoc(props, this.blockedContent, BlockedContent);
+          if (!doc) return false;
+          return !isLocal
+            ? this._isFederatedWriteAllowed(doc, signer, requiredPermission)
+            : this.access.can({ permission: requiredPermission, identity: signer });
+        },
         index: {
           canRead: () => {
             return true;
@@ -199,55 +245,6 @@ export class Site extends Program<SiteArgs> {
 
   }
 
-  /**
-   * @internal
-   * Grants a role to a user. Called by the service layer.
-   * This is the low-level method that performs the database write.
-   */
-  async _authorise(accountType: AccountType, stringPublicKey: string): Promise<void> {
-    const publicSignKey = publicSignKeyFromString(stringPublicKey);
-    const accessCondition = new PublicKeyAccessCondition({ key: publicSignKey });
-    const accessTypes: AccessType[] = [AccessType.Read, AccessType.Write];
-
-    if (accountType === AccountType.MEMBER) {
-      const access = new Access({ accessCondition, accessTypes });
-      await this.members.access.put(access);
-    } else if (accountType === AccountType.ADMIN) {
-      const access = new Access({ accessCondition, accessTypes });
-      await this.members.access.put(access);
-      await this.administrators.access.put(access);
-    } else {
-      throw new Error('Authorization for this account type is not implemented yet.');
-    }
-  }
-
-  /**
-   * @internal
-   * Revokes a role from a user. Called by the service layer.
-   * This is the low-level method that performs the database search and delete.
-   */
-  async _revoke(accountType: AccountType, stringPublicKey: string): Promise<void> {
-    const publicSignKey = publicSignKeyFromString(stringPublicKey);
-
-    // Helper to find and delete the grant.
-    const findAndDel = async (acl: IdentityAccessController['access'], key: PublicSignKey) => {
-      const grant = await findAccessGrant(acl, key); // Use the new common utility!
-      if (grant) {
-        await acl.del(grant.id);
-      }
-    };
-
-    if (accountType === AccountType.MEMBER) {
-      await findAndDel(this.members.access, publicSignKey);
-    } else if (accountType === AccountType.ADMIN) {
-      // Revoking ADMIN must revoke from both lists.
-      await findAndDel(this.administrators.access, publicSignKey);
-      await findAndDel(this.members.access, publicSignKey);
-    } else {
-      throw new Error('Revocation for this account type is not implemented or invalid.');
-    }
-  }
-
   private async _isSubscribed(to: string): Promise<boolean> {
     const results = await this.subscriptions.index.search(new SearchRequest({
       query: [
@@ -263,54 +260,18 @@ export class Site extends Program<SiteArgs> {
     return results.length > 0;
   }
 
-  private async _canPerformFederatedWrite<T extends ImmutableProps, I extends object = T>(
-    props: CanPerformOperations<T>,
-    localCheck: (doc: T, existingDoc: T | undefined) => MaybePromise<boolean>,
-    store: Documents<T, I>,
-    docClass: AbstractType<T>,
+  /**
+ * Checks if an operation on a foreign document is allowed based on federation rules.
+ * @param doc The document from a remote site.
+ * @param signer The public key of the peer who signed the operation.
+ * @param permission The required permission for this action
+ */
+  private async _isFederatedWriteAllowed(
+    doc: { siteAddress: string },
+    signer: PublicSignKey,
+    permission: string,
   ): Promise<boolean> {
-
-    const signer = props.entry.signatures[0].publicKey;
-    let doc: T;
-    let existingDoc: T | undefined;
-
-    if (isPutOperation(props.operation)) {
-      doc = deserialize(props.operation.data, docClass);
-      existingDoc = await store.index.get(doc.id);
-    } else {
-      const deletedDoc = await store.index.get(props.operation.key.key);
-      if (!deletedDoc) return false;
-      doc = deletedDoc;
-      existingDoc = deletedDoc;
-    }
-
-    // --- LOCAL DATA LOGIC ---
-    if (doc.siteAddress === this.address) {
-      // Impersonation check for 'put' operations
-      if (isPutOperation(props.operation)) {
-        if (!signer.equals(doc.postedBy)) {
-          // If the signer is not the author, they must be an admin.
-          // This prevents members from posting on behalf of others.
-          const isAdmin = await this.administrators.canPerform(props);
-          if (!isAdmin) {
-            return false;
-          }
-        }
-      }
-      // If checks pass, proceed to the specific local rules.
-      return localCheck(doc, existingDoc);
-    }
-
-    const signerIsLocalAdmin = await this.administrators.canPerform(props);
-
-    if (isPutOperation(props.operation)) {
-      // For incoming federated 'put' operations, we must be subscribed.
-      return this._isSubscribed(doc.siteAddress);
-    } else { // Delete operation
-      // A remote document can be deleted under two conditions:
-      // 1. It's a live-sync delete from a site we are still subscribed to.
-      // 2. It's a cleanup delete initiated by a local admin after unsubscribing.
-      return await this._isSubscribed(doc.siteAddress) || signerIsLocalAdmin;
-    }
+    const signerCanPerformLocally = await this.access.can({ permission, identity: signer });
+    return await this._isSubscribed(doc.siteAddress) || signerCanPerformLocally;
   }
 }
