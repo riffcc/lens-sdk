@@ -14,13 +14,14 @@ import { AccessError, PublicSignKey } from '@peerbit/crypto';
 import { FederationManager } from '../programs/site/lib/federation';
 import type { Site } from '../programs/site/program';
 import type {
+  ContentCategoryData,
   FeaturedReleaseData,
   ImmutableProps,
   ReleaseData,
   SiteArgs,
   SubscriptionData,
 } from '../programs/site/types';
-import { FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
+import { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
 import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService } from './types';
 import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
@@ -28,7 +29,7 @@ import type { ProgramClient } from '@peerbit/program';
 import { publicSignKeyFromString } from '../common/utils';
 
 export class ElectronLensService implements ILensService {
-  constructor() {}
+  constructor() { }
 
   async init(directory?: string): Promise<void> {
     await window.electronLensService.init(directory);
@@ -49,6 +50,7 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.getAccountStatus();
   }
 
+  // Release Methods
   async getRelease(id: string): Promise<WithContext<Release> | undefined> {
     return window.electronLensService.getRelease(id);
   }
@@ -57,24 +59,25 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.getReleases(options);
   }
 
-  async getFeaturedRelease(id: string): Promise<WithContext<FeaturedRelease> | undefined> {
-    return window.electronLensService.getFeaturedRelease(id);
-  }
-
-  async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
-    return window.electronLensService.getFeaturedReleases(options);
-  }
-
   async addRelease(data: AddInput<ReleaseData>): Promise<HashResponse> {
     return window.electronLensService.addRelease(data);
   }
-  // Admin methods
+
   async editRelease(data: EditInput<ReleaseData>): Promise<HashResponse> {
     return window.electronLensService.editRelease(data);
   }
 
   async deleteRelease(id: string): Promise<IdResponse> {
     return window.electronLensService.deleteRelease(id);
+  }
+
+  // Featured Release Methods
+  async getFeaturedRelease(id: string): Promise<WithContext<FeaturedRelease> | undefined> {
+    return window.electronLensService.getFeaturedRelease(id);
+  }
+
+  async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
+    return window.electronLensService.getFeaturedReleases(options);
   }
 
   async addFeaturedRelease(data: AddInput<FeaturedReleaseData>): Promise<HashResponse> {
@@ -89,6 +92,28 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.deleteFeaturedRelease(id);
   }
 
+  // Content Category Methods
+  async getContentCategory(id: string): Promise<WithContext<ContentCategory> | undefined> {
+    return window.electronLensService.getContentCategory(id);
+  }
+
+  async getContentCategories(options?: SearchOptions): Promise<WithContext<ContentCategory>[]> {
+    return window.electronLensService.getContentCategories(options);
+  }
+
+  async addContentCategory(data: AddInput<ContentCategoryData<string>>): Promise<HashResponse> {
+    return window.electronLensService.addContentCategory(data);
+  }
+
+  async editContentCategory(data: EditInput<ContentCategoryData<string>>): Promise<HashResponse> {
+    return window.electronLensService.editContentCategory(data);
+  }
+
+  async deleteContentCategory(id: string): Promise<IdResponse> {
+    return window.electronLensService.deleteContentCategory(id);
+  }
+
+  // Subscription Methods
   async getSubscriptions(options?: SearchOptions): Promise<Subscription[]> {
     return window.electronLensService.getSubscriptions(options);
   }
@@ -101,6 +126,7 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.deleteSubscription(data);
   }
 
+  // Admin and RBAC Methods
   async addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse> {
     return window.electronLensService.addAdmin(publicKey);
   }
@@ -189,24 +215,39 @@ export class LensService implements ILensService {
     };
   }
 
-  private async _verifyImmutableProperties<T extends ImmutableProps, I extends object = T>(
+  private async _verifyImmutableProperties<
+    T extends ImmutableProps,
+    I extends object
+  >(
     store: Documents<T, I>,
-    incomingData: ImmutableProps,
+    incomingData: T,
+    extraKeys?: (keyof T)[],
   ): Promise<void> {
-
-    // 1. Fetch the original document
+    // 1. Fetch the original document from the store using its ID.
     const originalDoc = await store.index.get(incomingData.id);
 
     if (!originalDoc) {
-      throw new Error(`Document with ID "${incomingData.id}" not found. Cannot edit.`);
+      throw new AccessError(`Document with ID "${incomingData.id}" not found. Cannot edit.`);
     }
 
+    // 2. Verify the standard immutable properties.
     if (!originalDoc.postedBy.equals(incomingData.postedBy)) {
-      throw new Error("Cannot change the 'postedBy' field during an edit.");
+      throw new AccessError("Cannot change the 'postedBy' field during an edit.");
     }
 
     if (originalDoc.siteAddress !== incomingData.siteAddress) {
-      throw new Error("Cannot change the 'siteAddress' field during an edit.");
+      throw new AccessError("Cannot change the 'siteAddress' field during an edit.");
+    }
+
+    // 3. If extra keys are provided, loop through and verify them.
+    if (extraKeys) {
+      for (const key of extraKeys) {
+        // We compare the properties of the original document from the store
+        // with the properties of the incoming data object.
+        if (originalDoc[key as keyof T] !== incomingData[key]) {
+          throw new AccessError(`Cannot change the '${String(key)}' field during an edit.`);
+        }
+      }
     }
   }
 
@@ -249,7 +290,7 @@ export class LensService implements ILensService {
       const allPermissions = new Set<string>();
       for (const role of allRoles) {
         // FIX: The role's name is in the `name` property, not `id`.
-        response.roles.push(role.name); 
+        response.roles.push(role.name);
         role.permissions.forEach(p => allPermissions.add(p));
       }
       response.permissions = [...allPermissions];
@@ -290,6 +331,7 @@ export class LensService implements ILensService {
     return response;
   }
 
+  // Release Methods
   async getRelease(id: string): Promise<WithContext<Release> | undefined> {
     const { siteProgram } = this._ensureSiteOpened();
     return siteProgram.releases.index.get(id);
@@ -325,41 +367,6 @@ export class LensService implements ILensService {
     return allResults;
   }
 
-  async getFeaturedRelease(id: string): Promise<WithContext<FeaturedRelease> | undefined> {
-    const { siteProgram } = this._ensureSiteOpened();
-    return siteProgram.featuredReleases.index.get(id);
-  }
-
-  async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
-    this.logger.time('getFeaturedReleases');
-    const { siteProgram } = this._ensureSiteOpened();
-
-    const request = options?.request ?? new SearchRequest({
-      sort: options?.sort ?? [
-        new Sort({ key: 'created', direction: SortDirection.DESC }),
-      ],
-    });
-
-    this.logger.debug('Fetching all featured releases with iterator pattern:', request);
-    this.logger.time('featuredReleases.index.iterate');
-
-    const allResults: WithContext<FeaturedRelease>[] = [];
-    const iterator = siteProgram.featuredReleases.index.iterate(request);
-
-    while (iterator.done() !== true) {
-      const batch = await iterator.next(100); // Fetch 100 featured releases per page
-      for (const featuredRelease of batch) {
-        allResults.push(featuredRelease);
-      }
-      this.logger.debug(`Fetched batch of ${batch.length} featured releases, total: ${allResults.length}`);
-    }
-
-    this.logger.timeEnd('featuredReleases.index.iterate');
-    this.logger.debug(`Found a total of ${allResults.length} featured releases.`);
-    this.logger.timeEnd('getFeaturedReleases');
-    return allResults;
-  }
-
   async addRelease(data: AddInput<ReleaseData>): Promise<HashResponse> {
     try {
       const { peerbit, siteProgram } = this._ensureSiteOpened();
@@ -389,12 +396,11 @@ export class LensService implements ILensService {
     }
   }
 
-  // Admin methods
   async editRelease(data: EditInput<ReleaseData>): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
-      await this._verifyImmutableProperties(siteProgram.releases, data);
       const release = new Release(data);
+      await this._verifyImmutableProperties(siteProgram.releases, release);
       const result = await siteProgram.releases.put(release);
       this.logger.debug(`Successfully edited release with ID: ${release.id}`);
       return {
@@ -452,6 +458,42 @@ export class LensService implements ILensService {
         };
       }
     }
+  }
+
+  // Featured Release Methods
+  async getFeaturedRelease(id: string): Promise<WithContext<FeaturedRelease> | undefined> {
+    const { siteProgram } = this._ensureSiteOpened();
+    return siteProgram.featuredReleases.index.get(id);
+  }
+
+  async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
+    this.logger.time('getFeaturedReleases');
+    const { siteProgram } = this._ensureSiteOpened();
+
+    const request = options?.request ?? new SearchRequest({
+      sort: options?.sort ?? [
+        new Sort({ key: 'created', direction: SortDirection.DESC }),
+      ],
+    });
+
+    this.logger.debug('Fetching all featured releases with iterator pattern:', request);
+    this.logger.time('featuredReleases.index.iterate');
+
+    const allResults: WithContext<FeaturedRelease>[] = [];
+    const iterator = siteProgram.featuredReleases.index.iterate(request);
+
+    while (iterator.done() !== true) {
+      const batch = await iterator.next(100); // Fetch 100 featured releases per page
+      for (const featuredRelease of batch) {
+        allResults.push(featuredRelease);
+      }
+      this.logger.debug(`Fetched batch of ${batch.length} featured releases, total: ${allResults.length}`);
+    }
+
+    this.logger.timeEnd('featuredReleases.index.iterate');
+    this.logger.debug(`Found a total of ${allResults.length} featured releases.`);
+    this.logger.timeEnd('getFeaturedReleases');
+    return allResults;
   }
 
   async addFeaturedRelease(data: AddInput<FeaturedReleaseData>): Promise<HashResponse> {
@@ -540,6 +582,72 @@ export class LensService implements ILensService {
     }
   }
 
+  // Content Category Methods
+  async getContentCategory(id: string): Promise<WithContext<ContentCategory> | undefined> {
+    const { siteProgram } = this._ensureSiteOpened();
+    return siteProgram.contentCategories.index.get(id);
+  }
+
+  async getContentCategories(options?: SearchOptions): Promise<WithContext<ContentCategory>[]> {
+    const { siteProgram } = this._ensureSiteOpened();
+    const request = options?.request ?? new SearchRequest({});
+    return siteProgram.contentCategories.index.search(request);
+  }
+
+  async addContentCategory(data: AddInput<ContentCategoryData>): Promise<HashResponse> {
+    try {
+      const { peerbit, siteProgram } = this._ensureSiteOpened();
+
+      const category = new ContentCategory({
+        ...data,
+        postedBy: data.postedBy ?? peerbit.identity.publicKey,
+        siteAddress: siteProgram.address,
+      });
+      const result = await siteProgram.contentCategories.put(category);
+      return { success: true, id: category.id, hash: result.entry.hash };
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this.logger.error('Failed to add content category:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
+      }
+    }
+  }
+
+  async editContentCategory(data: EditInput<ContentCategoryData>): Promise<HashResponse> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      const category = new ContentCategory(data);
+      await this._verifyImmutableProperties(siteProgram.contentCategories, category, ['categoryId']);
+      const result = await siteProgram.contentCategories.put(category);
+      return { success: true, id: category.id, hash: result.entry.hash };
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this.logger.error('Failed to edit content category:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
+      }
+    }
+  }
+
+  async deleteContentCategory(id: string): Promise<IdResponse> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      await siteProgram.contentCategories.del(id);
+      return { success: true, id };
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this.logger.error('Failed to delete content category:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
+      }
+    }
+  }
+
+  // Subscription Methods
   async getSubscriptions(options?: SearchOptions): Promise<Subscription[]> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
@@ -642,6 +750,7 @@ export class LensService implements ILensService {
     }
   }
 
+  // Admin and RBAC Methods
   async addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse> {
     this.logger.debug(`Attempting to promote user to admin: ${publicKey}`);
     try {

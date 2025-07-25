@@ -4,27 +4,11 @@ import { Program } from '@peerbit/program';
 import type { CanPerformOperations } from '@peerbit/document';
 import { Documents, isPutOperation, SearchRequest, StringMatch, StringMatchMethod } from '@peerbit/document';
 import type { PublicSignKey } from '@peerbit/crypto';
-import type { ImmutableProps } from './types';
+import type { ContentCategoryData, ContentCategoryMetadataField, ImmutableProps } from './types';
 import { type SiteArgs } from './types';
 import { BlockedContent, ContentCategory, FeaturedRelease, IndexedBlockedContent, IndexedContentCategory, IndexedFeaturedRelease, IndexedRelease, IndexedSubscription, Release, Subscription } from './schemas';
-import { Role } from '../acl/rbac/schemas';
 import { RoleBasedccessController } from '../acl/rbac/program';
-
-export const defaultSiteRoles = [
-  new Role('moderator', [
-    'release:create',
-    'release:edit:any',
-    'release:delete',
-    'featured:manage',
-    'category:manage',
-    'blocklist:manage',
-    'subscription:manage',
-  ]),
-  new Role('member', [
-    'release:create',
-    'release:edit:own',
-  ]),
-];
+import { defaultSiteContentCategories, defaultSiteRoles } from './defaults';
 
 @variant('site')
 export class Site extends Program<SiteArgs> {
@@ -124,10 +108,10 @@ export class Site extends Program<SiteArgs> {
           // ROUTER: Check if local or federated
           if (doc.siteAddress !== this.address) {
             return this._isFederatedWriteAllowed(
-              doc, 
-              signer, 
+              doc,
+              signer,
               isPutOperation(props.operation) ? 'release:edit:any' : 'release:delete',
-          );
+            );
           }
 
           // --- LOCAL RBAC LOGIC ---
@@ -272,5 +256,49 @@ export class Site extends Program<SiteArgs> {
   ): Promise<boolean> {
     const signerCanPerformLocally = await this.access.can({ permission, identity: signer });
     return await this._isSubscribed(doc.siteAddress) || signerCanPerformLocally;
+  }
+
+  /**
+ * Idempotently creates the default content categories if they don't already exist.
+ * This is a public method that can only be successfully called by the site's root administrator.
+ * @param initialCategories An optional array of categories to use instead of the defaults.
+ */
+  async initializeDefaultContentCategories(
+    initialCategories: ContentCategoryData<ContentCategoryMetadataField>[] = defaultSiteContentCategories,
+  ): Promise<void> {
+    if (!this.node.identity.publicKey.equals(this.access.admins.rootTrust)) {
+      throw new Error('Only the root administrator can initialize default content categories.');
+    }
+
+    if (!initialCategories || initialCategories.length === 0) {
+      return;
+    }
+
+    for (const category of initialCategories) {
+      // Check for existence by the stable categoryId
+      const existingCategories = await this.contentCategories.index.search(new SearchRequest({
+        query: [new StringMatch({ key: 'categoryId', value: category.categoryId, caseInsensitive: true })],
+      }));
+
+      if (existingCategories.length === 0) {
+        try {
+          const metadataSchemaString = JSON.stringify(category.metadataSchema);
+
+          await this.contentCategories.put(new ContentCategory({
+            postedBy: this.node.identity.publicKey,
+            siteAddress: this.address,
+            categoryId: category.categoryId,
+            displayName: category.displayName,
+            featured: category.featured,
+            description: category.description,
+            metadataSchema: metadataSchemaString,
+          }));
+        } catch (error) {
+          // Ignore errors, as another instance of the same root admin might
+          // have created the category in a race condition.
+          console.warn(`Could not create default content category "${category.displayName}":`, error);
+        }
+      }
+    }
   }
 }
