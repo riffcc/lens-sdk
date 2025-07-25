@@ -1,7 +1,7 @@
 import { variant, field, option } from '@dao-xyz/borsh';
 import type { ContentCategoryData, DocumentArgs } from '../types';
-import { v4 as uuid } from 'uuid';
-import { PublicSignKey } from '@peerbit/crypto';
+import { PublicSignKey, sha256Base64Sync } from '@peerbit/crypto';
+import { concat } from 'uint8arrays';
 
 @variant('content_category')
 export class ContentCategory {
@@ -13,6 +13,9 @@ export class ContentCategory {
 
   @field({ type: 'string' })
   siteAddress: string;
+
+  @field({ type: 'string' })
+  categoryId: string;
 
   @field({ type: 'string' })
   displayName: string;
@@ -27,11 +30,15 @@ export class ContentCategory {
   metadataSchema?: string;
 
   constructor(props: DocumentArgs<ContentCategoryData>) {
-    this.id = props.id ?? uuid();
+    this.id = props.id ?? sha256Base64Sync(concat([
+      new TextEncoder().encode(props.siteAddress),
+      new TextEncoder().encode(props.categoryId),
+    ]));
     this.postedBy = props.postedBy;
     this.siteAddress = props.siteAddress;
+    this.categoryId = props.categoryId;
     this.displayName = props.displayName;
-    this.featured = props.featured;
+    this.featured = props.featured ?? false;
     if (props.description) {
       this.description = props.description;
     }
@@ -50,6 +57,9 @@ export class IndexedContentCategory {
 
   @field({ type: 'string' })
   siteAddress: string;
+
+  @field({ type: 'string' })
+  categoryId: string;
 
   @field({ type: 'string' })
   displayName: string;
@@ -77,6 +87,7 @@ export class IndexedContentCategory {
     this.id = props.doc.id;
     this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;
+    this.categoryId = props.doc.categoryId;
     this.displayName = props.doc.displayName;
     this.featured = props.doc.featured;
     this.description = props.doc.description;
