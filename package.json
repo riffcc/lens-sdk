@@ -49,6 +49,7 @@
     "@peerbit/trusted-network": "^4.1.110",
     "ajv": "^8.17.1",
     "bip39": "^3.1.0",
+    "ethers": "^6.15.0",
     "idb-keyval": "^6.2.2",
     "libsodium-wrappers": "^0.7.15",
     "p-defer": "^4.0.1",
