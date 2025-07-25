@@ -7,11 +7,11 @@ import type {
   ReleaseData,
   SiteArgs,
   SubscriptionData,
-  WithOptionalPostedBy,
 } from '../programs/site/types';
 import type { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
 import type { SearchOptions } from '../common/types';
-import type { PublicSignKey } from '@peerbit/crypto';
+import type { Identity, PublicSignKey, Secp256k1PublicKey } from '@peerbit/crypto';
+import type { ProgramClient } from '@peerbit/program';
 
 export interface BaseResponse {
   success: boolean;
@@ -32,9 +32,16 @@ export interface AccountStatusResponse {
   permissions: string[];
 }
 
-export type AddInput<T> = WithOptionalPostedBy<T>;
+export type AddInput<T> = T;
 
 export type EditInput<T> = T & ImmutableProps;
+
+export type LensServiceOptions = { 
+  peerbit?: ProgramClient; 
+  debug?: boolean, 
+  customPrefix?: string,
+  identity?: Identity<Secp256k1PublicKey>
+};
 
 export interface ILensService {
   init: (directory?: string) => Promise<void>;

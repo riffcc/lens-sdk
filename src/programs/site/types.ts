@@ -8,9 +8,6 @@ export type ImmutableProps = {
   siteAddress: string;
 }
 
-export type WithOptionalId<T> = T & { id?: string };
-export type WithOptionalPostedBy<T> = T & { postedBy?: PublicSignKey };
-
 export type DocumentArgs<T> = T & Omit<ImmutableProps, 'id'> & { id?: string };
 
 export type ReleaseData<T = string> = {

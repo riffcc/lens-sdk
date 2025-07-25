@@ -10,6 +10,7 @@ import {
   StringMatch,
   type WithContext,
 } from '@peerbit/document';
+import type { Identity, Secp256k1PublicKey} from '@peerbit/crypto';
 import { AccessError, PublicSignKey } from '@peerbit/crypto';
 import { FederationManager } from '../programs/site/lib/federation';
 import type { Site } from '../programs/site/program';
@@ -22,7 +23,7 @@ import type {
   SubscriptionData,
 } from '../programs/site/types';
 import { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
-import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService } from './types';
+import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService, LensServiceOptions } from './types';
 import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
 import type { ProgramClient } from '@peerbit/program';
@@ -144,11 +145,17 @@ export class LensService implements ILensService {
   peerbit: ProgramClient | null = null;
   siteProgram: Site | null = null;
   private _federationManager: FederationManager | null = null;
+  private _activeIdentity: Identity<Secp256k1PublicKey> | null = null;
   private _logger: Logger;
   private _extenarlyManaged: boolean = false;
-  
-  constructor(options?: { peerbit?: ProgramClient; debug?: boolean, customPrefix?: string }) {
+
+  constructor(options?: LensServiceOptions) {
     this._logger = new Logger({ enabled: options?.debug, prefix: options?.customPrefix || 'LensService' });
+
+    if (options?.identity) {
+      this._activeIdentity = options.identity;
+      this._logger.debug('LensService configured with a custom identity.');
+    }
 
     if (options?.peerbit) {
       this.peerbit = options.peerbit;
@@ -215,10 +222,7 @@ export class LensService implements ILensService {
     };
   }
 
-  private async _verifyImmutableProperties<
-    T extends ImmutableProps,
-    I extends object
-  >(
+  private async _verifyImmutableProperties<T extends ImmutableProps, I extends object>(
     store: Documents<T, I>,
     incomingData: T,
     extraKeys?: (keyof T)[],
@@ -251,6 +255,15 @@ export class LensService implements ILensService {
     }
   }
 
+  private _getActiveSigner() {
+    if (!this._activeIdentity) {
+      return undefined;
+    }
+    return {
+      signers: [this._activeIdentity.sign.bind(this._activeIdentity)],
+    };
+  }
+
   async openSite(
     siteOrAddress: Site | string,
     options: { siteArgs?: SiteArgs, federate?: boolean } = { federate: true },
@@ -275,7 +288,7 @@ export class LensService implements ILensService {
   async getAccountStatus(): Promise<AccountStatusResponse> {
     this._logger.time('getAccountStatus');
     const { peerbit, siteProgram } = this._ensureSiteOpened();
-    const identity = peerbit.identity.publicKey;
+    const publicKey = this._activeIdentity?.publicKey ?? peerbit.identity.publicKey;
 
     const response: AccountStatusResponse = {
       isAdmin: false,
@@ -283,7 +296,7 @@ export class LensService implements ILensService {
       permissions: [],
     };
 
-    response.isAdmin = await siteProgram.access.admins.isTrusted(identity);
+    response.isAdmin = await siteProgram.access.admins.isTrusted(publicKey);
     if (response.isAdmin) {
       // Admin logic is correct and can remain.
       const allRoles = await siteProgram.access.roles.index.search({});
@@ -300,7 +313,7 @@ export class LensService implements ILensService {
     }
 
     const userAssignments = await siteProgram.access.assignments.index.search(new SearchRequest({
-      query: [new ByteMatchQuery({ key: 'user', value: identity.bytes })],
+      query: [new ByteMatchQuery({ key: 'user', value: publicKey.bytes })],
     }));
 
     if (userAssignments.length === 0) {
@@ -373,10 +386,10 @@ export class LensService implements ILensService {
 
       const release = new Release({
         ...data,
-        postedBy: data.postedBy ?? peerbit.identity.publicKey,
+        postedBy: this._activeIdentity?.publicKey ?? peerbit.identity.publicKey,
         siteAddress: siteProgram.address,
       });
-      const result = await siteProgram.releases.put(release);
+      const result = await siteProgram.releases.put(release, this._getActiveSigner());
       this._logger.debug(`Successfully added release with ID: ${release.id}`);
       return {
         success: true,
@@ -401,7 +414,7 @@ export class LensService implements ILensService {
       const { siteProgram } = this._ensureSiteOpened();
       const release = new Release(data);
       await this._verifyImmutableProperties(siteProgram.releases, release);
-      const result = await siteProgram.releases.put(release);
+      const result = await siteProgram.releases.put(release, this._getActiveSigner());
       this._logger.debug(`Successfully edited release with ID: ${release.id}`);
       return {
         success: true,
@@ -438,10 +451,10 @@ export class LensService implements ILensService {
 
       for (const tfr of targetFeaturedReleases) {
         this._logger.debug(`Deleting associated featured release with ID: ${tfr.id}`);
-        await siteProgram.featuredReleases.del(tfr.id);
+        await siteProgram.featuredReleases.del(tfr.id, this._getActiveSigner());
       }
 
-      await siteProgram.releases.del(id);
+      await siteProgram.releases.del(id, this._getActiveSigner());
       this._logger.debug(`Successfully deleted release with ID: ${id}`);
       return {
         success: true,
@@ -509,10 +522,10 @@ export class LensService implements ILensService {
       }
       const featuredRelease = new FeaturedRelease({
         ...data,
-        postedBy: data.postedBy ?? peerbit.identity.publicKey,
+        postedBy: this._activeIdentity?.publicKey ?? peerbit.identity.publicKey,
         siteAddress: siteProgram.address,
       });
-      const result = await siteProgram.featuredReleases.put(featuredRelease);
+      const result = await siteProgram.featuredReleases.put(featuredRelease, this._getActiveSigner());
       this._logger.debug(`Successfully added featured release with ID: ${featuredRelease.id}`);
 
       return {
@@ -539,7 +552,7 @@ export class LensService implements ILensService {
 
       await this._verifyImmutableProperties(siteProgram.featuredReleases, data);
       const featuredRelease = new FeaturedRelease(data);
-      const result = await siteProgram.featuredReleases.put(featuredRelease);
+      const result = await siteProgram.featuredReleases.put(featuredRelease, this._getActiveSigner());
       this._logger.debug(`Successfully edited featured release with ID: ${featuredRelease.id}`);
 
       return {
@@ -563,7 +576,7 @@ export class LensService implements ILensService {
   async deleteFeaturedRelease(id: string): Promise<IdResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
-      await siteProgram.featuredReleases.del(id);
+      await siteProgram.featuredReleases.del(id, this._getActiveSigner());
       this._logger.debug(`Successfully deleted featured release with ID: ${id}`);
       return {
         success: true,
@@ -600,10 +613,10 @@ export class LensService implements ILensService {
 
       const category = new ContentCategory({
         ...data,
-        postedBy: data.postedBy ?? peerbit.identity.publicKey,
+        postedBy: this._activeIdentity?.publicKey ?? peerbit.identity.publicKey,
         siteAddress: siteProgram.address,
       });
-      const result = await siteProgram.contentCategories.put(category);
+      const result = await siteProgram.contentCategories.put(category, this._getActiveSigner());
       return { success: true, id: category.id, hash: result.entry.hash };
     } catch (error) {
       if (error instanceof AccessError) {
@@ -620,7 +633,7 @@ export class LensService implements ILensService {
       const { siteProgram } = this._ensureSiteOpened();
       const category = new ContentCategory(data);
       await this._verifyImmutableProperties(siteProgram.contentCategories, category, ['categoryId']);
-      const result = await siteProgram.contentCategories.put(category);
+      const result = await siteProgram.contentCategories.put(category, this._getActiveSigner());
       return { success: true, id: category.id, hash: result.entry.hash };
     } catch (error) {
       if (error instanceof AccessError) {
@@ -635,7 +648,7 @@ export class LensService implements ILensService {
   async deleteContentCategory(id: string): Promise<IdResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
-      await siteProgram.contentCategories.del(id);
+      await siteProgram.contentCategories.del(id, this._getActiveSigner());
       return { success: true, id };
     } catch (error) {
       if (error instanceof AccessError) {
@@ -684,10 +697,10 @@ export class LensService implements ILensService {
       this._logger.debug(`Adding subscription to site: ${data.to}`);
       const subscription = new Subscription({
         ...data,
-        postedBy: data.postedBy ?? peerbit.identity.publicKey,
+        postedBy: this._activeIdentity?.publicKey ?? peerbit.identity.publicKey,
         siteAddress: siteProgram.address,
       });
-      const result = await siteProgram.subscriptions.put(subscription);
+      const result = await siteProgram.subscriptions.put(subscription, this._getActiveSigner());
       return {
         success: true,
         id: subscription.siteAddress,
@@ -731,7 +744,7 @@ export class LensService implements ILensService {
         throw new Error('At least one params must be passed. Subscription ID or Site Address');
       }
       this._logger.debug(`Deleting subscription with ID: ${data.id}`);
-      await siteProgram.subscriptions.del(subscriptionIdToDelete);
+      await siteProgram.subscriptions.del(subscriptionIdToDelete, this._getActiveSigner());
 
       return {
         success: true,
