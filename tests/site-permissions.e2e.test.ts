@@ -1,7 +1,7 @@
 import { TestSession } from '@peerbit/test-utils';
 import type { ProgramClient } from '@peerbit/program';
 import { Site } from '../src/programs/site/program';
-import type { ReleaseData } from '../src/programs/site/types';
+import type { ContentCategoryData, ReleaseData } from '../src/programs/site/types';
 import { waitFor, waitForResolved } from '@peerbit/time';
 import { LensService } from '../src/services';
 
@@ -11,6 +11,20 @@ const createReleaseData = (): ReleaseData => {
     name: `Release-${Date.now()}-${Math.random()}`,
     categoryId: 'test-category',
     contentCID: `cid-${Math.random()}`,
+  };
+};
+
+const createCategoryData = (): ContentCategoryData<string> => {
+  const randomId = Math.random().toString(36).substring(7);
+  return {
+    categoryId: `test-category-${randomId}`,
+    displayName: `Test Category ${randomId}`,
+    metadataSchema: JSON.stringify({
+      description: {
+        type: 'string',
+        description: 'A test description field',
+      },
+    }),
   };
 };
 
@@ -62,7 +76,7 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
     if (session) await session.stop();
   });
 
-  
+
   describe('Admin', () => {
     it('can assign and revoke a role', async () => {
       const tempUser = await TestSession.disconnected(1);
@@ -93,7 +107,7 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
       expect(releaseResp.success).toBe(true);
       const releaseId = releaseResp.id!;
       await waitFor(() => moderatorService.getRelease(releaseId));
-      
+
       const releaseToEdit = await moderatorService.getRelease(releaseId);
       const editInput = {
         id: releaseToEdit!.id,
@@ -107,7 +121,7 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
       const editResponse = await moderatorService.editRelease(editInput);
       expect(editResponse.success).toBe(true);
     });
-    
+
     it('can delete a release created by a member', async () => {
       const releaseResp = await memberService.addRelease(createReleaseData());
       expect(releaseResp.success).toBe(true);
@@ -115,7 +129,7 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
       const deleteResp = await moderatorService.deleteRelease(releaseResp.id!);
       expect(deleteResp.success).toBe(true);
     });
-    
+
     it('can manage featured releases', async () => {
       const releaseResp = await memberService.addRelease(createReleaseData());
       expect(releaseResp.success).toBe(true);
@@ -127,6 +141,59 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
         promoted: false,
       });
       expect(featureResponse.success).toBe(true);
+    });
+
+    it('can manage content categories', async () => {
+      const categoryData = createCategoryData();
+
+      // Add
+      const addResp = await moderatorService.addContentCategory(categoryData);
+      expect(addResp.success).toBe(true);
+      expect(addResp.id).toBeDefined();
+      const categoryId = addResp.id!;
+
+      // Get
+      const newCategory = await moderatorService.getContentCategory(categoryId);
+      expect(newCategory).toBeDefined();
+      expect(newCategory!.displayName).toEqual(categoryData.displayName);
+
+      const editedData = {
+        ...newCategory!,
+        displayName: 'Edited Category Name',
+      };
+      
+      const editResp = await moderatorService.editContentCategory(editedData);
+      expect(editResp.success).toBe(true);
+      
+      const fetchedEdited = await moderatorService.getContentCategory(editResp.id!);
+      expect(fetchedEdited!.displayName).toEqual('Edited Category Name');
+
+      // Delete
+      const deleteResp = await moderatorService.deleteContentCategory(newCategory!.id);
+      expect(deleteResp.success).toBe(true);
+      
+      await waitForResolved(async () => {
+        const deletedCategory = await moderatorService.getContentCategory(newCategory!.id);
+        expect(deletedCategory).toBeUndefined();
+      });
+    });
+
+    it('cannot edit the immutable categoryId', async () => {
+      const categoryData = createCategoryData();
+      const addResp = await moderatorService.addContentCategory(categoryData);
+      expect(addResp.success).toBe(true);
+
+      const newCategory = await moderatorService.getContentCategory(addResp.id!);
+      expect(newCategory).toBeDefined();
+
+      const editedData = {
+        ...newCategory!,
+        categoryId: 'edited-category-id', // Attempt to change the immutable key
+      };
+
+      const editResp = await moderatorService.editContentCategory(editedData);
+      expect(editResp.success).toBe(false);
+      expect(editResp.error).toContain('Access denied');
     });
 
     it('cannot manage user roles', async () => {
@@ -143,17 +210,17 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
     });
 
     it('can edit its own release', async () => {
-        const addResp = await memberService.addRelease(createReleaseData());
-        expect(addResp.success).toBe(true);
-        const editResp = await memberService.editRelease({
-            id: addResp.id!,
-            name: 'Edited by Member (self)',
-            postedBy: memberClient.identity.publicKey,
-            siteAddress: siteAddress,
-            categoryId: 'test',
-            contentCID: 'test-cid',
-        });
-        expect(editResp.success).toBe(true);
+      const addResp = await memberService.addRelease(createReleaseData());
+      expect(addResp.success).toBe(true);
+      const editResp = await memberService.editRelease({
+        id: addResp.id!,
+        name: 'Edited by Member (self)',
+        postedBy: memberClient.identity.publicKey,
+        siteAddress: siteAddress,
+        categoryId: 'test',
+        contentCID: 'test-cid',
+      });
+      expect(editResp.success).toBe(true);
     });
 
     it('cannot edit a release created by another user', async () => {
