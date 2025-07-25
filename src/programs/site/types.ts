@@ -1,5 +1,6 @@
 import type { PublicSignKey } from '@peerbit/crypto';
 import type { ReplicationLimitsOptions, ReplicationOptions } from '@peerbit/shared-log';
+import type { JSONSchemaType } from 'ajv';
 
 export type ImmutableProps = {
   id: string;
@@ -24,11 +25,12 @@ export type BlockedContentData = {
   cid: string;
 };
 
-export type ContentCategoryData = {
+export type ContentCategoryData<T = string> = {
+  categoryId: string;
   displayName: string;
-  featured: boolean;
+  featured?: boolean;
   description?: string;
-  metadataSchema?: string;
+  metadataSchema?: T;
 };
 
 export type FeaturedReleaseData = {
@@ -42,7 +44,6 @@ export type SubscriptionData = {
   to: string;
 };
 
-// --- Unchanged Types ---
 export type FederatedStoreKey = 'releases' | 'featuredReleases' | 'contentCategories' | 'blockedContent';
 
 export enum AccountType {
@@ -64,3 +65,47 @@ export interface SiteArgs {
   subscriptionsArgs?: StoreArgs;
   blockedContentArgs?: StoreArgs;
 }
+
+
+// Defines the structure for a field within a category's metadata schema.
+export type ContentCategoryMetadataField = Record<string, {
+  type: 'string' | 'number' | 'array';
+  description: string;
+  options?: string[];
+}>;
+
+// JSON Schema for validating an array of content categories, using simple string keys.
+export const categoriesFileSchema: JSONSchemaType<ContentCategoryData<ContentCategoryMetadataField>[]> = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      categoryId: { type: 'string' },
+      displayName: { type: 'string' },
+      featured: { type: 'boolean', nullable: true },
+      description: { type: 'string', nullable: true },
+      metadataSchema: {
+        type: 'object',
+        nullable: true,
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['string', 'number', 'array'],
+            },
+            description: { type: 'string' },
+            options: { 
+              type: 'array',
+              items: { type: 'string' },
+              nullable: true,
+            },
+          },
+          required: ['type', 'description'],
+        },
+        required: [],
+      },
+    },
+    required: ['categoryId', 'displayName'],
+  },
+};
