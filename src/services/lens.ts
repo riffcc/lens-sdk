@@ -143,16 +143,16 @@ export class ElectronLensService implements ILensService {
 export class LensService implements ILensService {
   peerbit: ProgramClient | null = null;
   siteProgram: Site | null = null;
-  private federationManager: FederationManager | null = null;
-  private logger: Logger;
-  private extenarlyManaged: boolean = false;
-
+  private _federationManager: FederationManager | null = null;
+  private _logger: Logger;
+  private _extenarlyManaged: boolean = false;
+  
   constructor(options?: { peerbit?: ProgramClient; debug?: boolean, customPrefix?: string }) {
-    this.logger = new Logger({ enabled: options?.debug, prefix: options?.customPrefix || 'LensService' });
+    this._logger = new Logger({ enabled: options?.debug, prefix: options?.customPrefix || 'LensService' });
 
     if (options?.peerbit) {
       this.peerbit = options.peerbit;
-      this.extenarlyManaged = true;
+      this._extenarlyManaged = true;
     }
   }
 
@@ -162,28 +162,28 @@ export class LensService implements ILensService {
         'LensService: Already configured with an external Peerbit client. Do not call init().',
       );
     }
-    this.logger.debug(`Initializing new Peerbit client in directory: ${directory || 'in-memory'}`);
+    this._logger.debug(`Initializing new Peerbit client in directory: ${directory || 'in-memory'}`);
     this.peerbit = await Peerbit.create({ directory });
-    this.extenarlyManaged = false;
+    this._extenarlyManaged = false;
   }
 
   async stop() {
     const { peerbit } = this._ensureInitialized();
-    if (this.federationManager) {
-      await this.federationManager.stop();
-      this.federationManager = null;
+    if (this._federationManager) {
+      await this._federationManager.stop();
+      this._federationManager = null;
     }
 
-    if (!this.extenarlyManaged) {
+    if (!this._extenarlyManaged) {
       await peerbit.stop();
-      this.logger.debug('Internal Peerbit client stopped.');
+      this._logger.debug('Internal Peerbit client stopped.');
     }
     if (this.siteProgram) {
       await this.siteProgram.close();
     }
     this.peerbit = null;
     this.siteProgram = null;
-    this.logger.debug('LensService stopped successfully.');
+    this._logger.debug('LensService stopped successfully.');
   }
 
   private _ensureInitialized(): {
@@ -261,19 +261,19 @@ export class LensService implements ILensService {
     const { peerbit } = this._ensureInitialized();
     const siteProgram = await peerbit.open(siteOrAddress, { args: options?.siteArgs });
     this.siteProgram = siteProgram;
-    this.logger.debug(`Site opened successfully at address: ${this.siteProgram.address}`);
+    this._logger.debug(`Site opened successfully at address: ${this.siteProgram.address}`);
 
     if (options?.federate) {
-      this.logger.debug('Federation enabled. Initializing FederationManager.');
+      this._logger.debug('Federation enabled. Initializing FederationManager.');
       // Create and start the manager. It handles everything from here.
-      this.federationManager = new FederationManager(peerbit, siteProgram, this.logger);
-      await this.federationManager.start();
+      this._federationManager = new FederationManager(peerbit, siteProgram, this._logger);
+      await this._federationManager.start();
     }
 
   }
 
   async getAccountStatus(): Promise<AccountStatusResponse> {
-    this.logger.time('getAccountStatus');
+    this._logger.time('getAccountStatus');
     const { peerbit, siteProgram } = this._ensureSiteOpened();
     const identity = peerbit.identity.publicKey;
 
@@ -294,8 +294,8 @@ export class LensService implements ILensService {
         role.permissions.forEach(p => allPermissions.add(p));
       }
       response.permissions = [...allPermissions];
-      this.logger.debug('User status determined: ADMIN', response);
-      this.logger.timeEnd('getAccountStatus');
+      this._logger.debug('User status determined: ADMIN', response);
+      this._logger.timeEnd('getAccountStatus');
       return response;
     }
 
@@ -305,8 +305,8 @@ export class LensService implements ILensService {
 
     if (userAssignments.length === 0) {
       response.roles.push('guest');
-      this.logger.debug('User status determined: GUEST', response);
-      this.logger.timeEnd('getAccountStatus');
+      this._logger.debug('User status determined: GUEST', response);
+      this._logger.timeEnd('getAccountStatus');
       return response;
     }
 
@@ -326,8 +326,8 @@ export class LensService implements ILensService {
     }
 
     response.permissions = [...allPermissions];
-    this.logger.debug(`User status determined: ${response.roles.join(', ')}`, response);
-    this.logger.timeEnd('getAccountStatus');
+    this._logger.debug(`User status determined: ${response.roles.join(', ')}`, response);
+    this._logger.timeEnd('getAccountStatus');
     return response;
   }
 
@@ -338,7 +338,7 @@ export class LensService implements ILensService {
   }
 
   async getReleases(options?: SearchOptions): Promise<WithContext<Release>[]> {
-    this.logger.time('getReleases');
+    this._logger.time('getReleases');
     const { siteProgram } = this._ensureSiteOpened();
 
     const request = options?.request ?? new SearchRequest({
@@ -347,8 +347,8 @@ export class LensService implements ILensService {
       ],
     });
 
-    this.logger.debug('Fetching all releases with iterator pattern:', request);
-    this.logger.time('releases.index.iterate');
+    this._logger.debug('Fetching all releases with iterator pattern:', request);
+    this._logger.time('releases.index.iterate');
 
     const allResults: WithContext<Release>[] = [];
     const iterator = siteProgram.releases.index.iterate(request);
@@ -358,12 +358,12 @@ export class LensService implements ILensService {
       for (const release of batch) {
         allResults.push(release);
       }
-      this.logger.debug(`Fetched batch of ${batch.length} releases, total: ${allResults.length}`);
+      this._logger.debug(`Fetched batch of ${batch.length} releases, total: ${allResults.length}`);
     }
 
-    this.logger.timeEnd('releases.index.iterate');
-    this.logger.debug(`Found a total of ${allResults.length} releases.`);
-    this.logger.timeEnd('getReleases');
+    this._logger.timeEnd('releases.index.iterate');
+    this._logger.debug(`Found a total of ${allResults.length} releases.`);
+    this._logger.timeEnd('getReleases');
     return allResults;
   }
 
@@ -377,7 +377,7 @@ export class LensService implements ILensService {
         siteAddress: siteProgram.address,
       });
       const result = await siteProgram.releases.put(release);
-      this.logger.debug(`Successfully added release with ID: ${release.id}`);
+      this._logger.debug(`Successfully added release with ID: ${release.id}`);
       return {
         success: true,
         id: release.id,
@@ -387,7 +387,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, error: 'Access denied' };
       } else {
-        this.logger.error('Failed to add release:', error);
+        this._logger.error('Failed to add release:', error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',
@@ -402,7 +402,7 @@ export class LensService implements ILensService {
       const release = new Release(data);
       await this._verifyImmutableProperties(siteProgram.releases, release);
       const result = await siteProgram.releases.put(release);
-      this.logger.debug(`Successfully edited release with ID: ${release.id}`);
+      this._logger.debug(`Successfully edited release with ID: ${release.id}`);
       return {
         success: true,
         id: release.id,
@@ -412,7 +412,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, id: data.id, error: 'Access denied' };
       } else {
-        this.logger.error(`Failed to edit release with ID: ${data.id}`, error);
+        this._logger.error(`Failed to edit release with ID: ${data.id}`, error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',
@@ -424,7 +424,7 @@ export class LensService implements ILensService {
   async deleteRelease(id: string): Promise<IdResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
-      this.logger.debug(`Attempting to delete release with ID: ${id}`);
+      this._logger.debug(`Attempting to delete release with ID: ${id}`);
       const targetFeaturedReleases = await siteProgram.featuredReleases.index.search(
         new SearchRequest({
           query: [
@@ -437,12 +437,12 @@ export class LensService implements ILensService {
       );
 
       for (const tfr of targetFeaturedReleases) {
-        this.logger.debug(`Deleting associated featured release with ID: ${tfr.id}`);
+        this._logger.debug(`Deleting associated featured release with ID: ${tfr.id}`);
         await siteProgram.featuredReleases.del(tfr.id);
       }
 
       await siteProgram.releases.del(id);
-      this.logger.debug(`Successfully deleted release with ID: ${id}`);
+      this._logger.debug(`Successfully deleted release with ID: ${id}`);
       return {
         success: true,
         id,
@@ -451,7 +451,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, id, error: 'Access denied' };
       } else {
-        this.logger.error(`Failed to delete release with ID: ${id}`, error);
+        this._logger.error(`Failed to delete release with ID: ${id}`, error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',
@@ -467,7 +467,7 @@ export class LensService implements ILensService {
   }
 
   async getFeaturedReleases(options?: SearchOptions): Promise<WithContext<FeaturedRelease>[]> {
-    this.logger.time('getFeaturedReleases');
+    this._logger.time('getFeaturedReleases');
     const { siteProgram } = this._ensureSiteOpened();
 
     const request = options?.request ?? new SearchRequest({
@@ -476,8 +476,8 @@ export class LensService implements ILensService {
       ],
     });
 
-    this.logger.debug('Fetching all featured releases with iterator pattern:', request);
-    this.logger.time('featuredReleases.index.iterate');
+    this._logger.debug('Fetching all featured releases with iterator pattern:', request);
+    this._logger.time('featuredReleases.index.iterate');
 
     const allResults: WithContext<FeaturedRelease>[] = [];
     const iterator = siteProgram.featuredReleases.index.iterate(request);
@@ -487,12 +487,12 @@ export class LensService implements ILensService {
       for (const featuredRelease of batch) {
         allResults.push(featuredRelease);
       }
-      this.logger.debug(`Fetched batch of ${batch.length} featured releases, total: ${allResults.length}`);
+      this._logger.debug(`Fetched batch of ${batch.length} featured releases, total: ${allResults.length}`);
     }
 
-    this.logger.timeEnd('featuredReleases.index.iterate');
-    this.logger.debug(`Found a total of ${allResults.length} featured releases.`);
-    this.logger.timeEnd('getFeaturedReleases');
+    this._logger.timeEnd('featuredReleases.index.iterate');
+    this._logger.debug(`Found a total of ${allResults.length} featured releases.`);
+    this._logger.timeEnd('getFeaturedReleases');
     return allResults;
   }
 
@@ -513,7 +513,7 @@ export class LensService implements ILensService {
         siteAddress: siteProgram.address,
       });
       const result = await siteProgram.featuredReleases.put(featuredRelease);
-      this.logger.debug(`Successfully added featured release with ID: ${featuredRelease.id}`);
+      this._logger.debug(`Successfully added featured release with ID: ${featuredRelease.id}`);
 
       return {
         success: true,
@@ -524,7 +524,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, error: 'Access denied' };
       } else {
-        this.logger.error('Failed to add featured release:', error);
+        this._logger.error('Failed to add featured release:', error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',
@@ -540,7 +540,7 @@ export class LensService implements ILensService {
       await this._verifyImmutableProperties(siteProgram.featuredReleases, data);
       const featuredRelease = new FeaturedRelease(data);
       const result = await siteProgram.featuredReleases.put(featuredRelease);
-      this.logger.debug(`Successfully edited featured release with ID: ${featuredRelease.id}`);
+      this._logger.debug(`Successfully edited featured release with ID: ${featuredRelease.id}`);
 
       return {
         success: true,
@@ -551,7 +551,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, id: data.id, error: 'Access denied' };
       } else {
-        this.logger.error(`Failed to edit featured release with ID: ${data.id}`, error);
+        this._logger.error(`Failed to edit featured release with ID: ${data.id}`, error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',
@@ -564,7 +564,7 @@ export class LensService implements ILensService {
     try {
       const { siteProgram } = this._ensureSiteOpened();
       await siteProgram.featuredReleases.del(id);
-      this.logger.debug(`Successfully deleted featured release with ID: ${id}`);
+      this._logger.debug(`Successfully deleted featured release with ID: ${id}`);
       return {
         success: true,
         id,
@@ -573,7 +573,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, id, error: 'Access denied' };
       } else {
-        this.logger.error(`Failed to delete featured release with ID: ${id}`, error);
+        this._logger.error(`Failed to delete featured release with ID: ${id}`, error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',
@@ -609,7 +609,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, error: 'Access denied' };
       } else {
-        this.logger.error('Failed to add content category:', error);
+        this._logger.error('Failed to add content category:', error);
         return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
       }
     }
@@ -626,7 +626,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, error: 'Access denied' };
       } else {
-        this.logger.error('Failed to edit content category:', error);
+        this._logger.error('Failed to edit content category:', error);
         return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
       }
     }
@@ -641,7 +641,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, error: 'Access denied' };
       } else {
-        this.logger.error('Failed to delete content category:', error);
+        this._logger.error('Failed to delete content category:', error);
         return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
       }
     }
@@ -657,7 +657,7 @@ export class LensService implements ILensService {
         ],
       });
 
-      this.logger.debug('Fetching all subscriptions with iterator pattern.');
+      this._logger.debug('Fetching all subscriptions with iterator pattern.');
       const allResults: Subscription[] = [];
       const iterator = siteProgram.subscriptions.index.iterate(request);
 
@@ -670,10 +670,10 @@ export class LensService implements ILensService {
           break;
         }
       }
-      this.logger.debug(`Found a total of ${allResults.length} subscriptions.`);
+      this._logger.debug(`Found a total of ${allResults.length} subscriptions.`);
       return allResults;
     } catch (error) {
-      this.logger.error('Failed to get subscriptions:', error);
+      this._logger.error('Failed to get subscriptions:', error);
       return [];
     }
   }
@@ -681,7 +681,7 @@ export class LensService implements ILensService {
   async addSubscription(data: AddInput<SubscriptionData>): Promise<HashResponse> {
     try {
       const { peerbit, siteProgram } = this._ensureSiteOpened();
-      this.logger.debug(`Adding subscription to site: ${data.to}`);
+      this._logger.debug(`Adding subscription to site: ${data.to}`);
       const subscription = new Subscription({
         ...data,
         postedBy: data.postedBy ?? peerbit.identity.publicKey,
@@ -697,7 +697,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, error: 'Access denied' };
       } else {
-        this.logger.error('Failed to add subscription:', error);
+        this._logger.error('Failed to add subscription:', error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',
@@ -730,7 +730,7 @@ export class LensService implements ILensService {
       if (!subscriptionIdToDelete) {
         throw new Error('At least one params must be passed. Subscription ID or Site Address');
       }
-      this.logger.debug(`Deleting subscription with ID: ${data.id}`);
+      this._logger.debug(`Deleting subscription with ID: ${data.id}`);
       await siteProgram.subscriptions.del(subscriptionIdToDelete);
 
       return {
@@ -741,7 +741,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, id: data.id, error: 'Access denied' };
       } else {
-        this.logger.error(`Failed to delete subscription with ID: ${data.id}`, error);
+        this._logger.error(`Failed to delete subscription with ID: ${data.id}`, error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',
@@ -752,7 +752,7 @@ export class LensService implements ILensService {
 
   // Admin and RBAC Methods
   async addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse> {
-    this.logger.debug(`Attempting to promote user to admin: ${publicKey}`);
+    this._logger.debug(`Attempting to promote user to admin: ${publicKey}`);
     try {
       const { siteProgram } = this._ensureSiteOpened();
       const userKey = publicKey instanceof PublicSignKey ? publicKey : publicSignKeyFromString(publicKey);
@@ -760,19 +760,19 @@ export class LensService implements ILensService {
       // This call is already protected by the RBAC controller's internal admin check.
       await siteProgram.access.addAdmin(userKey);
 
-      this.logger.debug('Successfully promoted user to admin.');
+      this._logger.debug('Successfully promoted user to admin.');
       return { success: true };
     } catch (error: unknown) {
       if (error instanceof AccessError) {
         return { success: false, error: 'Access denied. Only an existing admin can add another.' };
       }
-      this.logger.error('Failed to add admin:', error);
+      this._logger.error('Failed to add admin:', error);
       return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
     }
   }
 
   async assignRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse> {
-    this.logger.debug(`Attempting to assign role "${roleId}" to key: ${publicKey}`);
+    this._logger.debug(`Attempting to assign role "${roleId}" to key: ${publicKey}`);
     try {
       const { siteProgram } = this._ensureSiteOpened();
       const userKey = publicKey instanceof PublicSignKey ? publicKey : publicSignKeyFromString(publicKey);
@@ -780,14 +780,14 @@ export class LensService implements ILensService {
       // This call is protected by the RBAC controller's internal admin check.
       await siteProgram.access.assignRole(userKey, roleId);
 
-      this.logger.debug(`Successfully assigned role "${roleId}".`);
+      this._logger.debug(`Successfully assigned role "${roleId}".`);
       return { success: true };
 
     } catch (error: unknown) {
       if (error instanceof AccessError) {
         return { success: false, error: `Access denied. Could not assign role "${roleId}".` };
       }
-      this.logger.error(`Failed to assign role "${roleId}":`, error);
+      this._logger.error(`Failed to assign role "${roleId}":`, error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'An unknown error occurred',
@@ -796,7 +796,7 @@ export class LensService implements ILensService {
   }
 
   async revokeRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse> {
-    this.logger.debug(`Attempting to revoke role "${roleId}" for key: ${publicKey}`);
+    this._logger.debug(`Attempting to revoke role "${roleId}" for key: ${publicKey}`);
     try {
       const { siteProgram } = this._ensureSiteOpened();
       const userKey = publicKey instanceof PublicSignKey ? publicKey : publicSignKeyFromString(publicKey);
@@ -806,7 +806,7 @@ export class LensService implements ILensService {
       const success = await siteProgram.access.revokeRole(userKey, roleId);
 
       if (success) {
-        this.logger.debug(`Successfully revoked role "${roleId}".`);
+        this._logger.debug(`Successfully revoked role "${roleId}".`);
         return { success: true };
       } else {
         return { success: false, error: 'Role assignment not found for the specified user and role.' };
@@ -815,7 +815,7 @@ export class LensService implements ILensService {
       if (error instanceof AccessError) {
         return { success: false, error: `Access denied. Could not revoke role "${roleId}".` };
       }
-      this.logger.error(`Failed to revoke role "${roleId}":`, error);
+      this._logger.error(`Failed to revoke role "${roleId}":`, error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'An unknown error occurred',
