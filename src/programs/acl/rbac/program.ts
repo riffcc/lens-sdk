@@ -102,9 +102,13 @@ export class RoleBasedccessController extends Program<Args> {
       },
     });
 
+  }
+
+  async afterOpen() {
+    await super.afterOpen();
     // Only the root admin should be responsible for initializing the system.
     if (this.node.identity.publicKey.equals(this.admins.rootTrust)) {
-      await this._initializeDefaultRoles();
+      await this._initDefaultRoles();
     }
   }
 
@@ -112,8 +116,8 @@ export class RoleBasedccessController extends Program<Args> {
    * Idempotently creates the default roles if they don't already exist.
    * This is a private method only called by the root admin upon opening.
    */
-  private async _initializeDefaultRoles(): Promise<void> {
-    if (this._defaultRoles.length === 0) {
+  private async _initDefaultRoles(): Promise<void> {
+    if (!this._defaultRoles || this._defaultRoles.length === 0) {
       return;
     }
     for (const defaultRole of this._defaultRoles) {
