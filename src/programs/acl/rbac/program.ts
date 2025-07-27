@@ -137,6 +137,16 @@ export class RoleBasedccessController extends Program<Args> {
   }
 
   /**
+ * Retrieves all defined roles from the roles database.
+ * This is a public read operation and can be performed by any user.
+ * @returns A promise that resolves to an array of all Role documents.
+ */
+  async getRoles(): Promise<Role[]> {
+    // A search with an empty query object fetches all documents.
+    return this.roles.index.search(new SearchRequest({}));
+  }
+
+  /**
    * Grants another peer full administrative privileges.
    * This is a privileged action that can only be performed by an existing admin.
    * @param admin The PublicSignKey of the peer to promote to an admin.

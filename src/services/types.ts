@@ -12,6 +12,7 @@ import type { ContentCategory, FeaturedRelease, Release, Subscription } from '..
 import type { SearchOptions } from '../common/types';
 import type { Identity, PublicSignKey, Secp256k1PublicKey } from '@peerbit/crypto';
 import type { ProgramClient } from '@peerbit/program';
+import type { Role } from '../programs/acl/rbac';
 
 export interface BaseResponse {
   success: boolean;
@@ -75,7 +76,8 @@ export interface ILensService {
   addSubscription: (data: AddInput<SubscriptionData>) => Promise<HashResponse>;
   deleteSubscription: (data: { id?: string, to?: string }) => Promise<IdResponse>;
 
-  // Admin and RBAC Methods
+  // ACL Methods
+  getRoles(): Promise<Role[]>;
   assignRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse>;
   revokeRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse>;
   addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse>;

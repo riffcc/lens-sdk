@@ -10,7 +10,7 @@ import {
   StringMatch,
   type WithContext,
 } from '@peerbit/document';
-import type { Identity, Secp256k1PublicKey} from '@peerbit/crypto';
+import type { Identity, Secp256k1PublicKey } from '@peerbit/crypto';
 import { AccessError, PublicSignKey } from '@peerbit/crypto';
 import { FederationManager } from '../programs/site/lib/federation';
 import type { Site } from '../programs/site/program';
@@ -28,6 +28,7 @@ import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
 import type { ProgramClient } from '@peerbit/program';
 import { publicSignKeyFromString } from '../common/utils';
+import type { Role } from '../programs/acl/rbac';
 
 export class ElectronLensService implements ILensService {
   constructor() { }
@@ -127,9 +128,9 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.deleteSubscription(data);
   }
 
-  // Admin and RBAC Methods
-  async addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse> {
-    return window.electronLensService.addAdmin(publicKey);
+  // ACL Methods
+  async getRoles(): Promise<Role[]> {
+    return window.electronLensService.getRoles();
   }
 
   async assignRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse> {
@@ -138,6 +139,10 @@ export class ElectronLensService implements ILensService {
 
   async revokeRole(publicKey: string | PublicSignKey, roleId: string): Promise<BaseResponse> {
     return window.electronLensService.revokeRole(publicKey, roleId);
+  }
+
+  async addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse> {
+    return window.electronLensService.addAdmin(publicKey);
   }
 }
 
@@ -763,24 +768,17 @@ export class LensService implements ILensService {
     }
   }
 
-  // Admin and RBAC Methods
-  async addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse> {
-    this._logger.debug(`Attempting to promote user to admin: ${publicKey}`);
+  // ACL Methods
+  async getRoles(): Promise<Role[]> {
+    this._logger.debug('Fetching all available roles...');
     try {
       const { siteProgram } = this._ensureSiteOpened();
-      const userKey = publicKey instanceof PublicSignKey ? publicKey : publicSignKeyFromString(publicKey);
-
-      // This call is already protected by the RBAC controller's internal admin check.
-      await siteProgram.access.addAdmin(userKey);
-
-      this._logger.debug('Successfully promoted user to admin.');
-      return { success: true };
-    } catch (error: unknown) {
-      if (error instanceof AccessError) {
-        return { success: false, error: 'Access denied. Only an existing admin can add another.' };
-      }
-      this._logger.error('Failed to add admin:', error);
-      return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
+      const roles = await siteProgram.access.getRoles();
+      this._logger.debug(`Found ${roles.length} roles.`);
+      return roles;
+    } catch (error) {
+      this._logger.error('Failed to get roles:', error);
+      return [];
     }
   }
 
@@ -836,4 +834,23 @@ export class LensService implements ILensService {
     }
   }
 
+  async addAdmin(publicKey: string | PublicSignKey): Promise<BaseResponse> {
+    this._logger.debug(`Attempting to promote user to admin: ${publicKey}`);
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      const userKey = publicKey instanceof PublicSignKey ? publicKey : publicSignKeyFromString(publicKey);
+
+      // This call is already protected by the RBAC controller's internal admin check.
+      await siteProgram.access.addAdmin(userKey);
+
+      this._logger.debug('Successfully promoted user to admin.');
+      return { success: true };
+    } catch (error: unknown) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied. Only an existing admin can add another.' };
+      }
+      this._logger.error('Failed to add admin:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
+    }
+  }
 }
