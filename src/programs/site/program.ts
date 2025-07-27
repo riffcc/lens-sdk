@@ -9,6 +9,7 @@ import { type SiteArgs } from './types';
 import { BlockedContent, ContentCategory, FeaturedRelease, IndexedBlockedContent, IndexedContentCategory, IndexedFeaturedRelease, IndexedRelease, IndexedSubscription, Release, Subscription } from './schemas';
 import { RoleBasedccessController } from '../acl/rbac/program';
 import { defaultSiteContentCategories, defaultSiteRoles } from './defaults';
+import type { Role } from '../acl/rbac';
 
 @variant('site')
 export class Site extends Program<SiteArgs> {
@@ -34,7 +35,7 @@ export class Site extends Program<SiteArgs> {
     return `${this.address}/federation`;
   }
 
-  constructor(rootTrust: PublicSignKey) {
+  constructor(props: { rootAdmin: PublicSignKey; defaultRoles?: Role[] }) {
     super();
     this.releases = new Documents();
     this.featuredReleases = new Documents();
@@ -42,8 +43,8 @@ export class Site extends Program<SiteArgs> {
     this.subscriptions = new Documents();
     this.blockedContent = new Documents();
     this.access = new RoleBasedccessController({
-      rootAdmin: rootTrust,
-      defaultRoles: defaultSiteRoles,
+      rootAdmin: props.rootAdmin,
+      defaultRoles: props.defaultRoles ?? defaultSiteRoles,
     });
   }
 
@@ -263,7 +264,7 @@ export class Site extends Program<SiteArgs> {
  * This is a public method that can only be successfully called by the site's root administrator.
  * @param initialCategories An optional array of categories to use instead of the defaults.
  */
-  async initializeDefaultContentCategories(
+  async initContentCategories(
     initialCategories: ContentCategoryData<ContentCategoryMetadataField>[] = defaultSiteContentCategories,
   ): Promise<void> {
     if (!this.node.identity.publicKey.equals(this.access.admins.rootTrust)) {

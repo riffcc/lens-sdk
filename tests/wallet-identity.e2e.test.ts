@@ -18,7 +18,7 @@ describe('Custom Wallet Identity E2E', () => {
 
     // 2. Create the admin service and open a new site.
     adminService = new LensService({ peerbit: adminClient });
-    const site = new Site(adminClient.identity.publicKey);
+    const site = new Site({ rootAdmin: adminClient.identity.publicKey });
     await adminService.openSite(site);
     siteAddress = adminService.siteProgram!.address;
 

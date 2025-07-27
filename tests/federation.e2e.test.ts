@@ -17,8 +17,8 @@ import { waitForResolved } from '@peerbit/time';
       serviceB = new LensService({ peerbit: session.peers[1] });
       
       // 4. Create and open the sites. This part remains the same.
-      const siteA = new Site(serviceA.peerbit!.identity.publicKey);
-      const siteB = new Site(serviceB.peerbit!.identity.publicKey);
+      const siteA = new Site({ rootAdmin: serviceA.peerbit!.identity.publicKey });
+      const siteB = new Site({ rootAdmin: serviceB.peerbit!.identity.publicKey });
       
       // Both services need federation enabled to broadcast and listen.
       await serviceA.openSite(siteA, { federate: true });

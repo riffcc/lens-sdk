@@ -45,7 +45,7 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
     memberService = new LensService({ peerbit: memberClient });
     guestService = new LensService({ peerbit: guestClient });
 
-    const site = new Site(adminClient.identity.publicKey);
+    const site = new Site({ rootAdmin: adminClient.identity.publicKey });
     await adminService.openSite(site);
     siteAddress = adminService.siteProgram!.address;
 
