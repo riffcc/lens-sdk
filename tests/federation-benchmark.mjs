@@ -8,8 +8,8 @@ import { Site, LensService } from '../dist/index.mjs';
  */
 const createNewSite = (peerbit) => {
   // The peerbit's public key is used as the root of trust for the new site's access control.
-  const rootTrust = peerbit.identity.publicKey;
-  return new Site(rootTrust);
+  const rootAdmin = peerbit.identity.publicKey;
+  return new Site({ rootAdmin });
 };
 
 /**

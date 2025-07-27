@@ -28,7 +28,7 @@ describe('Site Program', () => {
 
     // Open a new site before each test in this block
     beforeEach(async () => {
-      siteProgram = new Site(ownerClient.identity.publicKey);
+      siteProgram = new Site({ rootAdmin: ownerClient.identity.publicKey });
       await ownerClient.open(siteProgram);
     });
 
@@ -73,7 +73,7 @@ describe('Site Program', () => {
 
   describe('lifecycle management', () => {
     it('can be closed and reopened successfully', async () => {
-      const siteProgram = new Site(ownerClient.identity.publicKey);
+      const siteProgram = new Site({ rootAdmin: ownerClient.identity.publicKey });
 
       // 1. Initial open
       const openedProgram = await ownerClient.open(siteProgram);
@@ -104,7 +104,7 @@ describe('Site Program', () => {
     let siteProgram: Site;
 
     beforeEach(async () => {
-      siteProgram = new Site(ownerClient.identity.publicKey);
+      siteProgram = new Site({ rootAdmin: ownerClient.identity.publicKey });
       await ownerClient.open(siteProgram);
     });
 
@@ -120,7 +120,7 @@ describe('Site Program', () => {
       expect(initialSize).toBe(0);
 
       // 2. Call the initialization method directly on the program instance
-      await siteProgram.initializeDefaultContentCategories();
+      await siteProgram.initContentCategories();
 
       // 3. Wait for the documents to be added and assert the size
       await waitForResolved(async () => {
@@ -131,8 +131,8 @@ describe('Site Program', () => {
 
     it('initialization is idempotent', async () => {
       // Call the method twice
-      await siteProgram.initializeDefaultContentCategories();
-      await siteProgram.initializeDefaultContentCategories();
+      await siteProgram.initContentCategories();
+      await siteProgram.initContentCategories();
 
       // The size should still be the same as the default list, not doubled.
       await waitForResolved(async () => {
@@ -146,7 +146,7 @@ describe('Site Program', () => {
       const siteFromNonOwner = await noOwnerClient.open<Site>(siteProgram.address);
 
       // Expect the call to fail because the non-admin is not the root trust.
-      await expect(siteFromNonOwner.initializeDefaultContentCategories()).rejects.toThrow(
+      await expect(siteFromNonOwner.initContentCategories()).rejects.toThrow(
         'Only the root administrator can initialize default content categories.',
       );
 
