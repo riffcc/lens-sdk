@@ -2,7 +2,7 @@ import { TestSession } from '@peerbit/test-utils';
 import type { ProgramClient } from '@peerbit/program';
 import { Site } from '../src/programs/site/program';
 import type { ContentCategoryData, ReleaseData } from '../src/programs/site/types';
-import { waitFor, waitForResolved } from '@peerbit/time';
+import { delay, waitFor, waitForResolved } from '@peerbit/time';
 import { LensService } from '../src/services';
 
 // --- Test Helpers ---
@@ -91,6 +91,7 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
       const releaseResp = await memberService.addRelease(createReleaseData());
       expect(releaseResp.success).toBe(true);
       await waitFor(() => adminService.getRelease(releaseResp.id!));
+      await delay(1000);
       const deleteResp = await adminService.deleteRelease(releaseResp.id!);
       expect(deleteResp.success).toBe(true);
     });
@@ -226,9 +227,7 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
     it('cannot edit a release created by another user', async () => {
       const moderatorReleaseResp = await moderatorService.addRelease(createReleaseData());
       expect(moderatorReleaseResp.success).toBe(true);
-      await waitFor(() => memberService.getRelease(moderatorReleaseResp.id!));
-
-      const releaseToEdit = await memberService.getRelease(moderatorReleaseResp.id!);
+      const releaseToEdit = await waitFor(() => memberService.getRelease(moderatorReleaseResp.id!));
       const editInput = {
         id: releaseToEdit!.id,
         name: 'Attempted Edit by Member',
