@@ -417,6 +417,38 @@ export class LensService implements ILensService {
   async editRelease(data: EditInput<ReleaseData>): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
+      
+      // Check if user has admin or moderator permissions first
+      const userKey = this._activeIdentity?.publicKey ?? this.peerbit?.identity.publicKey;
+      
+      if (userKey) {
+        const isAdmin = await siteProgram.access.admins.isTrusted(userKey);
+        const canEditAny = await siteProgram.access.can({ permission: 'release:edit:any', identity: userKey });
+        
+        this._logger.debug(`Edit release permission check: isAdmin=${isAdmin}, canEditAny=${canEditAny}, userKey=${userKey.toString()}`);
+        
+        // If user is admin or has edit:any permission, create release with original postedBy
+        if (isAdmin || canEditAny) {
+          const originalRelease = await siteProgram.releases.index.get(data.id);
+          if (originalRelease) {
+            this._logger.debug(`Admin/moderator edit: using original postedBy=${originalRelease.postedBy.toString()}`);
+            // Use the original postedBy for admins/moderators
+            const release = new Release({
+              ...data,
+              postedBy: originalRelease.postedBy
+            });
+            const result = await siteProgram.releases.put(release, this._getActiveSigner());
+            this._logger.debug(`Successfully edited release with ID: ${release.id} (admin/moderator edit)`);
+            return {
+              success: true,
+              id: release.id,
+              hash: result.entry.hash,
+            };
+          }
+        }
+      }
+      
+      // Regular user path - verify immutable properties
       const release = new Release(data);
       await this._verifyImmutableProperties(siteProgram.releases, release);
       const result = await siteProgram.releases.put(release, this._getActiveSigner());
