@@ -425,7 +425,7 @@ export class LensService implements ILensService {
         const isAdmin = await siteProgram.access.admins.isTrusted(userKey);
         const canEditAny = await siteProgram.access.can({ permission: 'release:edit:any', identity: userKey });
         
-        this._logger.debug(`Edit release permission check: isAdmin=${isAdmin}, canEditAny=${canEditAny}, userKey=${userKey.toString()}`);
+        this._logger.debug(`Edit release permission check: isAdmin=${isAdmin}, canEditAny=${canEditAny}, userKey=${safeKeyString(userKey)}`);
         
         // If user is admin or has edit:any permission, create release with original postedBy
         if (isAdmin || canEditAny) {
