@@ -1,4 +1,4 @@
-import { variant, field } from '@dao-xyz/borsh';
+import { variant, field, option } from '@dao-xyz/borsh';
 import { concat } from 'uint8arrays';
 import { PublicSignKey, sha256Base64Sync } from '@peerbit/crypto';
 import type { FeaturedReleaseData, DocumentArgs } from '../types';
@@ -26,6 +26,9 @@ export class FeaturedRelease {
   @field({ type: 'bool' })
   promoted: boolean;
 
+  @field({ type: option('u32') })
+  order?: number;
+
   constructor(props: DocumentArgs<FeaturedReleaseData>) {
     this.id = props.id ?? sha256Base64Sync(
       concat([
@@ -39,6 +42,7 @@ export class FeaturedRelease {
     this.startTime = props.startTime;
     this.endTime = props.endTime;
     this.promoted = props.promoted;
+    this.order = props.order;
   }
 }
 
@@ -64,6 +68,9 @@ export class IndexedFeaturedRelease {
   @field({ type: 'bool' })
   promoted: boolean;
 
+  @field({ type: option('u32') })
+  order?: number;
+
   @field({ type: 'u64' })
   created: bigint;
 
@@ -82,6 +89,7 @@ export class IndexedFeaturedRelease {
     this.startTime = props.doc.startTime;
     this.endTime = props.doc.endTime;
     this.promoted = props.doc.promoted;
+    this.order = props.doc.order;
     this.created = props.created;
     this.modified = props.modified;
   }

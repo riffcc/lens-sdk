@@ -6,8 +6,8 @@ import { Documents, isPutOperation, SearchRequest, StringMatch, StringMatchMetho
 import type { PublicSignKey } from '@peerbit/crypto';
 import type { ContentCategoryData, ContentCategoryMetadataField, ImmutableProps } from './types';
 import { type SiteArgs } from './types';
-import { BlockedContent, ContentCategory, FeaturedRelease, IndexedBlockedContent, IndexedContentCategory, IndexedFeaturedRelease, IndexedRelease, IndexedSubscription, Release, Subscription } from './schemas';
-import { RoleBasedccessController } from '../acl/rbac/program';
+import { Artist, BlockedContent, ContentCategory, FeaturedRelease, IndexedArtist, IndexedBlockedContent, IndexedContentCategory, IndexedFeaturedRelease, IndexedRelease, IndexedSubscription, Release, Subscription } from './schemas';
+import { RoleBasedAccessController } from '../acl/rbac/program';
 import { defaultSiteContentCategories, defaultSiteRoles } from './defaults';
 import type { Role } from '../acl/rbac';
 
@@ -28,8 +28,11 @@ export class Site extends Program<SiteArgs> {
   @field({ type: Documents })
   blockedContent: Documents<BlockedContent, IndexedBlockedContent>;
 
-  @field({ type: RoleBasedccessController })
-  access: RoleBasedccessController;
+  @field({ type: Documents })
+  artists: Documents<Artist, IndexedArtist>;
+
+  @field({ type: RoleBasedAccessController })
+  access: RoleBasedAccessController;
 
   get federationTopic(): string {
     return `${this.address}/federation`;
@@ -42,7 +45,8 @@ export class Site extends Program<SiteArgs> {
     this.contentCategories = new Documents();
     this.subscriptions = new Documents();
     this.blockedContent = new Documents();
-    this.access = new RoleBasedccessController({
+    this.artists = new Documents();
+    this.access = new RoleBasedAccessController({
       rootAdmin: props.rootAdmin,
       defaultRoles: props.defaultRoles ?? defaultSiteRoles,
     });
@@ -219,6 +223,53 @@ export class Site extends Program<SiteArgs> {
           transform: (release, ctx) => {
             return new IndexedBlockedContent({
               doc: release,
+              created: ctx.created,
+              modified: ctx.modified,
+            });
+          },
+        },
+      }),
+
+      this.artists.open({
+        type: Artist,
+        replicate: args?.releasesArgs?.replicate ?? { factor: 1 },
+        replicas: args?.releasesArgs?.replicas,
+        canPerform: async (props) => {
+          const { doc, existingDoc, signer } = await getDoc(props, this.artists, Artist);
+          if (!doc) return false; // Delete on a non-existent doc
+
+          // ROUTER: Check if local or federated
+          if (doc.siteAddress !== this.address) {
+            return this._isFederatedWriteAllowed(
+              doc,
+              signer,
+              isPutOperation(props.operation) ? 'artist:edit:any' : 'artist:delete',
+            );
+          }
+
+          // --- LOCAL RBAC LOGIC ---
+          if (isPutOperation(props.operation)) {
+            if (!signer.equals(doc.postedBy)) {
+              // Impersonation attempt, must have 'edit:any' permission
+              return this.access.can({ permission: 'artist:edit:any', identity: signer });
+            }
+            if (existingDoc) { // Editing own artist
+              return this.access.can({ permission: 'artist:edit:own', identity: signer });
+            }
+            // Creating new artist
+            return this.access.can({ permission: 'artist:create', identity: signer });
+          }
+          // Local delete
+          return this.access.can({ permission: 'artist:delete', identity: signer });
+        },
+        index: {
+          canRead: () => {
+            return true;
+          },
+          type: IndexedArtist,
+          transform: async (artist, ctx) => {
+            return new IndexedArtist({
+              doc: artist,
               created: ctx.created,
               modified: ctx.modified,
             });

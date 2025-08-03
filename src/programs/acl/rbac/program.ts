@@ -20,7 +20,7 @@ type Args = { replicate?: ReplicationOptions }
  * for a top-level group of administrators.
  */
 @variant('rbac_v1')
-export class RoleBasedccessController extends Program<Args> {
+export class RoleBasedAccessController extends Program<Args> {
 
   /**
    * A TrustedNetwork that manages the list of administrators.

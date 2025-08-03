@@ -15,6 +15,7 @@ export type ReleaseData<T = string> = {
   categoryId: string;
   contentCID: string;
   thumbnailCID?: string;
+  artistIds?: string[];
   metadata?: T;
 };
 
@@ -35,13 +36,23 @@ export type FeaturedReleaseData = {
   startTime: string;
   endTime: string;
   promoted: boolean;
+  order?: number;
 };
 
 export type SubscriptionData = {
   to: string;
 };
 
-export type FederatedStoreKey = 'releases' | 'featuredReleases' | 'contentCategories' | 'blockedContent';
+export type ArtistData<T = string> = {
+  name: string;
+  bio?: string;
+  avatarCID?: string;
+  bannerCID?: string;
+  links?: string[];
+  metadata?: T;
+};
+
+export type FederatedStoreKey = 'releases' | 'featuredReleases' | 'contentCategories' | 'blockedContent' | 'artists';
 
 export enum AccountType {
   GUEST = 0,
@@ -61,6 +72,7 @@ export interface SiteArgs {
   contentCategoriesArgs?: StoreArgs
   subscriptionsArgs?: StoreArgs;
   blockedContentArgs?: StoreArgs;
+  artistsArgs?: StoreArgs;
 }
 
 

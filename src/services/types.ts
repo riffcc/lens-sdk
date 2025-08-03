@@ -1,6 +1,7 @@
 import type { WithContext } from '@peerbit/document';
 import type { Site } from '../programs/site/program';
 import type {
+  ArtistData,
   ContentCategoryData,
   FeaturedReleaseData,
   ImmutableProps,
@@ -8,7 +9,7 @@ import type {
   SiteArgs,
   SubscriptionData,
 } from '../programs/site/types';
-import type { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
+import type { Artist, ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
 import type { SearchOptions } from '../common/types';
 import type { Identity, PublicSignKey, Secp256k1PublicKey } from '@peerbit/crypto';
 import type { ProgramClient } from '@peerbit/program';
@@ -75,6 +76,13 @@ export interface ILensService {
   getSubscriptions: (options?: SearchOptions) => Promise<Subscription[]>;
   addSubscription: (data: AddInput<SubscriptionData>) => Promise<HashResponse>;
   deleteSubscription: (data: { id?: string, to?: string }) => Promise<IdResponse>;
+
+  // Artist Methods
+  getArtist: (id: string) => Promise<WithContext<Artist> | undefined>;
+  getArtists: (options?: SearchOptions) => Promise<WithContext<Artist>[]>;
+  addArtist: (data: AddInput<ArtistData>) => Promise<HashResponse>;
+  editArtist: (data: EditInput<ArtistData>) => Promise<HashResponse>;
+  deleteArtist: (id: string) => Promise<IdResponse>;
 
   // ACL Methods
   getRoles(): Promise<Role[]>;

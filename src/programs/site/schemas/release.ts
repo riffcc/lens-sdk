@@ -1,4 +1,4 @@
-import { variant, field, option } from '@dao-xyz/borsh';
+import { variant, field, option, vec } from '@dao-xyz/borsh';
 import { v4 as uuid } from 'uuid';
 import type { ReleaseData, DocumentArgs } from '../types';
 import { PublicSignKey } from '@peerbit/crypto';
@@ -26,6 +26,9 @@ export class Release {
   @field({ type: option('string') })
   thumbnailCID?: string;
 
+  @field({ type: vec('string') })
+  artistIds: string[];
+
   @field({ type: option('string') })
   metadata?: string;
 
@@ -39,6 +42,7 @@ export class Release {
     if (props.thumbnailCID) {
       this.thumbnailCID = props.thumbnailCID;
     }
+    this.artistIds = props.artistIds ?? [];
     if (props.metadata) {
       this.metadata = props.metadata;
     }
@@ -67,6 +71,9 @@ export class IndexedRelease {
   @field({ type: option('string') })
   thumbnailCID?: string;
 
+  @field({ type: vec('string') })
+  artistIds: string[];
+
   @field({ type: option('string') })
   metadata?: string;
 
@@ -88,6 +95,7 @@ export class IndexedRelease {
     this.categoryId = props.doc.categoryId;
     this.contentCID = props.doc.contentCID;
     this.thumbnailCID = props.doc.thumbnailCID;
+    this.artistIds = props.doc.artistIds;
     this.metadata = props.doc.metadata;
     this.created = props.created;
     this.modified = props.modified;

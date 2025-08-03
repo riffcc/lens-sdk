@@ -15,6 +15,7 @@ import { AccessError, PublicSignKey } from '@peerbit/crypto';
 import { FederationManager } from '../programs/site/lib/federation';
 import type { Site } from '../programs/site/program';
 import type {
+  ArtistData,
   ContentCategoryData,
   FeaturedReleaseData,
   ImmutableProps,
@@ -22,7 +23,7 @@ import type {
   SiteArgs,
   SubscriptionData,
 } from '../programs/site/types';
-import { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
+import { Artist, ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
 import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService, LensServiceOptions } from './types';
 import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
@@ -126,6 +127,27 @@ export class ElectronLensService implements ILensService {
 
   async deleteSubscription(data: { id?: string, to?: string }): Promise<IdResponse> {
     return window.electronLensService.deleteSubscription(data);
+  }
+
+  // Artist Methods
+  async getArtist(id: string): Promise<WithContext<Artist> | undefined> {
+    return window.electronLensService.getArtist(id);
+  }
+
+  async getArtists(options?: SearchOptions): Promise<WithContext<Artist>[]> {
+    return window.electronLensService.getArtists(options);
+  }
+
+  async addArtist(data: AddInput<ArtistData>): Promise<HashResponse> {
+    return window.electronLensService.addArtist(data);
+  }
+
+  async editArtist(data: EditInput<ArtistData>): Promise<HashResponse> {
+    return window.electronLensService.editArtist(data);
+  }
+
+  async deleteArtist(id: string): Promise<IdResponse> {
+    return window.electronLensService.deleteArtist(id);
   }
 
   // ACL Methods
@@ -435,7 +457,7 @@ export class LensService implements ILensService {
             // Use the original postedBy for admins/moderators
             const release = new Release({
               ...data,
-              postedBy: originalRelease.postedBy
+              postedBy: originalRelease.postedBy,
             });
             const result = await siteProgram.releases.put(release, this._getActiveSigner());
             this._logger.debug(`Successfully edited release with ID: ${release.id} (admin/moderator edit)`);
@@ -792,6 +814,112 @@ export class LensService implements ILensService {
         return { success: false, id: data.id, error: 'Access denied' };
       } else {
         this._logger.error(`Failed to delete subscription with ID: ${data.id}`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
+    }
+  }
+
+  // Artist Methods
+  async getArtist(id: string): Promise<WithContext<Artist> | undefined> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      const artist = await siteProgram.artists.index.get(id);
+      return artist;
+    } catch (error) {
+      this._logger.error('Failed to get artist:', error);
+      return undefined;
+    }
+  }
+
+  async getArtists(options?: SearchOptions): Promise<WithContext<Artist>[]> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      const searchQuery = options?.request || new SearchRequest({ 
+        fetch: options?.fetch || 100,
+        query: options?.query,
+        sort: options?.sort,
+      });
+
+      const results = await siteProgram.artists.index.search(searchQuery);
+      return results;
+    } catch (error) {
+      this._logger.error('Failed to get artists:', error);
+      return [];
+    }
+  }
+
+  async addArtist(data: AddInput<ArtistData>): Promise<HashResponse> {
+    try {
+      const { peerbit, siteProgram } = this._ensureSiteOpened();
+      const artist = new Artist({
+        ...data,
+        postedBy: this._activeIdentity?.publicKey ?? peerbit.identity.publicKey,
+        siteAddress: siteProgram.address,
+      });
+      const result = await siteProgram.artists.put(artist, this._getActiveSigner());
+      this._logger.debug(`Successfully added artist with ID: ${artist.id}`);
+      return {
+        success: true,
+        id: artist.id,
+        hash: result.entry.hash,
+      };
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this._logger.error('Failed to add artist:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
+    }
+  }
+
+  async editArtist(data: EditInput<ArtistData>): Promise<HashResponse> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      
+      const artist = new Artist(data);
+      await this._verifyImmutableProperties(siteProgram.artists, artist);
+      
+      const result = await siteProgram.artists.put(artist, this._getActiveSigner());
+      this._logger.debug(`Successfully edited artist with ID: ${artist.id}`);
+      return {
+        success: true,
+        id: artist.id,
+        hash: result.entry.hash,
+      };
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this._logger.error('Failed to edit artist:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
+    }
+  }
+
+  async deleteArtist(id: string): Promise<IdResponse> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      this._logger.debug(`Deleting artist with ID: ${id}`);
+      await siteProgram.artists.del(id, this._getActiveSigner());
+      return {
+        success: true,
+        id,
+      };
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this._logger.error(`Failed to delete artist with ID: ${id}`, error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'An unknown error occurred',
