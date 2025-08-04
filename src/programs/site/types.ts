@@ -52,7 +52,7 @@ export type ArtistData<T = string> = {
   metadata?: T;
 };
 
-export type FederatedStoreKey = 'releases' | 'featuredReleases' | 'contentCategories' | 'blockedContent' | 'artists';
+export type FederatedStoreKey = 'releases' | 'featuredReleases' | 'contentCategories' | 'blockedContent' | 'structures';
 
 export enum AccountType {
   GUEST = 0,
@@ -72,7 +72,7 @@ export interface SiteArgs {
   contentCategoriesArgs?: StoreArgs
   subscriptionsArgs?: StoreArgs;
   blockedContentArgs?: StoreArgs;
-  artistsArgs?: StoreArgs;
+  structuresArgs?: StoreArgs;
 }
 
 

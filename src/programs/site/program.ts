@@ -6,7 +6,7 @@ import { Documents, isPutOperation, SearchRequest, StringMatch, StringMatchMetho
 import type { PublicSignKey } from '@peerbit/crypto';
 import type { ContentCategoryData, ContentCategoryMetadataField, ImmutableProps } from './types';
 import { type SiteArgs } from './types';
-import { Artist, BlockedContent, ContentCategory, FeaturedRelease, IndexedArtist, IndexedBlockedContent, IndexedContentCategory, IndexedFeaturedRelease, IndexedRelease, IndexedSubscription, Release, Subscription } from './schemas';
+import { BlockedContent, ContentCategory, FeaturedRelease, IndexedBlockedContent, IndexedContentCategory, IndexedFeaturedRelease, IndexedRelease, IndexedSubscription, Release, Subscription, Structure, IndexedStructure } from './schemas';
 import { RoleBasedAccessController } from '../acl/rbac/program';
 import { defaultSiteContentCategories, defaultSiteRoles } from './defaults';
 import type { Role } from '../acl/rbac';
@@ -29,7 +29,7 @@ export class Site extends Program<SiteArgs> {
   blockedContent: Documents<BlockedContent, IndexedBlockedContent>;
 
   @field({ type: Documents })
-  artists: Documents<Artist, IndexedArtist>;
+  structures: Documents<Structure, IndexedStructure>;
 
   @field({ type: RoleBasedAccessController })
   access: RoleBasedAccessController;
@@ -45,7 +45,7 @@ export class Site extends Program<SiteArgs> {
     this.contentCategories = new Documents();
     this.subscriptions = new Documents();
     this.blockedContent = new Documents();
-    this.artists = new Documents();
+    this.structures = new Documents();
     this.access = new RoleBasedAccessController({
       rootAdmin: props.rootAdmin,
       defaultRoles: props.defaultRoles ?? defaultSiteRoles,
@@ -230,12 +230,12 @@ export class Site extends Program<SiteArgs> {
         },
       }),
 
-      this.artists.open({
-        type: Artist,
+      this.structures.open({
+        type: Structure,
         replicate: args?.releasesArgs?.replicate ?? { factor: 1 },
         replicas: args?.releasesArgs?.replicas,
         canPerform: async (props) => {
-          const { doc, existingDoc, signer } = await getDoc(props, this.artists, Artist);
+          const { doc, existingDoc, signer } = await getDoc(props, this.structures, Structure);
           if (!doc) return false; // Delete on a non-existent doc
 
           // ROUTER: Check if local or federated
@@ -243,7 +243,7 @@ export class Site extends Program<SiteArgs> {
             return this._isFederatedWriteAllowed(
               doc,
               signer,
-              isPutOperation(props.operation) ? 'artist:edit:any' : 'artist:delete',
+              isPutOperation(props.operation) ? 'structure:edit:any' : 'structure:delete',
             );
           }
 
@@ -251,25 +251,25 @@ export class Site extends Program<SiteArgs> {
           if (isPutOperation(props.operation)) {
             if (!signer.equals(doc.postedBy)) {
               // Impersonation attempt, must have 'edit:any' permission
-              return this.access.can({ permission: 'artist:edit:any', identity: signer });
+              return this.access.can({ permission: 'structure:edit:any', identity: signer });
             }
-            if (existingDoc) { // Editing own artist
-              return this.access.can({ permission: 'artist:edit:own', identity: signer });
+            if (existingDoc) { // Editing own structure
+              return this.access.can({ permission: 'structure:edit:own', identity: signer });
             }
-            // Creating new artist
-            return this.access.can({ permission: 'artist:create', identity: signer });
+            // Creating new structure
+            return this.access.can({ permission: 'structure:create', identity: signer });
           }
           // Local delete
-          return this.access.can({ permission: 'artist:delete', identity: signer });
+          return this.access.can({ permission: 'structure:delete', identity: signer });
         },
         index: {
           canRead: () => {
             return true;
           },
-          type: IndexedArtist,
-          transform: async (artist, ctx) => {
-            return new IndexedArtist({
-              doc: artist,
+          type: IndexedStructure,
+          transform: async (structure, ctx) => {
+            return new IndexedStructure({
+              doc: structure,
               created: ctx.created,
               modified: ctx.modified,
             });

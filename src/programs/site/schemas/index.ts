@@ -4,3 +4,4 @@ export * from './content-category';
 export * from './subscription';
 export * from './blocked-content';
 export * from './artist';
+export * from './structure';

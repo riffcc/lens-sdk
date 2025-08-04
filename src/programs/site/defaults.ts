@@ -6,9 +6,9 @@ export const defaultSiteRoles = [
     'release:create',
     'release:edit:any',
     'release:delete',
-    'artist:create',
-    'artist:edit:any',
-    'artist:delete',
+    'structure:create',
+    'structure:edit:any',
+    'structure:delete',
     'featured:manage',
     'category:manage',
     'blocklist:manage',
@@ -17,8 +17,8 @@ export const defaultSiteRoles = [
   new Role('member', [
     'release:create',
     'release:edit:own',
-    'artist:create',
-    'artist:edit:own',
+    'structure:create',
+    'structure:edit:own',
   ]),
 ];
 
