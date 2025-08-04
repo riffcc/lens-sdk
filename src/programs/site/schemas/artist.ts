@@ -1,10 +1,10 @@
 import { variant, field, option, vec } from '@dao-xyz/borsh';
 import { v4 as uuid } from 'uuid';
-import type { ReleaseData, DocumentArgs } from '../types';
+import type { ArtistData, DocumentArgs } from '../types';
 import { PublicSignKey } from '@peerbit/crypto';
 
-@variant('release')
-export class Release {
+@variant('artist')
+export class Artist {
   @field({ type: 'string' })
   id: string;
 
@@ -17,39 +17,43 @@ export class Release {
   @field({ type: 'string' })
   name: string;
 
-  @field({ type: 'string' })
-  categoryId: string;
-
-  @field({ type: 'string' })
-  contentCID: string;
+  @field({ type: option('string') })
+  bio?: string;
 
   @field({ type: option('string') })
-  thumbnailCID?: string;
+  avatarCID?: string;
+
+  @field({ type: option('string') })
+  bannerCID?: string;
 
   @field({ type: vec('string') })
-  artistIds: string[];
+  links: string[];
 
   @field({ type: option('string') })
   metadata?: string;
 
-  constructor(props: DocumentArgs<ReleaseData>) {
+  constructor(props: DocumentArgs<ArtistData>) {
     this.id = props.id ?? uuid();
     this.postedBy = props.postedBy;
     this.siteAddress = props.siteAddress;
     this.name = props.name;
-    this.categoryId = props.categoryId;
-    this.contentCID = props.contentCID;
-    if (props.thumbnailCID) {
-      this.thumbnailCID = props.thumbnailCID;
+    if (props.bio) {
+      this.bio = props.bio;
     }
-    this.artistIds = props.artistIds ?? [];
+    if (props.avatarCID) {
+      this.avatarCID = props.avatarCID;
+    }
+    if (props.bannerCID) {
+      this.bannerCID = props.bannerCID;
+    }
+    this.links = props.links ?? [];
     if (props.metadata) {
       this.metadata = props.metadata;
     }
   }
 }
 
-export class IndexedRelease {
+export class IndexedArtist {
   @field({ type: 'string' })
   id: string;
 
@@ -62,17 +66,17 @@ export class IndexedRelease {
   @field({ type: 'string' })
   name: string;
 
-  @field({ type: 'string' })
-  categoryId: string;
-
-  @field({ type: 'string' })
-  contentCID: string;
+  @field({ type: option('string') })
+  bio?: string;
 
   @field({ type: option('string') })
-  thumbnailCID?: string;
+  avatarCID?: string;
+
+  @field({ type: option('string') })
+  bannerCID?: string;
 
   @field({ type: vec('string') })
-  artistIds: string[];
+  links: string[];
 
   @field({ type: option('string') })
   metadata?: string;
@@ -84,7 +88,7 @@ export class IndexedRelease {
   modified: bigint;
 
   constructor(props: {
-    doc: Release;
+    doc: Artist;
     created: bigint;
     modified: bigint;
   }) {
@@ -92,10 +96,10 @@ export class IndexedRelease {
     this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;
     this.name = props.doc.name;
-    this.categoryId = props.doc.categoryId;
-    this.contentCID = props.doc.contentCID;
-    this.thumbnailCID = props.doc.thumbnailCID;
-    this.artistIds = props.doc.artistIds;
+    this.bio = props.doc.bio;
+    this.avatarCID = props.doc.avatarCID;
+    this.bannerCID = props.doc.bannerCID;
+    this.links = props.doc.links;
     this.metadata = props.doc.metadata;
     this.created = props.created;
     this.modified = props.modified;

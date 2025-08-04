@@ -8,7 +8,7 @@ import type {
   SiteArgs,
   SubscriptionData,
 } from '../programs/site/types';
-import type { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
+import type { ContentCategory, FeaturedRelease, Release, Structure, Subscription } from '../programs/site/schemas';
 import type { SearchOptions } from '../common/types';
 import type { Identity, PublicSignKey, Secp256k1PublicKey } from '@peerbit/crypto';
 import type { ProgramClient } from '@peerbit/program';
@@ -75,6 +75,54 @@ export interface ILensService {
   getSubscriptions: (options?: SearchOptions) => Promise<Subscription[]>;
   addSubscription: (data: AddInput<SubscriptionData>) => Promise<HashResponse>;
   deleteSubscription: (data: { id?: string, to?: string }) => Promise<IdResponse>;
+
+  // Structure Methods
+  getStructure: (id: string) => Promise<WithContext<Structure> | undefined>;
+  getStructures: (options?: SearchOptions) => Promise<WithContext<Structure>[]>;
+  addStructure: (data: AddInput<{
+    name: string;
+    type: string;
+    description?: string;
+    thumbnailCID?: string;
+    bannerCID?: string;
+    parentId?: string;
+    itemIds?: string[];
+    metadata?: string;
+    order?: number;
+  }>) => Promise<HashResponse>;
+  editStructure: (data: EditInput<{
+    name: string;
+    type: string;
+    description?: string;
+    thumbnailCID?: string;
+    bannerCID?: string;
+    parentId?: string;
+    itemIds?: string[];
+    metadata?: string;
+    order?: number;
+  }>) => Promise<HashResponse>;
+  deleteStructure: (id: string) => Promise<IdResponse>;
+
+  // Artist Methods (convenience wrappers for Structure with type='artist')
+  getArtist: (id: string) => Promise<WithContext<Structure> | undefined>;
+  getArtists: (options?: SearchOptions) => Promise<WithContext<Structure>[]>;
+  addArtist: (data: AddInput<{
+    name: string;
+    bio?: string;
+    avatarCID?: string;
+    bannerCID?: string;
+    links?: string[];
+    metadata?: string;
+  }>) => Promise<HashResponse>;
+  editArtist: (data: EditInput<{
+    name: string;
+    bio?: string;
+    avatarCID?: string;
+    bannerCID?: string;
+    links?: string[];
+    metadata?: string;
+  }>) => Promise<HashResponse>;
+  deleteArtist: (id: string) => Promise<IdResponse>;
 
   // ACL Methods
   getRoles(): Promise<Role[]>;

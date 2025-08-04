@@ -8,6 +8,7 @@ import {
   Sort,
   SortDirection,
   StringMatch,
+  StringMatchMethod,
   type WithContext,
 } from '@peerbit/document';
 import type { Identity, Secp256k1PublicKey } from '@peerbit/crypto';
@@ -22,7 +23,7 @@ import type {
   SiteArgs,
   SubscriptionData,
 } from '../programs/site/types';
-import { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
+import { ContentCategory, FeaturedRelease, Release, Structure, Subscription } from '../programs/site/schemas';
 import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService, LensServiceOptions } from './types';
 import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
@@ -126,6 +127,82 @@ export class ElectronLensService implements ILensService {
 
   async deleteSubscription(data: { id?: string, to?: string }): Promise<IdResponse> {
     return window.electronLensService.deleteSubscription(data);
+  }
+
+  // Structure Methods
+  async getStructure(id: string): Promise<WithContext<Structure> | undefined> {
+    return window.electronLensService.getStructure(id);
+  }
+
+  async getStructures(options?: SearchOptions): Promise<WithContext<Structure>[]> {
+    return window.electronLensService.getStructures(options);
+  }
+
+  async addStructure(data: AddInput<{
+    name: string;
+    type: string;
+    description?: string;
+    thumbnailCID?: string;
+    bannerCID?: string;
+    parentId?: string;
+    itemIds?: string[];
+    metadata?: string;
+    order?: number;
+  }>): Promise<HashResponse> {
+    return window.electronLensService.addStructure(data);
+  }
+
+  async editStructure(data: EditInput<{
+    name: string;
+    type: string;
+    description?: string;
+    thumbnailCID?: string;
+    bannerCID?: string;
+    parentId?: string;
+    itemIds?: string[];
+    metadata?: string;
+    order?: number;
+  }>): Promise<HashResponse> {
+    return window.electronLensService.editStructure(data);
+  }
+
+  async deleteStructure(id: string): Promise<IdResponse> {
+    return window.electronLensService.deleteStructure(id);
+  }
+
+  // Artist Methods (convenience wrappers for Structure with type='artist')
+  async getArtist(id: string): Promise<WithContext<Structure> | undefined> {
+    return window.electronLensService.getStructure(id);
+  }
+
+  async getArtists(options?: SearchOptions): Promise<WithContext<Structure>[]> {
+    return window.electronLensService.getArtists(options);
+  }
+
+  async addArtist(data: AddInput<{
+    name: string;
+    bio?: string;
+    avatarCID?: string;
+    bannerCID?: string;
+    links?: string[];
+    metadata?: string;
+  }>): Promise<HashResponse> {
+    return window.electronLensService.addArtist(data);
+  }
+
+  async editArtist(data: EditInput<{
+    name: string;
+    bio?: string;
+    avatarCID?: string;
+    bannerCID?: string;
+    links?: string[];
+    metadata?: string;
+  }>): Promise<HashResponse> {
+    return window.electronLensService.editArtist(data);
+  }
+
+  async deleteArtist(id: string): Promise<IdResponse> {
+    return window.electronLensService.deleteStructure(id);
   }
 
   // ACL Methods
@@ -417,6 +494,38 @@ export class LensService implements ILensService {
   async editRelease(data: EditInput<ReleaseData>): Promise<HashResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
+      
+      // Check if user has admin or moderator permissions first
+      const userKey = this._activeIdentity?.publicKey ?? this.peerbit?.identity.publicKey;
+      
+      if (userKey) {
+        const isAdmin = await siteProgram.access.admins.isTrusted(userKey);
+        const canEditAny = await siteProgram.access.can({ permission: 'release:edit:any', identity: userKey });
+        
+        this._logger.debug(`Edit release permission check: isAdmin=${isAdmin}, canEditAny=${canEditAny}`);
+        
+        // If user is admin or has edit:any permission, create release with original postedBy
+        if (isAdmin || canEditAny) {
+          const originalRelease = await siteProgram.releases.index.get(data.id);
+          if (originalRelease) {
+            this._logger.debug(`Admin/moderator edit: using original postedBy=${originalRelease.postedBy.toString()}`);
+            // Use the original postedBy for admins/moderators
+            const release = new Release({
+              ...data,
+              postedBy: originalRelease.postedBy,
+            });
+            const result = await siteProgram.releases.put(release, this._getActiveSigner());
+            this._logger.debug(`Successfully edited release with ID: ${release.id} (admin/moderator edit)`);
+            return {
+              success: true,
+              id: release.id,
+              hash: result.entry.hash,
+            };
+          }
+        }
+      }
+      
+      // Regular user path - verify immutable properties
       const release = new Release(data);
       await this._verifyImmutableProperties(siteProgram.releases, release);
       const result = await siteProgram.releases.put(release, this._getActiveSigner());
@@ -766,6 +875,203 @@ export class LensService implements ILensService {
         };
       }
     }
+  }
+
+  // Structure Methods
+  async getStructure(id: string): Promise<WithContext<Structure> | undefined> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      const structure = await siteProgram.structures.index.get(id);
+      return structure;
+    } catch (error) {
+      this._logger.error('Failed to get structure:', error);
+      return undefined;
+    }
+  }
+
+  async getStructures(options?: SearchOptions): Promise<WithContext<Structure>[]> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      const searchQuery = options?.request || new SearchRequest({ 
+        fetch: options?.fetch || 100,
+        query: options?.query,
+        sort: options?.sort,
+      });
+
+      const results = await siteProgram.structures.index.search(searchQuery);
+      return results;
+    } catch (error) {
+      this._logger.error('Failed to get structures:', error);
+      return [];
+    }
+  }
+
+  async addStructure(data: AddInput<{
+    name: string;
+    type: string;
+    description?: string;
+    thumbnailCID?: string;
+    bannerCID?: string;
+    parentId?: string;
+    itemIds?: string[];
+    metadata?: string;
+    order?: number;
+  }>): Promise<HashResponse> {
+    try {
+      const { peerbit, siteProgram } = this._ensureSiteOpened();
+      const structure = new Structure({
+        ...data,
+        postedBy: this._activeIdentity?.publicKey ?? peerbit.identity.publicKey,
+        siteAddress: siteProgram.address,
+      });
+      const result = await siteProgram.structures.put(structure, this._getActiveSigner());
+      this._logger.debug(`Successfully added structure with ID: ${structure.id}`);
+      return {
+        success: true,
+        id: structure.id,
+        hash: result.entry.hash,
+      };
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this._logger.error('Failed to add structure:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
+    }
+  }
+
+  async editStructure(data: EditInput<{
+    name: string;
+    type: string;
+    description?: string;
+    thumbnailCID?: string;
+    bannerCID?: string;
+    parentId?: string;
+    itemIds?: string[];
+    metadata?: string;
+    order?: number;
+  }>): Promise<HashResponse> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      
+      const structure = new Structure(data);
+      await this._verifyImmutableProperties(siteProgram.structures, structure);
+      
+      const result = await siteProgram.structures.put(structure, this._getActiveSigner());
+      this._logger.debug(`Successfully edited structure with ID: ${structure.id}`);
+      return {
+        success: true,
+        id: structure.id,
+        hash: result.entry.hash,
+      };
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this._logger.error('Failed to edit structure:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
+    }
+  }
+
+  async deleteStructure(id: string): Promise<IdResponse> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+      this._logger.debug(`Deleting structure with ID: ${id}`);
+      await siteProgram.structures.del(id, this._getActiveSigner());
+      return {
+        success: true,
+        id,
+      };
+    } catch (error) {
+      if (error instanceof AccessError) {
+        return { success: false, error: 'Access denied' };
+      } else {
+        this._logger.error(`Failed to delete structure with ID: ${id}`, error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'An unknown error occurred',
+        };
+      }
+    }
+  }
+
+  // Artist Methods (convenience wrappers for Structure with type='artist')
+  async getArtist(id: string): Promise<WithContext<Structure> | undefined> {
+    return this.getStructure(id);
+  }
+
+  async getArtists(options?: SearchOptions): Promise<WithContext<Structure>[]> {
+    const artistTypeQuery = new StringMatch({
+      key: 'type',
+      value: 'artist',
+      caseInsensitive: false,
+      method: StringMatchMethod.exact,
+    });
+    
+    const query = Array.isArray(options?.query) 
+      ? [...options.query, artistTypeQuery]
+      : [artistTypeQuery];
+    
+    return this.getStructures({
+      ...options,
+      query,
+    });
+  }
+
+  async addArtist(data: AddInput<{
+    name: string;
+    bio?: string;
+    avatarCID?: string;
+    bannerCID?: string;
+    links?: string[];
+    metadata?: string;
+  }>): Promise<HashResponse> {
+    const metadata = data.metadata || JSON.stringify({
+      bio: data.bio,
+      links: data.links,
+    });
+    
+    return this.addStructure({
+      ...data,
+      type: 'artist',
+      description: data.bio,
+      thumbnailCID: data.avatarCID,
+      metadata,
+    });
+  }
+
+  async editArtist(data: EditInput<{
+    name: string;
+    bio?: string;
+    avatarCID?: string;
+    bannerCID?: string;
+    links?: string[];
+    metadata?: string;
+  }>): Promise<HashResponse> {
+    const metadata = data.metadata || JSON.stringify({
+      bio: data.bio,
+      links: data.links,
+    });
+    
+    return this.editStructure({
+      ...data,
+      type: 'artist',
+      description: data.bio,
+      thumbnailCID: data.avatarCID,
+      metadata,
+    });
+  }
+
+  async deleteArtist(id: string): Promise<IdResponse> {
+    return this.deleteStructure(id);
   }
 
   // ACL Methods

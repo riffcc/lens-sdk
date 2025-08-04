@@ -6,6 +6,9 @@ export const defaultSiteRoles = [
     'release:create',
     'release:edit:any',
     'release:delete',
+    'structure:create',
+    'structure:edit:any',
+    'structure:delete',
     'featured:manage',
     'category:manage',
     'blocklist:manage',
@@ -14,6 +17,8 @@ export const defaultSiteRoles = [
   new Role('member', [
     'release:create',
     'release:edit:own',
+    'structure:create',
+    'structure:edit:own',
   ]),
 ];
 
@@ -90,6 +95,18 @@ export const defaultSiteContentCategories: ContentCategoryData<ContentCategoryMe
         description: 'Physical media format if applicable',
         options: ['CD', 'DVD', 'Vinyl', 'Soundboard', 'SACD', 'DAT', 'WEB', 'Blu-Ray'],
       },
+      cover: {
+        type: 'string',
+        description: 'Content ID for the cover image (used in carousel/featured display)',
+      },
+      author: {
+        type: 'string',
+        description: 'Author or artist name',
+      },
+      trackMetadata: {
+        type: 'string',
+        description: 'JSON array of track metadata objects with title, artist, and duration',
+      },
     },
   },
   {
@@ -132,6 +149,14 @@ export const defaultSiteContentCategories: ContentCategoryData<ContentCategoryMe
         type: 'string',
         description: 'Original URL if sourced from an online platform (e.g., YouTube link)',
       },
+      cover: {
+        type: 'string',
+        description: 'Content ID for the cover image (used in carousel/featured display)',
+      },
+      author: {
+        type: 'string',
+        description: 'Video creator or uploader name',
+      },
     },
   },
   {
@@ -159,9 +184,9 @@ export const defaultSiteContentCategories: ContentCategoryData<ContentCategoryMe
         type: 'array',
         description: 'User-defined tags for searchability (e.g., funny, tutorial)',
       },
-      posterCID: {
+      cover: {
         type: 'string',
-        description: 'Content ID for the movie poster',
+        description: 'Content ID for the cover image (used in carousel/featured display)',
       },
       TMDBID: {
         type: 'string',
@@ -186,6 +211,10 @@ export const defaultSiteContentCategories: ContentCategoryData<ContentCategoryMe
       duration: {
         type: 'string',
         description: 'Length of the movie',
+      },
+      author: {
+        type: 'string',
+        description: 'Director or filmmaker name',
       },
     },
   },
@@ -227,9 +256,9 @@ export const defaultSiteContentCategories: ContentCategoryData<ContentCategoryMe
         type: 'string',
         description: 'Internet Movie Database identifier for the TV show',
       },
-      posterCID: {
+      cover: {
         type: 'string',
-        description: 'Content ID for the TV show poster',
+        description: 'Content ID for the cover image (used in carousel/featured display)',
       },
       classification: {
         type: 'string',
@@ -242,6 +271,10 @@ export const defaultSiteContentCategories: ContentCategoryData<ContentCategoryMe
       averageEpisodeDuration: {
         type: 'string',
         description: 'Average duration of an episode (e.g., ~45 min, 00:45:00)',
+      },
+      author: {
+        type: 'string',
+        description: 'Creator or showrunner name',
       },
     },
   },
