@@ -2,9 +2,9 @@ import { deserialize, field, fixedArray, variant } from '@dao-xyz/borsh';
 import { Program } from '@peerbit/program';
 import { Documents, type CanPerformOperations } from '@peerbit/document';
 import { sha256Sync } from '@peerbit/crypto';
-import type { Site } from '../site/program';
-import type { SiteManifest } from './schemas';
-import { SiteRegistration, IndexableSiteRegistration } from './schemas';
+import type { Site } from '../site/program.js';
+import type { SiteManifest } from './schemas.js';
+import { SiteRegistration, IndexableSiteRegistration } from './schemas.js';
 import { concat } from 'uint8arrays';
 
 export const SITE_REGISTRY_ID_STRING = 'riffcc_sites_v1';

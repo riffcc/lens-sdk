@@ -4,11 +4,11 @@ import { Entry } from '@peerbit/log';
 import { deserialize, field, vec, variant, serialize } from '@dao-xyz/borsh';
 import { AbortError, delay } from '@peerbit/time';
 import type { DataEvent } from '@peerbit/pubsub-interface';
-import type { FederatedStoreKey } from '../types';
-import type { Logger } from '../../../common/logger';
+import type { FederatedStoreKey } from '../types.js';
+import type { Logger } from '../../../common/logger.js';
 import type { ProgramClient } from '@peerbit/program';
-import type { IndexedSubscription, Subscription } from '../schemas/subscription';
-import type { Site } from '../program';
+import type { IndexedSubscription, Subscription } from '../schemas/subscription.js';
+import type { Site } from '../program.js';
 
 @variant('federation_update')
 export class FederationUpdate {

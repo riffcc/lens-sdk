@@ -12,8 +12,8 @@ import {
 } from '@peerbit/document';
 import type { Identity, Secp256k1PublicKey } from '@peerbit/crypto';
 import { AccessError, PublicSignKey } from '@peerbit/crypto';
-import { FederationManager } from '../programs/site/lib/federation';
-import type { Site } from '../programs/site/program';
+import { FederationManager } from '../programs/site/lib/federation.js';
+import type { Site } from '../programs/site/program.js';
 import type {
   ContentCategoryData,
   FeaturedReleaseData,
@@ -21,14 +21,14 @@ import type {
   ReleaseData,
   SiteArgs,
   SubscriptionData,
-} from '../programs/site/types';
-import { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
-import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService, LensServiceOptions } from './types';
-import { Logger } from '../common/logger';
-import type { SearchOptions } from '../common/types';
+} from '../programs/site/types.js';
+import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService, LensServiceOptions } from './types.js';
+import { Logger } from '../common/logger.js';
+import type { SearchOptions } from '../common/types.js';
 import type { ProgramClient } from '@peerbit/program';
-import { publicSignKeyFromString } from '../common/utils';
-import type { Role } from '../programs/acl/rbac';
+import { publicSignKeyFromString } from '../common/utils.js';
+import type { Role } from '../programs/acl/rbac/index.js';
+import { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/index.js';
 
 export class ElectronLensService implements ILensService {
   constructor() { }

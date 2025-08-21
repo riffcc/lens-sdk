@@ -1,2 +1,2 @@
-export * from './program';
-export * from './schemas';
+export * from './program.js';
+export * from './schemas.js';

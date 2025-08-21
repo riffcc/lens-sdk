@@ -1,7 +1,7 @@
 import { variant, field } from '@dao-xyz/borsh';
 import { concat } from 'uint8arrays';
 import { PublicSignKey, sha256Base64Sync } from '@peerbit/crypto';
-import type { FeaturedReleaseData, DocumentArgs } from '../types';
+import type { FeaturedReleaseData, DocumentArgs } from '../types.js';
 
 @variant('featured')
 export class FeaturedRelease {

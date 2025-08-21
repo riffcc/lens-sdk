@@ -1,6 +1,6 @@
 import { variant, field, option } from '@dao-xyz/borsh';
 import { v4 as uuid } from 'uuid';
-import type { ReleaseData, DocumentArgs } from '../types';
+import type { ReleaseData, DocumentArgs } from '../types.js';
 import { PublicSignKey } from '@peerbit/crypto';
 
 @variant('release')

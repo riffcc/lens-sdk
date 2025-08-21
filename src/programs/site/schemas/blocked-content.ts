@@ -1,5 +1,5 @@
 import { variant, field } from '@dao-xyz/borsh';
-import type { BlockedContentData, DocumentArgs } from '../types';
+import type { BlockedContentData, DocumentArgs } from '../types.js';
 import { v4 as uuid } from 'uuid';
 import { PublicSignKey } from '@peerbit/crypto';
 

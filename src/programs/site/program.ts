@@ -4,12 +4,16 @@ import { Program } from '@peerbit/program';
 import type { CanPerformOperations } from '@peerbit/document';
 import { Documents, isPutOperation, SearchRequest, StringMatch, StringMatchMethod } from '@peerbit/document';
 import type { PublicSignKey } from '@peerbit/crypto';
-import type { ContentCategoryData, ContentCategoryMetadataField, ImmutableProps } from './types';
-import { type SiteArgs } from './types';
-import { BlockedContent, ContentCategory, FeaturedRelease, IndexedBlockedContent, IndexedContentCategory, IndexedFeaturedRelease, IndexedRelease, IndexedSubscription, Release, Subscription } from './schemas';
-import { RoleBasedccessController } from '../acl/rbac/program';
-import { defaultSiteContentCategories, defaultSiteRoles } from './defaults';
-import type { Role } from '../acl/rbac';
+import type { ContentCategoryData, ContentCategoryMetadataField, ImmutableProps } from './types.js';
+import { type SiteArgs } from './types.js';
+import { RoleBasedccessController } from '../acl/rbac/program.js';
+import { defaultSiteContentCategories, defaultSiteRoles } from './defaults.js';
+import type { Role } from '../acl/rbac/index.js';
+import { IndexedRelease, Release } from './schemas/release.js';
+import { FeaturedRelease, IndexedFeaturedRelease } from './schemas/featured-release.js';
+import { ContentCategory, IndexedContentCategory } from './schemas/content-category.js';
+import { IndexedSubscription, Subscription } from './schemas/subscription.js';
+import { BlockedContent, IndexedBlockedContent } from './schemas/blocked-content.js';
 
 @variant('site')
 export class Site extends Program<SiteArgs> {

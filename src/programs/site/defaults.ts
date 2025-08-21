@@ -1,5 +1,5 @@
-import { Role } from '../acl/rbac';
-import type { ContentCategoryData, ContentCategoryMetadataField } from './types';
+import { Role } from '../acl/rbac/index.js';
+import type { ContentCategoryData, ContentCategoryMetadataField } from './types.js';
 
 export const defaultSiteRoles = [
   new Role('moderator', [

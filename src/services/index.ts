@@ -1,2 +1,2 @@
-export * from './lens';
-export * from './types';
+export * from './lens.js';
+export * from './types.js';

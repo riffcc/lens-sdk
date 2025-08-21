@@ -5,7 +5,7 @@ import { Documents, SearchRequest } from '@peerbit/document';
 import { And, ByteMatchQuery, StringMatch } from '@peerbit/indexer-interface';
 import { Program } from '@peerbit/program';
 import { TrustedNetwork } from '@peerbit/trusted-network';
-import { IndexedRole, IndexedRoleAssignment, Role, RoleAssignment } from './schemas';
+import { IndexedRole, IndexedRoleAssignment, Role, RoleAssignment } from './schemas.js';
 import type { ReplicationOptions } from '@peerbit/shared-log';
 
 /**

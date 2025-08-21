@@ -1,5 +1,5 @@
 import type { WithContext } from '@peerbit/document';
-import type { Site } from '../programs/site/program';
+import type { Site } from '../programs/site/program.js';
 import type {
   ContentCategoryData,
   FeaturedReleaseData,
@@ -7,12 +7,12 @@ import type {
   ReleaseData,
   SiteArgs,
   SubscriptionData,
-} from '../programs/site/types';
-import type { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas';
-import type { SearchOptions } from '../common/types';
+} from '../programs/site/types.js';
+import type { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/schemas/index.js';
+import type { SearchOptions } from '../common/types.js';
 import type { Identity, PublicSignKey, Secp256k1PublicKey } from '@peerbit/crypto';
 import type { ProgramClient } from '@peerbit/program';
-import type { Role } from '../programs/acl/rbac';
+import type { Role } from '../programs/acl/rbac/index.js';
 
 export interface BaseResponse {
   success: boolean;

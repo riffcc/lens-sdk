@@ -1,5 +1,5 @@
 import { field, variant } from '@dao-xyz/borsh';
-import type { DocumentArgs, SubscriptionData } from '../types';
+import type { DocumentArgs, SubscriptionData } from '../types.js';
 import { PublicSignKey, sha256Base64Sync } from '@peerbit/crypto';
 import { concat } from 'uint8arrays';
 
