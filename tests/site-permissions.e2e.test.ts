@@ -1,8 +1,9 @@
-import { TestSession } from '@peerbit/test-utils';
 import type { ProgramClient } from '@peerbit/program';
+import { TestSession } from '@peerbit/test-utils';
+import { delay, waitFor, waitForResolved } from '@peerbit/time';
+
 import { Site } from '../src/programs/site/program';
 import type { ContentCategoryData, ReleaseData } from '../src/programs/site/types';
-import { delay, waitFor, waitForResolved } from '@peerbit/time';
 import { LensService } from '../src/services';
 
 // --- Test Helpers ---
@@ -31,7 +32,10 @@ const createCategoryData = (): ContentCategoryData<string> => {
 // --- Test Suite ---
 describe('Role-Based Access Control (RBAC) in Site', () => {
   let session: TestSession;
-  let adminClient: ProgramClient, moderatorClient: ProgramClient, memberClient: ProgramClient, guestClient: ProgramClient;
+  let adminClient: ProgramClient,
+    moderatorClient: ProgramClient,
+    memberClient: ProgramClient,
+    guestClient: ProgramClient;
   let adminService: LensService, moderatorService: LensService, memberService: LensService, guestService: LensService;
   let siteAddress: string;
 
@@ -60,12 +64,15 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
     await adminService.assignRole(moderatorClient.identity.publicKey, 'moderator');
     await adminService.assignRole(memberClient.identity.publicKey, 'member');
 
-    await waitForResolved(async () => {
-      const modStatus = await moderatorService.getAccountStatus();
-      const memStatus = await memberService.getAccountStatus();
-      expect(modStatus.roles).toContain('moderator');
-      expect(memStatus.roles).toContain('member');
-    }, { timeout: 15000, delayInterval: 1000, timeoutMessage: 'Roles were not assigned in time' });
+    await waitForResolved(
+      async () => {
+        const modStatus = await moderatorService.getAccountStatus();
+        const memStatus = await memberService.getAccountStatus();
+        expect(modStatus.roles).toContain('moderator');
+        expect(memStatus.roles).toContain('member');
+      },
+      { timeout: 15000, delayInterval: 1000, timeoutMessage: 'Roles were not assigned in time' }
+    );
   }, 30000);
 
   afterAll(async () => {
@@ -75,7 +82,6 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
     if (guestService) await guestService.stop();
     if (session) await session.stop();
   });
-
 
   describe('Admin', () => {
     it('can assign and revoke a role', async () => {
@@ -162,17 +168,17 @@ describe('Role-Based Access Control (RBAC) in Site', () => {
         ...newCategory!,
         displayName: 'Edited Category Name',
       };
-      
+
       const editResp = await moderatorService.editContentCategory(editedData);
       expect(editResp.success).toBe(true);
-      
+
       const fetchedEdited = await moderatorService.getContentCategory(editResp.id!);
       expect(fetchedEdited!.displayName).toEqual('Edited Category Name');
 
       // Delete
       const deleteResp = await moderatorService.deleteContentCategory(newCategory!.id);
       expect(deleteResp.success).toBe(true);
-      
+
       await waitForResolved(async () => {
         const deletedCategory = await moderatorService.getContentCategory(newCategory!.id);
         expect(deletedCategory).toBeUndefined();

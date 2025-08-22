@@ -1,7 +1,8 @@
-import { variant, field, option } from '@dao-xyz/borsh';
-import type { ContentCategoryData, DocumentArgs } from '../types.js';
+import { field, option, variant } from '@dao-xyz/borsh';
 import { PublicSignKey, sha256Base64Sync } from '@peerbit/crypto';
 import { concat } from 'uint8arrays';
+
+import type { ContentCategoryData, DocumentArgs } from '../types.js';
 
 @variant('content_category')
 export class ContentCategory {
@@ -30,10 +31,11 @@ export class ContentCategory {
   metadataSchema?: string;
 
   constructor(props: DocumentArgs<ContentCategoryData>) {
-    this.id = props.id ?? sha256Base64Sync(concat([
-      new TextEncoder().encode(props.siteAddress),
-      new TextEncoder().encode(props.categoryId),
-    ]));
+    this.id =
+      props.id ??
+      sha256Base64Sync(
+        concat([new TextEncoder().encode(props.siteAddress), new TextEncoder().encode(props.categoryId)])
+      );
     this.postedBy = props.postedBy;
     this.siteAddress = props.siteAddress;
     this.categoryId = props.categoryId;
@@ -79,11 +81,7 @@ export class IndexedContentCategory {
   @field({ type: 'u64' })
   modified: bigint;
 
-  constructor(props: {
-    doc: ContentCategory;
-    created: bigint;
-    modified: bigint;
-  }) {
+  constructor(props: { doc: ContentCategory; created: bigint; modified: bigint }) {
     this.id = props.doc.id;
     this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;

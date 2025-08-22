@@ -1,4 +1,4 @@
-import { variant, field, vec, fixedArray } from '@dao-xyz/borsh';
+import { field, fixedArray, variant, vec } from '@dao-xyz/borsh';
 import { PublicSignKey, sha256Sync } from '@peerbit/crypto';
 import { concat } from 'uint8arrays';
 
@@ -20,10 +20,10 @@ export class Role {
     this.permissions = permissions;
   }
   /**
-* Checks if this role includes a specific permission.
-* @param permission The permission string to check for.
-* @returns true if the role has the permission, false otherwise.
-*/
+   * Checks if this role includes a specific permission.
+   * @param permission The permission string to check for.
+   * @returns true if the role has the permission, false otherwise.
+   */
   hasPermission(permission: string): boolean {
     return this.permissions.includes(permission);
   }

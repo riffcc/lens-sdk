@@ -1,10 +1,11 @@
-import { TestSession } from '@peerbit/test-utils';
-import type { ProgramClient } from '@peerbit/program';
-import { Site } from '../src/programs/site/program';
 import { Documents } from '@peerbit/document';
+import type { ProgramClient } from '@peerbit/program';
+import { TestSession } from '@peerbit/test-utils';
+import { waitForResolved } from '@peerbit/time';
+
 import { RoleBasedccessController } from '../src/programs/acl/rbac/program';
 import { defaultSiteContentCategories } from '../src/programs/site/defaults';
-import { waitForResolved } from '@peerbit/time';
+import { Site } from '../src/programs/site/program';
 
 describe('Site Program', () => {
   let session: TestSession;
@@ -15,7 +16,6 @@ describe('Site Program', () => {
     session = await TestSession.connected(2);
     ownerClient = session.peers[0];
     noOwnerClient = session.peers[1];
-
   });
 
   // Stop the session after all tests are done
@@ -147,10 +147,8 @@ describe('Site Program', () => {
 
       // Expect the call to fail because the non-admin is not the root trust.
       await expect(siteFromNonOwner.initContentCategories()).rejects.toThrow(
-        'Only the root administrator can initialize default content categories.',
+        'Only the root administrator can initialize default content categories.'
       );
-
     });
   });
-
 });

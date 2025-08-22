@@ -1,9 +1,10 @@
-import { TestSession } from '@peerbit/test-utils';
-import type { ProgramClient } from '@peerbit/program';
-import { waitFor, waitForResolved } from '@peerbit/time';
 import { AccessError } from '@peerbit/crypto';
-import { RoleBasedccessController, Role } from '../src/programs/acl/rbac';
 import { StringMatch } from '@peerbit/indexer-interface';
+import type { ProgramClient } from '@peerbit/program';
+import { TestSession } from '@peerbit/test-utils';
+import { waitFor, waitForResolved } from '@peerbit/time';
+
+import { Role, RoleBasedccessController } from '../src/programs/acl/rbac';
 
 describe('RoleBasedccessController', () => {
   let session: TestSession;
@@ -40,7 +41,6 @@ describe('RoleBasedccessController', () => {
     }
   });
 
-
   describe('Initialization', () => {
     it('sets the root admin correctly', () => {
       expect(rbac.admins.rootTrust.equals(rootAdmin.identity.publicKey)).toBe(true);
@@ -54,7 +54,6 @@ describe('RoleBasedccessController', () => {
       });
     });
   });
-
 
   describe('Role Management (Admin Powers)', () => {
     it('an admin can create, update, and delete a role', async () => {
@@ -103,7 +102,6 @@ describe('RoleBasedccessController', () => {
       });
     });
   });
-
 
   describe('Permission Checks (`can` method)', () => {
     beforeEach(async () => {

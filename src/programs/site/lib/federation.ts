@@ -1,14 +1,15 @@
+import { deserialize, field, serialize, variant, vec } from '@dao-xyz/borsh';
 import type { Documents, DocumentsChange, Operation, WithContext, WithIndexedContext } from '@peerbit/document';
 import { StringMatch } from '@peerbit/document';
 import { Entry } from '@peerbit/log';
-import { deserialize, field, vec, variant, serialize } from '@dao-xyz/borsh';
-import { AbortError, delay } from '@peerbit/time';
-import type { DataEvent } from '@peerbit/pubsub-interface';
-import type { FederatedStoreKey } from '../types.js';
-import type { Logger } from '../../../common/logger.js';
 import type { ProgramClient } from '@peerbit/program';
-import type { IndexedSubscription, Subscription } from '../schemas/subscription.js';
+import type { DataEvent } from '@peerbit/pubsub-interface';
+import { AbortError, delay } from '@peerbit/time';
+
+import type { Logger } from '../../../common/logger.js';
 import type { Site } from '../program.js';
+import type { IndexedSubscription, Subscription } from '../schemas/subscription.js';
+import type { FederatedStoreKey } from '../types.js';
 
 @variant('federation_update')
 export class FederationUpdate {
@@ -21,7 +22,7 @@ export class FederationUpdate {
   @field({ type: vec(Entry) })
   removed: Entry<Operation>[];
 
-  constructor(props: { store: FederatedStoreKey, added?: Entry<Operation>[], removed?: Entry<Operation>[] }) {
+  constructor(props: { store: FederatedStoreKey; added?: Entry<Operation>[]; removed?: Entry<Operation>[] }) {
     this.store = props.store;
     this.added = props.added || [];
     this.removed = props.removed || [];
@@ -46,8 +47,8 @@ export class FederationManager {
   constructor(
     private peerbit: ProgramClient,
     private siteProgram: Site,
-    private logger: Logger,
-  ) { }
+    private logger: Logger
+  ) {}
 
   /**
    * Starts the federation service. Should be called once the site is open.
@@ -66,7 +67,7 @@ export class FederationManager {
   public async stop() {
     this.logger.debug('[FederationManager] Stopping all active federations...');
     this.removeSubscriptionListener();
-    await Promise.all([...this.activeFederations.values()].map(federation => federation.close()));
+    await Promise.all([...this.activeFederations.values()].map((federation) => federation.close()));
     this.activeFederations.clear();
     this.logger.debug('[FederationManager] All federations stopped.');
   }
@@ -74,16 +75,16 @@ export class FederationManager {
   // --- Private Lifecycle and Setup Methods ---
   private setupFederationBroadcasts() {
     for (const storeName of this._federatedStores) {
-      this.siteProgram[storeName].events.addEventListener('change', (event: CustomEvent<DocumentsChange<unknown, unknown>>) => {
-        this.broadcastFederationUpdate(storeName, event.detail);
-      });
+      this.siteProgram[storeName].events.addEventListener(
+        'change',
+        (event: CustomEvent<DocumentsChange<unknown, unknown>>) => {
+          this.broadcastFederationUpdate(storeName, event.detail);
+        }
+      );
     }
   }
 
-  private async broadcastFederationUpdate(
-    storeName: FederatedStoreKey,
-    change: DocumentsChange<unknown, unknown>,
-  ) {
+  private async broadcastFederationUpdate(storeName: FederatedStoreKey, change: DocumentsChange<unknown, unknown>) {
     // We need the full Entry<Operation> object to broadcast
     // This requires fetching them from the log based on the change set
     const getEntriesFromChange = async (docs: WithContext<unknown>[]) => {
@@ -109,10 +110,9 @@ export class FederationManager {
     });
 
     // Publish to this site's unique federation topic
-    await this.peerbit.services.pubsub.publish(
-      serialize(updateMessage),
-      { topics: [this.siteProgram.federationTopic] },
-    );
+    await this.peerbit.services.pubsub.publish(serialize(updateMessage), {
+      topics: [this.siteProgram.federationTopic],
+    });
   }
 
   private setupSubscriptionListener() {
@@ -129,7 +129,9 @@ export class FederationManager {
   }
 
   private _handleSubscriptionChange(event: CustomEvent<DocumentsChange<Subscription, IndexedSubscription>>) {
-    this.logger.debug(`[FederationManager] Subscription change: ${event.detail.added.length} added, ${event.detail.removed.length} removed.`);
+    this.logger.debug(
+      `[FederationManager] Subscription change: ${event.detail.added.length} added, ${event.detail.removed.length} removed.`
+    );
     for (const added of event.detail.added) {
       this.startFederation(added.to);
     }
@@ -150,14 +152,16 @@ export class FederationManager {
 
   private async startFederation(remoteSiteAddress: string) {
     if (remoteSiteAddress === this.siteProgram.address || this.activeFederations.has(remoteSiteAddress)) {
-      this.logger.debug(`[FederationManager] Federation with ${remoteSiteAddress} is self or already active. Skipping.`);
+      this.logger.debug(
+        `[FederationManager] Federation with ${remoteSiteAddress} is self or already active. Skipping.`
+      );
       return;
     }
 
     this.logger.debug(`[FederationManager] Activating federation with: ${remoteSiteAddress}`);
     const syncController = new AbortController();
 
-    this.runHistoricalSync(remoteSiteAddress, syncController.signal).catch(err => {
+    this.runHistoricalSync(remoteSiteAddress, syncController.signal).catch((err) => {
       this.logger.error(`[FederationManager] Unhandled error in historical sync for ${remoteSiteAddress}:`, err);
     });
 
@@ -171,7 +175,9 @@ export class FederationManager {
         const targetStore = this.siteProgram[update.store].log;
         if (update.added.length > 0) await targetStore.join(update.added);
         if (update.removed.length > 0) await targetStore.join(update.removed);
-      } catch { /* Not a FederationUpdate, ignore */ }
+      } catch {
+        /* Not a FederationUpdate, ignore */
+      }
     };
 
     await this.peerbit.services.pubsub.subscribe(federationTopic);
@@ -211,8 +217,8 @@ export class FederationManager {
 
       const cleanupPromises = this._federatedStores.map(async (storeName) => {
         const store = this.siteProgram[storeName];
-        const documentsToRemove = await collectAll((store as Documents<unknown>));
-        return documentsToRemove.map(doc => store.del((doc as unknown as { id: string }).id));
+        const documentsToRemove = await collectAll(store as Documents<unknown>);
+        return documentsToRemove.map((doc) => store.del((doc as unknown as { id: string }).id));
       });
 
       // Flatten the array of promises and execute them
@@ -249,7 +255,7 @@ export class FederationManager {
       remoteSiteProgram = await this.peerbit.open<Site>(remoteSiteAddress, {
         timeout: 15000, // Timeout for opening the remote program
         args: {
-          ...Object.fromEntries(this._federatedStores.map(key => [`${key}Args`, { replicate: { factor: 1 } }])),
+          ...Object.fromEntries(this._federatedStores.map((key) => [`${key}Args`, { replicate: { factor: 1 } }])),
           subscriptionsArgs: { replicate: false },
         },
       });
@@ -259,22 +265,25 @@ export class FederationManager {
           this.logger.debug(`[Federation] Running sync poll for ${remoteSiteAddress}`);
 
           // --- REFACTOR: Dynamically get heads and join logs ---
-          await Promise.all(this._federatedStores.map(async (storeName) => {
-            const remoteStore = remoteSiteProgram![storeName];
-            const localStore = this.siteProgram[storeName];
+          await Promise.all(
+            this._federatedStores.map(async (storeName) => {
+              const remoteStore = remoteSiteProgram![storeName];
+              const localStore = this.siteProgram[storeName];
 
-            const heads = await remoteStore.log.log.getHeads(true).all();
-            if (heads.length > 0) {
-              await localStore.log.join(heads);
-            }
-          }));
+              const heads = await remoteStore.log.log.getHeads(true).all();
+              if (heads.length > 0) {
+                await localStore.log.join(heads);
+              }
+            })
+          );
 
           await delay(SYNC_POLL_INTERVAL_MS, { signal: combinedSignal });
         }
       };
       await syncLoop();
     } catch (error) {
-      if (!(error instanceof AbortError)) { // Ignore AbortError as it's expected on timeout
+      if (!(error instanceof AbortError)) {
+        // Ignore AbortError as it's expected on timeout
         this.logger.error(`[Federation] Error during historical sync for ${remoteSiteAddress}:`, error);
       }
     } finally {

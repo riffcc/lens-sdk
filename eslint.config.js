@@ -1,17 +1,17 @@
 // eslint.config.js
 import eslint from '@eslint/js';
-import tseslint from 'typescript-eslint';
-import globals from 'globals';
-import simpleImportSort from 'eslint-plugin-simple-import-sort';
-import prettierPlugin from 'eslint-plugin-prettier';
 import prettierConfig from 'eslint-config-prettier';
+import prettierPlugin from 'eslint-plugin-prettier';
+import simpleImportSort from 'eslint-plugin-simple-import-sort';
+import globals from 'globals';
+import tseslint from 'typescript-eslint';
 
 export default [
   {
     // Global ignores
     ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**'],
   },
-  
+
   // Standard ESLint and TypeScript ESLint recommended configs
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

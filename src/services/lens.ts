@@ -1,17 +1,15 @@
-import { Peerbit } from 'peerbit';
-import type {
-  Documents,
-} from '@peerbit/document';
-import {
-  ByteMatchQuery,
-  SearchRequest,
-  Sort,
-  SortDirection,
-  StringMatch,
-  type WithContext,
-} from '@peerbit/document';
 import type { Identity, Secp256k1PublicKey } from '@peerbit/crypto';
 import { AccessError, PublicSignKey } from '@peerbit/crypto';
+import type { Documents } from '@peerbit/document';
+import { ByteMatchQuery, SearchRequest, Sort, SortDirection, StringMatch, type WithContext } from '@peerbit/document';
+import type { ProgramClient } from '@peerbit/program';
+import { Peerbit } from 'peerbit';
+
+import { Logger } from '../common/logger.js';
+import type { SearchOptions } from '../common/types.js';
+import { publicSignKeyFromString } from '../common/utils.js';
+import type { Role } from '../programs/acl/rbac/index.js';
+import { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/index.js';
 import { FederationManager } from '../programs/site/lib/federation.js';
 import type { Site } from '../programs/site/program.js';
 import type {
@@ -22,16 +20,19 @@ import type {
   SiteArgs,
   SubscriptionData,
 } from '../programs/site/types.js';
-import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService, LensServiceOptions } from './types.js';
-import { Logger } from '../common/logger.js';
-import type { SearchOptions } from '../common/types.js';
-import type { ProgramClient } from '@peerbit/program';
-import { publicSignKeyFromString } from '../common/utils.js';
-import type { Role } from '../programs/acl/rbac/index.js';
-import { ContentCategory, FeaturedRelease, Release, Subscription } from '../programs/site/index.js';
+import type {
+  AccountStatusResponse,
+  AddInput,
+  BaseResponse,
+  EditInput,
+  HashResponse,
+  IdResponse,
+  ILensService,
+  LensServiceOptions,
+} from './types.js';
 
 export class ElectronLensService implements ILensService {
-  constructor() { }
+  constructor() {}
 
   async init(directory?: string): Promise<void> {
     await window.electronLensService.init(directory);
@@ -43,7 +44,7 @@ export class ElectronLensService implements ILensService {
 
   async openSite(
     siteOrAddress: Site | string,
-    options: { siteArgs?: SiteArgs, federate?: boolean } = { federate: true },
+    options: { siteArgs?: SiteArgs; federate?: boolean } = { federate: true }
   ): Promise<void> {
     await window.electronLensService.openSite(siteOrAddress, options);
   }
@@ -124,7 +125,7 @@ export class ElectronLensService implements ILensService {
     return window.electronLensService.addSubscription(data);
   }
 
-  async deleteSubscription(data: { id?: string, to?: string }): Promise<IdResponse> {
+  async deleteSubscription(data: { id?: string; to?: string }): Promise<IdResponse> {
     return window.electronLensService.deleteSubscription(data);
   }
 
@@ -170,9 +171,7 @@ export class LensService implements ILensService {
 
   async init(directory?: string): Promise<void> {
     if (this.peerbit) {
-      throw new Error(
-        'LensService: Already configured with an external Peerbit client. Do not call init().',
-      );
+      throw new Error('LensService: Already configured with an external Peerbit client. Do not call init().');
     }
     this._logger.debug(`Initializing new Peerbit client in directory: ${directory || 'in-memory'}`);
     this.peerbit = await Peerbit.create({ directory });
@@ -202,9 +201,7 @@ export class LensService implements ILensService {
     peerbit: ProgramClient;
   } {
     if (!this.peerbit) {
-      throw new Error(
-        'LensService is not properly initialized. call init(directory?).',
-      );
+      throw new Error('LensService is not properly initialized. call init(directory?).');
     }
     return {
       peerbit: this.peerbit,
@@ -217,9 +214,7 @@ export class LensService implements ILensService {
   } {
     const { peerbit } = this._ensureInitialized();
     if (!this.siteProgram || this.siteProgram.closed) {
-      throw new Error(
-        'LensService is not properly initialized. call init(directory?).',
-      );
+      throw new Error('LensService is not properly initialized. call init(directory?).');
     }
     return {
       peerbit,
@@ -230,7 +225,7 @@ export class LensService implements ILensService {
   private async _verifyImmutableProperties<T extends ImmutableProps, I extends object>(
     store: Documents<T, I>,
     incomingData: T,
-    extraKeys?: (keyof T)[],
+    extraKeys?: (keyof T)[]
   ): Promise<void> {
     // 1. Fetch the original document from the store using its ID.
     const originalDoc = await store.index.get(incomingData.id);
@@ -271,7 +266,7 @@ export class LensService implements ILensService {
 
   async openSite(
     siteOrAddress: Site | string,
-    options: { siteArgs?: SiteArgs, federate?: boolean } = { federate: true },
+    options: { siteArgs?: SiteArgs; federate?: boolean } = { federate: true }
   ): Promise<void> {
     if (this.siteProgram) {
       throw new Error('A site is already open. Please close it before opening a new one.');
@@ -287,7 +282,6 @@ export class LensService implements ILensService {
       this._federationManager = new FederationManager(peerbit, siteProgram, this._logger);
       await this._federationManager.start();
     }
-
   }
 
   async getAccountStatus(): Promise<AccountStatusResponse> {
@@ -309,7 +303,7 @@ export class LensService implements ILensService {
       for (const role of allRoles) {
         // FIX: The role's name is in the `name` property, not `id`.
         response.roles.push(role.name);
-        role.permissions.forEach(p => allPermissions.add(p));
+        role.permissions.forEach((p) => allPermissions.add(p));
       }
       response.permissions = [...allPermissions];
       this._logger.debug('User status determined: ADMIN', response);
@@ -317,9 +311,11 @@ export class LensService implements ILensService {
       return response;
     }
 
-    const userAssignments = await siteProgram.access.assignments.index.search(new SearchRequest({
-      query: [new ByteMatchQuery({ key: 'user', value: publicKey.bytes })],
-    }));
+    const userAssignments = await siteProgram.access.assignments.index.search(
+      new SearchRequest({
+        query: [new ByteMatchQuery({ key: 'user', value: publicKey.bytes })],
+      })
+    );
 
     if (userAssignments.length === 0) {
       response.roles.push('guest');
@@ -328,18 +324,20 @@ export class LensService implements ILensService {
       return response;
     }
 
-    const assignedRoleIds = userAssignments.map(a => a.roleId);
+    const assignedRoleIds = userAssignments.map((a) => a.roleId);
     response.roles = assignedRoleIds;
     const allPermissions = new Set<string>();
 
     for (const roleId of assignedRoleIds) {
-      const rolesFound = await siteProgram.access.roles.index.search(new SearchRequest({
-        query: [new StringMatch({ key: 'name', value: roleId, caseInsensitive: true })],
-        fetch: 1,
-      }));
+      const rolesFound = await siteProgram.access.roles.index.search(
+        new SearchRequest({
+          query: [new StringMatch({ key: 'name', value: roleId, caseInsensitive: true })],
+          fetch: 1,
+        })
+      );
       const role = rolesFound[0];
       if (role) {
-        role.permissions.forEach(p => allPermissions.add(p));
+        role.permissions.forEach((p) => allPermissions.add(p));
       }
     }
 
@@ -359,11 +357,11 @@ export class LensService implements ILensService {
     this._logger.time('getReleases');
     const { siteProgram } = this._ensureSiteOpened();
 
-    const request = options?.request ?? new SearchRequest({
-      sort: options?.sort ?? [
-        new Sort({ key: 'created', direction: SortDirection.DESC }),
-      ],
-    });
+    const request =
+      options?.request ??
+      new SearchRequest({
+        sort: options?.sort ?? [new Sort({ key: 'created', direction: SortDirection.DESC })],
+      });
 
     this._logger.debug('Fetching all releases with iterator pattern:', request);
     this._logger.time('releases.index.iterate');
@@ -451,7 +449,7 @@ export class LensService implements ILensService {
               value: id,
             }),
           ],
-        }),
+        })
       );
 
       for (const tfr of targetFeaturedReleases) {
@@ -488,11 +486,11 @@ export class LensService implements ILensService {
     this._logger.time('getFeaturedReleases');
     const { siteProgram } = this._ensureSiteOpened();
 
-    const request = options?.request ?? new SearchRequest({
-      sort: options?.sort ?? [
-        new Sort({ key: 'created', direction: SortDirection.DESC }),
-      ],
-    });
+    const request =
+      options?.request ??
+      new SearchRequest({
+        sort: options?.sort ?? [new Sort({ key: 'created', direction: SortDirection.DESC })],
+      });
 
     this._logger.debug('Fetching all featured releases with iterator pattern:', request);
     this._logger.time('featuredReleases.index.iterate');
@@ -521,9 +519,7 @@ export class LensService implements ILensService {
       const targetRelease = await this.getRelease(data.releaseId);
 
       if (!targetRelease) {
-        throw new Error(
-          `Cannot add featured release: The specified release ID ${data.releaseId} does not exist.`,
-        );
+        throw new Error(`Cannot add featured release: The specified release ID ${data.releaseId} does not exist.`);
       }
       const featuredRelease = new FeaturedRelease({
         ...data,
@@ -669,11 +665,11 @@ export class LensService implements ILensService {
   async getSubscriptions(options?: SearchOptions): Promise<Subscription[]> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
-      const request = options?.request ?? new SearchRequest({
-        sort: options?.sort ?? [
-          new Sort({ key: 'created', direction: SortDirection.DESC }),
-        ],
-      });
+      const request =
+        options?.request ??
+        new SearchRequest({
+          sort: options?.sort ?? [new Sort({ key: 'created', direction: SortDirection.DESC })],
+        });
 
       this._logger.debug('Fetching all subscriptions with iterator pattern.');
       const allResults: Subscription[] = [];
@@ -724,7 +720,7 @@ export class LensService implements ILensService {
     }
   }
 
-  async deleteSubscription(data: { id?: string, to?: string }): Promise<IdResponse> {
+  async deleteSubscription(data: { id?: string; to?: string }): Promise<IdResponse> {
     try {
       const { siteProgram } = this._ensureSiteOpened();
 
@@ -739,7 +735,7 @@ export class LensService implements ILensService {
               }),
             ],
             fetch: 1,
-          }),
+          })
         );
         if (subscription[0]) {
           subscriptionIdToDelete = subscription[0].id;
@@ -793,7 +789,6 @@ export class LensService implements ILensService {
 
       this._logger.debug(`Successfully assigned role "${roleId}".`);
       return { success: true };
-
     } catch (error: unknown) {
       if (error instanceof AccessError) {
         return { success: false, error: `Access denied. Could not assign role "${roleId}".` };

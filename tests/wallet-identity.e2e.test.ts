@@ -1,9 +1,10 @@
 import { TestSession } from '@peerbit/test-utils';
-import { LensService } from '../src/services';
-import { Site } from '../src/programs/site';
-import { Wallet } from 'ethers';
-import { createIdentityFromSigner } from '../src/common/utils';
 import { waitFor, waitForResolved } from '@peerbit/time';
+import { Wallet } from 'ethers';
+
+import { createIdentityFromSigner } from '../src/common/utils';
+import { Site } from '../src/programs/site';
+import { LensService } from '../src/services';
 
 describe('Custom Wallet Identity E2E', () => {
   let session: TestSession;
@@ -54,7 +55,7 @@ describe('Custom Wallet Identity E2E', () => {
     expect(response.error).toContain('Access denied');
   });
 
-  it('an admin can grant a role to the wallet\'s public key', async () => {
+  it("an admin can grant a role to the wallet's public key", async () => {
     const walletPublicKey = walletService['_activeIdentity']!.publicKey;
     const response = await adminService.assignRole(walletPublicKey, 'member');
 

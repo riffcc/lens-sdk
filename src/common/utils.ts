@@ -1,23 +1,23 @@
-import type { Identity} from '@peerbit/crypto';
+import type { Identity } from '@peerbit/crypto';
 import {
   Ed25519PublicKey,
   fromHexString,
   PreHash,
+  type PublicSignKey,
   Secp256k1PublicKey,
   SignatureWithKey,
-  type PublicSignKey,
 } from '@peerbit/crypto';
 import { SearchRequest } from '@peerbit/document';
-import type { Access, IdentityAccessController} from '@peerbit/identity-access-controller';
+import type { Access, IdentityAccessController } from '@peerbit/identity-access-controller';
 import { PublicKeyAccessCondition } from '@peerbit/identity-access-controller';
 import type { Signer } from 'ethers';
 
 const KEY_TYPES = {
-  'ed25119p': {
+  ed25119p: {
     constructor: Ed25519PublicKey,
     expectedLength: 32,
   },
-  'sepc256k1': {
+  sepc256k1: {
     constructor: Secp256k1PublicKey,
     expectedLength: 33,
   },
@@ -43,7 +43,7 @@ export function publicSignKeyFromString(keyString: string): PublicSignKey {
 
   if (keyBytes.length !== keyTypeInfo.expectedLength) {
     throw new Error(
-      `Invalid ${typeIdentifier} public key length. Expected ${keyTypeInfo.expectedLength}, got ${keyBytes.length}`,
+      `Invalid ${typeIdentifier} public key length. Expected ${keyTypeInfo.expectedLength}, got ${keyBytes.length}`
     );
   }
 
@@ -58,15 +58,14 @@ export function publicSignKeyFromString(keyString: string): PublicSignKey {
  */
 export async function findAccessGrant(
   acl: IdentityAccessController['access'],
-  publicKey: PublicSignKey,
+  publicKey: PublicSignKey
 ): Promise<Access | undefined> {
   // A broad search is efficient for ACLs, which are typically not large.
   const accessDocs = await acl.index.search(new SearchRequest({}));
-  
+
   // Find the specific document where the condition matches the provided public key.
-  return accessDocs.find(doc =>
-    doc.accessCondition instanceof PublicKeyAccessCondition &&
-    doc.accessCondition.key.equals(publicKey),
+  return accessDocs.find(
+    (doc) => doc.accessCondition instanceof PublicKeyAccessCondition && doc.accessCondition.key.equals(publicKey)
   );
 }
 

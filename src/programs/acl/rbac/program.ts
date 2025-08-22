@@ -1,18 +1,19 @@
-import { variant, field } from '@dao-xyz/borsh';
+import { field, variant } from '@dao-xyz/borsh';
 import type { PublicSignKey } from '@peerbit/crypto';
 import type { CanPerformOperations } from '@peerbit/document';
 import { Documents, SearchRequest } from '@peerbit/document';
 import { And, ByteMatchQuery, StringMatch } from '@peerbit/indexer-interface';
 import { Program } from '@peerbit/program';
-import { TrustedNetwork } from '@peerbit/trusted-network';
-import { IndexedRole, IndexedRoleAssignment, Role, RoleAssignment } from './schemas.js';
 import type { ReplicationOptions } from '@peerbit/shared-log';
+import { TrustedNetwork } from '@peerbit/trusted-network';
+
+import { IndexedRole, IndexedRoleAssignment, Role, RoleAssignment } from './schemas.js';
 
 /**
  * Defines the arguments for opening the RBAC controller,
  * allowing control over replication behavior.
  */
-type Args = { replicate?: ReplicationOptions }
+type Args = { replicate?: ReplicationOptions };
 
 /**
  * A Program that provides a classic Role-Based Access Control (RBAC) system.
@@ -21,7 +22,6 @@ type Args = { replicate?: ReplicationOptions }
  */
 @variant('rbac_v1')
 export class RoleBasedccessController extends Program<Args> {
-
   /**
    * A TrustedNetwork that manages the list of administrators.
    * Any identity within this network has full permissions over the RBAC system.
@@ -71,7 +71,7 @@ export class RoleBasedccessController extends Program<Args> {
       },
     });
 
-    const adminOnlyPolicy = async<T>(op: CanPerformOperations<T>) => {
+    const adminOnlyPolicy = async <T>(op: CanPerformOperations<T>) => {
       for (const key of await op.entry.getPublicKeys()) {
         if (await this.admins.isTrusted(key)) return true;
       }
@@ -101,7 +101,6 @@ export class RoleBasedccessController extends Program<Args> {
         type: IndexedRoleAssignment,
       },
     });
-
   }
 
   async afterOpen() {
@@ -121,9 +120,11 @@ export class RoleBasedccessController extends Program<Args> {
       return;
     }
     for (const defaultRole of this._defaultRoles) {
-      const existingRoles = await this.roles.index.search(new SearchRequest({
-        query: [new StringMatch({ key: 'name', value: defaultRole.name, caseInsensitive: true })],
-      }));
+      const existingRoles = await this.roles.index.search(
+        new SearchRequest({
+          query: [new StringMatch({ key: 'name', value: defaultRole.name, caseInsensitive: true })],
+        })
+      );
       if (existingRoles.length === 0) {
         try {
           // This call is now consistent with the check.
@@ -137,10 +138,10 @@ export class RoleBasedccessController extends Program<Args> {
   }
 
   /**
- * Retrieves all defined roles from the roles database.
- * This is a public read operation and can be performed by any user.
- * @returns A promise that resolves to an array of all Role documents.
- */
+   * Retrieves all defined roles from the roles database.
+   * This is a public read operation and can be performed by any user.
+   * @returns A promise that resolves to an array of all Role documents.
+   */
   async getRoles(): Promise<Role[]> {
     // A search with an empty query object fetches all documents.
     return this.roles.index.search(new SearchRequest({}));
@@ -162,10 +163,12 @@ export class RoleBasedccessController extends Program<Args> {
    * @param permissions An array of permission strings (e.g., ["document:write"]).
    */
   async createRole(name: string, permissions: string[]): Promise<void> {
-    const existingRoles = await this.roles.index.search(new SearchRequest({
-      query: [new StringMatch({ key: 'name', value: name, caseInsensitive: true })],
-      fetch: 1,
-    }));
+    const existingRoles = await this.roles.index.search(
+      new SearchRequest({
+        query: [new StringMatch({ key: 'name', value: name, caseInsensitive: true })],
+        fetch: 1,
+      })
+    );
     if (existingRoles.length > 0) {
       throw new Error(`A role with the name "${name}" already exists.`);
     }
@@ -173,16 +176,18 @@ export class RoleBasedccessController extends Program<Args> {
   }
 
   /**
- * Updates the permissions for an existing role. The role name cannot be changed.
- * This is a privileged action that can only be performed by an admin.
- * @param name The name of the role to update.
- * @param newPermissions The new, complete array of permission strings.
- */
+   * Updates the permissions for an existing role. The role name cannot be changed.
+   * This is a privileged action that can only be performed by an admin.
+   * @param name The name of the role to update.
+   * @param newPermissions The new, complete array of permission strings.
+   */
   async updateRole(name: string, newPermissions: string[]): Promise<void> {
-    const rolesFound = await this.roles.index.search(new SearchRequest({
-      query: [new StringMatch({ key: 'name', value: name, caseInsensitive: true })],
-      fetch: 1,
-    }));
+    const rolesFound = await this.roles.index.search(
+      new SearchRequest({
+        query: [new StringMatch({ key: 'name', value: name, caseInsensitive: true })],
+        fetch: 1,
+      })
+    );
     const existingRole = rolesFound[0];
 
     if (!existingRole) {
@@ -203,10 +208,12 @@ export class RoleBasedccessController extends Program<Args> {
    */
   async deleteRole(name: string): Promise<boolean> {
     // 1. Find the role to be deleted.
-    const rolesFound = await this.roles.index.search(new SearchRequest({
-      query: [new StringMatch({ key: 'name', value: name, caseInsensitive: true })],
-      fetch: 1,
-    }));
+    const rolesFound = await this.roles.index.search(
+      new SearchRequest({
+        query: [new StringMatch({ key: 'name', value: name, caseInsensitive: true })],
+        fetch: 1,
+      })
+    );
     const roleToDelete = rolesFound[0];
 
     if (!roleToDelete) {
@@ -214,14 +221,14 @@ export class RoleBasedccessController extends Program<Args> {
     }
 
     // 2. Find all assignments for this role.
-    const assignmentsToDelete = await this.assignments.index.search(new SearchRequest({
-      query: [new StringMatch({ key: 'roleId', value: roleToDelete.name })],
-    }));
+    const assignmentsToDelete = await this.assignments.index.search(
+      new SearchRequest({
+        query: [new StringMatch({ key: 'roleId', value: roleToDelete.name })],
+      })
+    );
 
     // 3. Delete all found assignments.
-    const deleteAssignmentPromises = assignmentsToDelete.map(assignment =>
-      this.assignments.del(assignment.id),
-    );
+    const deleteAssignmentPromises = assignmentsToDelete.map((assignment) => this.assignments.del(assignment.id));
     await Promise.all(deleteAssignmentPromises);
 
     // 4. Finally, delete the role itself.
@@ -237,10 +244,12 @@ export class RoleBasedccessController extends Program<Args> {
    * @param roleId The string identifier (name) of the role to assign.
    */
   async assignRole(user: PublicSignKey, roleId: string): Promise<void> {
-    const rolesFound = await this.roles.index.search(new SearchRequest({
-      query: [new StringMatch({ key: 'name', value: roleId, caseInsensitive: true })],
-      fetch: 1,
-    }));
+    const rolesFound = await this.roles.index.search(
+      new SearchRequest({
+        query: [new StringMatch({ key: 'name', value: roleId, caseInsensitive: true })],
+        fetch: 1,
+      })
+    );
     if (rolesFound.length === 0) throw new Error(`Role with name "${roleId}" does not exist.`);
 
     // Pass the original (case-sensitive) roleId to the assignment for consistency.
@@ -256,12 +265,14 @@ export class RoleBasedccessController extends Program<Args> {
    */
   async revokeRole(user: PublicSignKey, roleId: string): Promise<boolean> {
     // This method was already correct, using ByteMatch for user and StringMatch for roleId.
-    const assignments = await this.assignments.index.search(new SearchRequest({
-      query: new And([
-        new ByteMatchQuery({ key: 'user', value: user.bytes }),
-        new StringMatch({ key: 'roleId', value: roleId }),
-      ]),
-    }));
+    const assignments = await this.assignments.index.search(
+      new SearchRequest({
+        query: new And([
+          new ByteMatchQuery({ key: 'user', value: user.bytes }),
+          new StringMatch({ key: 'roleId', value: roleId }),
+        ]),
+      })
+    );
 
     if (assignments.length === 0) {
       return false;
@@ -286,18 +297,22 @@ export class RoleBasedccessController extends Program<Args> {
       return true;
     }
 
-    const userAssignments = await this.assignments.index.search(new SearchRequest({
-      query: [new ByteMatchQuery({ key: 'user', value: args.identity.bytes })],
-    }));
+    const userAssignments = await this.assignments.index.search(
+      new SearchRequest({
+        query: [new ByteMatchQuery({ key: 'user', value: args.identity.bytes })],
+      })
+    );
 
     if (userAssignments.length === 0) return false;
 
-    const roleIds = userAssignments.map(a => a.roleId);
+    const roleIds = userAssignments.map((a) => a.roleId);
     for (const roleId of roleIds) {
-      const rolesFound = await this.roles.index.search(new SearchRequest({
-        query: [new StringMatch({ key: 'name', value: roleId, caseInsensitive: true })],
-        fetch: 1,
-      }));
+      const rolesFound = await this.roles.index.search(
+        new SearchRequest({
+          query: [new StringMatch({ key: 'name', value: roleId, caseInsensitive: true })],
+          fetch: 1,
+        })
+      );
       const role = rolesFound[0];
 
       if (role && role.hasPermission(args.permission)) {

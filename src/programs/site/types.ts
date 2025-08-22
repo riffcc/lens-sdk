@@ -6,7 +6,7 @@ export type ImmutableProps = {
   id: string;
   postedBy: PublicSignKey;
   siteAddress: string;
-}
+};
 
 export type DocumentArgs<T> = T & Omit<ImmutableProps, 'id'> & { id?: string };
 
@@ -53,23 +53,25 @@ export type StoreArgs = {
   replicate?: ReplicationOptions;
   replicas?: ReplicationLimitsOptions;
   disableCache?: boolean;
-}
+};
 
 export interface SiteArgs {
   releasesArgs?: StoreArgs;
   featuredReleasesArgs?: StoreArgs;
-  contentCategoriesArgs?: StoreArgs
+  contentCategoriesArgs?: StoreArgs;
   subscriptionsArgs?: StoreArgs;
   blockedContentArgs?: StoreArgs;
 }
 
-
 // Defines the structure for a field within a category's metadata schema.
-export type ContentCategoryMetadataField = Record<string, {
-  type: 'string' | 'number' | 'array';
-  description: string;
-  options?: string[];
-}>;
+export type ContentCategoryMetadataField = Record<
+  string,
+  {
+    type: 'string' | 'number' | 'array';
+    description: string;
+    options?: string[];
+  }
+>;
 
 // JSON Schema for validating an array of content categories, using simple string keys.
 export const categoriesFileSchema: JSONSchemaType<ContentCategoryData<ContentCategoryMetadataField>[]> = {
@@ -92,7 +94,7 @@ export const categoriesFileSchema: JSONSchemaType<ContentCategoryData<ContentCat
               enum: ['string', 'number', 'array'],
             },
             description: { type: 'string' },
-            options: { 
+            options: {
               type: 'array',
               items: { type: 'string' },
               nullable: true,

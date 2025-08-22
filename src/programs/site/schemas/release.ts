@@ -1,7 +1,8 @@
-import { variant, field, option } from '@dao-xyz/borsh';
-import { v4 as uuid } from 'uuid';
-import type { ReleaseData, DocumentArgs } from '../types.js';
+import { field, option, variant } from '@dao-xyz/borsh';
 import { PublicSignKey } from '@peerbit/crypto';
+import { v4 as uuid } from 'uuid';
+
+import type { DocumentArgs, ReleaseData } from '../types.js';
 
 @variant('release')
 export class Release {
@@ -13,7 +14,7 @@ export class Release {
 
   @field({ type: 'string' })
   siteAddress: string;
-  
+
   @field({ type: 'string' })
   name: string;
 
@@ -54,7 +55,7 @@ export class IndexedRelease {
 
   @field({ type: 'string' })
   siteAddress: string;
-  
+
   @field({ type: 'string' })
   name: string;
 
@@ -76,11 +77,7 @@ export class IndexedRelease {
   @field({ type: 'u64' })
   modified: bigint;
 
-  constructor(props: {
-    doc: Release;
-    created: bigint;
-    modified: bigint;
-  }) {
+  constructor(props: { doc: Release; created: bigint; modified: bigint }) {
     this.id = props.doc.id;
     this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;

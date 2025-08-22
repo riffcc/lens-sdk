@@ -1,7 +1,8 @@
-import { variant, field } from '@dao-xyz/borsh';
-import type { BlockedContentData, DocumentArgs } from '../types.js';
-import { v4 as uuid } from 'uuid';
+import { field, variant } from '@dao-xyz/borsh';
 import { PublicSignKey } from '@peerbit/crypto';
+import { v4 as uuid } from 'uuid';
+
+import type { BlockedContentData, DocumentArgs } from '../types.js';
 
 @variant('blocked_content')
 export class BlockedContent {
@@ -44,11 +45,7 @@ export class IndexedBlockedContent {
   @field({ type: 'u64' })
   modified: bigint;
 
-  constructor(props: {
-    doc: BlockedContent;
-    created: bigint;
-    modified: bigint;
-  }) {
+  constructor(props: { doc: BlockedContent; created: bigint; modified: bigint }) {
     this.id = props.doc.id;
     this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;

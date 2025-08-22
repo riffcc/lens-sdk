@@ -1,5 +1,6 @@
 import { waitForResolved } from '@peerbit/time';
-import { Site, LensService } from '../dist/index.mjs';
+
+import { LensService, Site } from '../dist/index.mjs';
 
 /**
  * A helper function to create a new Site instance.
@@ -19,11 +20,11 @@ const run = async () => {
   console.log('🚀 Initializing services A and B...');
   const serviceA = new LensService({ debug: true, customPrefix: '[Service A]' });
   const serviceB = new LensService({ debug: true, customPrefix: '[Service B]' });
-  
+
   try {
     await serviceA.init();
     await serviceB.init();
-    
+
     // --- SETUP ---
     console.log('\n-'.repeat(20) + ' SETUP ' + '-'.repeat(20));
     console.log('🏗️ Opening Site A (source) and Site B (follower)...');
@@ -59,11 +60,10 @@ const run = async () => {
     console.timeEnd(`add-${BATCH_SIZE}-releases`);
     const initialSizeA = await serviceA.siteProgram.releases.index.getSize();
     console.log(`Initial size of Site A's releases: ${initialSizeA}`);
-    
-    if(initialSizeA !== BATCH_SIZE) {
-        throw new Error(`Site A population failed. Expected ${BATCH_SIZE}, got ${initialSizeA}`);
-    }
 
+    if (initialSizeA !== BATCH_SIZE) {
+      throw new Error(`Site A population failed. Expected ${BATCH_SIZE}, got ${initialSizeA}`);
+    }
 
     console.log('\n🤝 Site B subscribing to Site A...');
     console.time('federation-initial-sync-benchmark');
@@ -80,7 +80,7 @@ const run = async () => {
           throw new Error(`Sites not synced yet. Expected ${BATCH_SIZE}, got ${sizeB}.`);
         }
       },
-      { timeout: 60000, delayInterval: 1000 },
+      { timeout: 60000, delayInterval: 1000 }
     );
 
     console.timeEnd('federation-initial-sync-benchmark');
@@ -107,7 +107,7 @@ const run = async () => {
           throw new Error(`Live update not received. Expected ${expectedLiveSize}, got ${sizeB}.`);
         }
       },
-      { timeout: 30000, delayInterval: 500 },
+      { timeout: 30000, delayInterval: 500 }
     );
 
     console.timeEnd('live-update-latency');
@@ -129,12 +129,11 @@ const run = async () => {
           throw new Error(`Delete not propagated. Expected ${expectedDeleteSize}, got ${sizeB}.`);
         }
       },
-      { timeout: 30000, delayInterval: 500 },
+      { timeout: 30000, delayInterval: 500 }
     );
 
     console.timeEnd('delete-propagation-latency');
     console.log('✅ PHASE 3 COMPLETE: Deletion was successfully federated.');
-
 
     // --- PHASE 4: UNSUBSCRIPTION AND CLEANUP ---
     console.log('\n' + '-'.repeat(20) + ' PHASE 4: UNSUBSCRIPTION & CLEANUP ' + '-'.repeat(20));
@@ -142,7 +141,7 @@ const run = async () => {
     console.time('unsubscription-cleanup-latency');
 
     await serviceB.deleteSubscription({ to: siteAAddress });
-    
+
     const expectedCleanupSize = 0; // After unsubscribing, all federated data should be gone.
 
     await waitForResolved(
@@ -153,20 +152,18 @@ const run = async () => {
           throw new Error(`Cleanup failed on Site B. Expected ${expectedCleanupSize}, got ${sizeB}.`);
         }
       },
-      { timeout: 30000, delayInterval: 500 },
+      { timeout: 30000, delayInterval: 500 }
     );
 
     console.timeEnd('unsubscription-cleanup-latency');
     console.log('✅ PHASE 4 COMPLETE: Unsubscription and cleanup successful.');
 
-
     console.log('\n🎉 Federation Test Successful!');
-  } catch(e) {
-      console.error('\n❌ Federation Test FAILED.');
-      console.error(e);
-      process.exit(1); // Exit with error code to fail CI/CD pipelines
-  }
-  finally {
+  } catch (e) {
+    console.error('\n❌ Federation Test FAILED.');
+    console.error(e);
+    process.exit(1); // Exit with error code to fail CI/CD pipelines
+  } finally {
     console.log('\n🛑 Tearing down services...');
     await serviceA.stop();
     await serviceB.stop();

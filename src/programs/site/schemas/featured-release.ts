@@ -1,7 +1,8 @@
-import { variant, field } from '@dao-xyz/borsh';
-import { concat } from 'uint8arrays';
+import { field, variant } from '@dao-xyz/borsh';
 import { PublicSignKey, sha256Base64Sync } from '@peerbit/crypto';
-import type { FeaturedReleaseData, DocumentArgs } from '../types.js';
+import { concat } from 'uint8arrays';
+
+import type { DocumentArgs, FeaturedReleaseData } from '../types.js';
 
 @variant('featured')
 export class FeaturedRelease {
@@ -27,12 +28,11 @@ export class FeaturedRelease {
   promoted: boolean;
 
   constructor(props: DocumentArgs<FeaturedReleaseData>) {
-    this.id = props.id ?? sha256Base64Sync(
-      concat([
-        new TextEncoder().encode(props.releaseId),
-        new TextEncoder().encode(props.siteAddress)],
-      ),
-    );
+    this.id =
+      props.id ??
+      sha256Base64Sync(
+        concat([new TextEncoder().encode(props.releaseId), new TextEncoder().encode(props.siteAddress)])
+      );
     this.postedBy = props.postedBy;
     this.siteAddress = props.siteAddress;
     this.releaseId = props.releaseId;
@@ -70,11 +70,7 @@ export class IndexedFeaturedRelease {
   @field({ type: 'u64' })
   modified: bigint;
 
-  constructor(props: {
-    doc: FeaturedRelease;
-    created: bigint;
-    modified: bigint;
-  }) {
+  constructor(props: { doc: FeaturedRelease; created: bigint; modified: bigint }) {
     this.id = props.doc.id;
     this.postedBy = props.doc.postedBy.bytes;
     this.siteAddress = props.doc.siteAddress;

@@ -11,10 +11,7 @@ export const defaultSiteRoles = [
     'blocklist:manage',
     'subscription:manage',
   ]),
-  new Role('member', [
-    'release:create',
-    'release:edit:own',
-  ]),
+  new Role('member', ['release:create', 'release:edit:own']),
 ];
 
 export const defaultSiteContentCategories: ContentCategoryData<ContentCategoryMetadataField>[] = [
@@ -246,4 +243,3 @@ export const defaultSiteContentCategories: ContentCategoryData<ContentCategoryMe
     },
   },
 ];
-

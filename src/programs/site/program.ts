@@ -1,19 +1,20 @@
 import type { AbstractType } from '@dao-xyz/borsh';
 import { deserialize, field, variant } from '@dao-xyz/borsh';
-import { Program } from '@peerbit/program';
+import type { PublicSignKey } from '@peerbit/crypto';
 import type { CanPerformOperations } from '@peerbit/document';
 import { Documents, isPutOperation, SearchRequest, StringMatch, StringMatchMethod } from '@peerbit/document';
-import type { PublicSignKey } from '@peerbit/crypto';
-import type { ContentCategoryData, ContentCategoryMetadataField, ImmutableProps } from './types.js';
-import { type SiteArgs } from './types.js';
+import { Program } from '@peerbit/program';
+
+import type { Role } from '../acl/rbac/index.js';
 import { RoleBasedccessController } from '../acl/rbac/program.js';
 import { defaultSiteContentCategories, defaultSiteRoles } from './defaults.js';
-import type { Role } from '../acl/rbac/index.js';
-import { IndexedRelease, Release } from './schemas/release.js';
-import { FeaturedRelease, IndexedFeaturedRelease } from './schemas/featured-release.js';
-import { ContentCategory, IndexedContentCategory } from './schemas/content-category.js';
-import { IndexedSubscription, Subscription } from './schemas/subscription.js';
 import { BlockedContent, IndexedBlockedContent } from './schemas/blocked-content.js';
+import { ContentCategory, IndexedContentCategory } from './schemas/content-category.js';
+import { FeaturedRelease, IndexedFeaturedRelease } from './schemas/featured-release.js';
+import { IndexedRelease, Release } from './schemas/release.js';
+import { IndexedSubscription, Subscription } from './schemas/subscription.js';
+import type { ContentCategoryData, ContentCategoryMetadataField, ImmutableProps } from './types.js';
+import { type SiteArgs } from './types.js';
 
 @variant('site')
 export class Site extends Program<SiteArgs> {
@@ -56,11 +57,11 @@ export class Site extends Program<SiteArgs> {
     const getDoc = async <T extends ImmutableProps, I extends object = T>(
       props: CanPerformOperations<T>,
       store: Documents<T, I>,
-      docClass: AbstractType<T>,
+      docClass: AbstractType<T>
     ): Promise<{
-      doc: T,
-      existingDoc?: T,
-      signer: PublicSignKey,
+      doc: T;
+      existingDoc?: T;
+      signer: PublicSignKey;
     }> => {
       const signer = props.entry.signatures[0].publicKey;
       if (isPutOperation(props.operation)) {
@@ -115,7 +116,7 @@ export class Site extends Program<SiteArgs> {
             return this._isFederatedWriteAllowed(
               doc,
               signer,
-              isPutOperation(props.operation) ? 'release:edit:any' : 'release:delete',
+              isPutOperation(props.operation) ? 'release:edit:any' : 'release:delete'
             );
           }
 
@@ -125,7 +126,8 @@ export class Site extends Program<SiteArgs> {
               // Impersonation attempt, must have 'edit:any' permission
               return this.access.can({ permission: 'release:edit:any', identity: signer });
             }
-            if (existingDoc) { // Editing own release
+            if (existingDoc) {
+              // Editing own release
               return this.access.can({ permission: 'release:edit:own', identity: signer });
             }
             // Creating new release
@@ -230,46 +232,47 @@ export class Site extends Program<SiteArgs> {
         },
       }),
     ]);
-
   }
 
   private async _isSubscribed(to: string): Promise<boolean> {
-    const results = await this.subscriptions.index.search(new SearchRequest({
-      query: [
-        new StringMatch({
-          key: 'to',
-          value: to,
-          caseInsensitive: false,
-          method: StringMatchMethod.exact,
-        }),
-      ],
-      fetch: 1,
-    }));
+    const results = await this.subscriptions.index.search(
+      new SearchRequest({
+        query: [
+          new StringMatch({
+            key: 'to',
+            value: to,
+            caseInsensitive: false,
+            method: StringMatchMethod.exact,
+          }),
+        ],
+        fetch: 1,
+      })
+    );
     return results.length > 0;
   }
 
   /**
- * Checks if an operation on a foreign document is allowed based on federation rules.
- * @param doc The document from a remote site.
- * @param signer The public key of the peer who signed the operation.
- * @param permission The required permission for this action
- */
+   * Checks if an operation on a foreign document is allowed based on federation rules.
+   * @param doc The document from a remote site.
+   * @param signer The public key of the peer who signed the operation.
+   * @param permission The required permission for this action
+   */
   private async _isFederatedWriteAllowed(
     doc: { siteAddress: string },
     signer: PublicSignKey,
-    permission: string,
+    permission: string
   ): Promise<boolean> {
     const signerCanPerformLocally = await this.access.can({ permission, identity: signer });
-    return await this._isSubscribed(doc.siteAddress) || signerCanPerformLocally;
+    return (await this._isSubscribed(doc.siteAddress)) || signerCanPerformLocally;
   }
 
   /**
- * Idempotently creates the default content categories if they don't already exist.
- * This is a public method that can only be successfully called by the site's root administrator.
- * @param initialCategories An optional array of categories to use instead of the defaults.
- */
+   * Idempotently creates the default content categories if they don't already exist.
+   * This is a public method that can only be successfully called by the site's root administrator.
+   * @param initialCategories An optional array of categories to use instead of the defaults.
+   */
   async initContentCategories(
-    initialCategories: ContentCategoryData<ContentCategoryMetadataField>[] = defaultSiteContentCategories,
+    initialCategories: ContentCategoryData<ContentCategoryMetadataField>[] = defaultSiteContentCategories
   ): Promise<void> {
     if (!this.node.identity.publicKey.equals(this.access.admins.rootTrust)) {
       throw new Error('Only the root administrator can initialize default content categories.');
@@ -281,23 +284,27 @@ export class Site extends Program<SiteArgs> {
 
     for (const category of initialCategories) {
       // Check for existence by the stable categoryId
-      const existingCategories = await this.contentCategories.index.search(new SearchRequest({
-        query: [new StringMatch({ key: 'categoryId', value: category.categoryId, caseInsensitive: true })],
-      }));
+      const existingCategories = await this.contentCategories.index.search(
+        new SearchRequest({
+          query: [new StringMatch({ key: 'categoryId', value: category.categoryId, caseInsensitive: true })],
+        })
+      );
 
       if (existingCategories.length === 0) {
         try {
           const metadataSchemaString = JSON.stringify(category.metadataSchema);
 
-          await this.contentCategories.put(new ContentCategory({
-            postedBy: this.node.identity.publicKey,
-            siteAddress: this.address,
-            categoryId: category.categoryId,
-            displayName: category.displayName,
-            featured: category.featured,
-            description: category.description,
-            metadataSchema: metadataSchemaString,
-          }));
+          await this.contentCategories.put(
+            new ContentCategory({
+              postedBy: this.node.identity.publicKey,
+              siteAddress: this.address,
+              categoryId: category.categoryId,
+              displayName: category.displayName,
+              featured: category.featured,
+              description: category.description,
+              metadataSchema: metadataSchemaString,
+            })
+          );
         } catch (error) {
           // Ignore errors, as another instance of the same root admin might
           // have created the category in a race condition.

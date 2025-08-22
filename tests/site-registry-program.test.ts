@@ -1,7 +1,8 @@
-import { TestSession } from '@peerbit/test-utils';
-import type { ProgramClient } from '@peerbit/program';
-import { waitForResolved } from '@peerbit/time';
 import { AccessError } from '@peerbit/crypto';
+import type { ProgramClient } from '@peerbit/program';
+import { TestSession } from '@peerbit/test-utils';
+import { waitForResolved } from '@peerbit/time';
+
 import { Site } from '../src/programs/site/program';
 import { SiteRegistry } from '../src/programs/site-registry/program';
 import type { SiteRegistration } from '../src/programs/site-registry/schemas';
@@ -96,7 +97,6 @@ describe('SiteRegistry Program', () => {
     });
   });
 
-
   // SCENARIO 2: Testing access control rules with another user.
   describe('Access Control', () => {
     let registry: SiteRegistry;
@@ -124,22 +124,22 @@ describe('SiteRegistry Program', () => {
       if (otherRegistry && !otherRegistry.closed) await otherRegistry.close();
     });
 
-
     it('a non-owner cannot publish a site on behalf of the owner', async () => {
       const manifest = new SiteManifest({ name: 'Imposter Site' });
-      await expect(otherRegistry.publishSite(ownerSite, manifest))
-        .rejects.toThrow('Only the site owner can publish its registration.');
+      await expect(otherRegistry.publishSite(ownerSite, manifest)).rejects.toThrow(
+        'Only the site owner can publish its registration.'
+      );
     });
 
     it('a non-owner cannot update the manifest', async () => {
       const newManifest = new SiteManifest({ name: 'Malicious Update' });
-      await expect(otherRegistry.updateManifest(ownerSite.address, newManifest))
-        .rejects.toThrow(`Site registration for address ${ownerSite.address} by this owner not found.`);
+      await expect(otherRegistry.updateManifest(ownerSite.address, newManifest)).rejects.toThrow(
+        `Site registration for address ${ownerSite.address} by this owner not found.`
+      );
     });
 
     it('a non-owner cannot delete a registration', async () => {
-      await expect(otherRegistry.registrations.del(registration.id))
-        .rejects.toThrow(AccessError);
+      await expect(otherRegistry.registrations.del(registration.id)).rejects.toThrow(AccessError);
     });
   });
 });

@@ -12,7 +12,7 @@ export default {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   testEnvironment: 'node',
-  testTimeout: 30000, 
+  testTimeout: 30000,
   clearMocks: true,
   forceExit: true,
   maxWorkers: '50%',

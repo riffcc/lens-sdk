@@ -1,11 +1,12 @@
 import { deserialize, field, fixedArray, variant } from '@dao-xyz/borsh';
-import { Program } from '@peerbit/program';
-import { Documents, type CanPerformOperations } from '@peerbit/document';
 import { sha256Sync } from '@peerbit/crypto';
+import { type CanPerformOperations, Documents } from '@peerbit/document';
+import { Program } from '@peerbit/program';
+import { concat } from 'uint8arrays';
+
 import type { Site } from '../site/program.js';
 import type { SiteManifest } from './schemas.js';
-import { SiteRegistration, IndexableSiteRegistration } from './schemas.js';
-import { concat } from 'uint8arrays';
+import { IndexableSiteRegistration, SiteRegistration } from './schemas.js';
 
 export const SITE_REGISTRY_ID_STRING = 'riffcc_sites_v1';
 export const SITE_REGISTRY_ID = sha256Sync(new TextEncoder().encode(SITE_REGISTRY_ID_STRING));
@@ -18,14 +19,11 @@ export class SiteRegistry extends Program {
   @field({ type: Documents })
   registrations: Documents<SiteRegistration, IndexableSiteRegistration>;
 
-  constructor(props?: { id?: Uint8Array; }) {
+  constructor(props?: { id?: Uint8Array }) {
     super();
     this.id = props?.id ?? SITE_REGISTRY_ID;
     this.registrations = new Documents({
-      id: sha256Sync(concat([
-        this.id,
-        new TextEncoder().encode('registrations'),
-      ])),
+      id: sha256Sync(concat([this.id, new TextEncoder().encode('registrations')])),
     });
   }
 
@@ -60,8 +58,8 @@ export class SiteRegistry extends Program {
           }
 
           return true;
-        }
-        else if (op.type === 'delete') { // Using else if for clarity
+        } else if (op.type === 'delete') {
+          // Using else if for clarity
           // This is a delete operation
           // The key on DeleteOperation is an object { key: primitive }, so we need .key.key
           const registrationId = op.operation.key.key;
