@@ -1,4 +1,6 @@
 import { Peerbit } from 'peerbit';
+import { DirectSub } from '@peerbit/pubsub';
+import { DirectBlock } from '@peerbit/blocks';
 import type {
   Documents,
 } from '@peerbit/document';
@@ -258,7 +260,26 @@ export class LensService implements ILensService {
 
     this.peerbit = await Peerbit.create({
       directory,
-      relay: isBrowser ? true : undefined // Enable relay for browsers (NAT traversal)
+      relay: isBrowser ? true : undefined, // Enable relay for browsers (NAT traversal)
+      libp2p: {
+        services: {
+          pubsub: (c) => new DirectSub(c, {
+            connectionManager: {
+              dialer: {
+                // Aggressive reconnection to relays: 5 seconds instead of default 60 seconds
+                // This fixes the issue where nodes lose relay connectivity and become unreachable
+                // for message delivery while still counting towards SeekDelivery quorum
+                retryDelay: 5000,
+              },
+              // Prevent pruning connections when we drop below 3 (default is 2)
+              minConnections: 3,
+              // Reasonable upper bound (default is 300)
+              maxConnections: 100,
+            },
+          }),
+          blocks: (c) => new DirectBlock(c),
+        },
+      },
     });
     this._extenarlyManaged = false;
   }
