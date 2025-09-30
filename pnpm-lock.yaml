@@ -18,7 +18,7 @@ importers:
         specifier: ^2.3.9
         version: 2.3.9
       '@peerbit/document':
-        specifier: ^9.11.6
+        specifier: 9.11.6
         version: 9.11.6(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
       '@peerbit/identity-access-controller':
         specifier: ^5.0.93
@@ -30,16 +30,16 @@ importers:
         specifier: ^4.0.63
         version: 4.0.63
       '@peerbit/program':
-        specifier: ^5.2.13
+        specifier: 5.2.13
         version: 5.2.13(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
       '@peerbit/pubsub-interface':
         specifier: ^4.0.2
         version: 4.0.2
       '@peerbit/rpc':
-        specifier: ^5.3.8
+        specifier: 5.3.8
         version: 5.3.8(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
       '@peerbit/shared-log':
-        specifier: ^11.2.8
+        specifier: 11.2.8
         version: 11.2.8(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
       '@peerbit/stream-interface':
         specifier: ^5.2.3
@@ -69,7 +69,7 @@ importers:
         specifier: ^4.0.1
         version: 4.0.1
       peerbit:
-        specifier: ^4.1.40
+        specifier: 4.1.40
         version: 4.1.40(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
       qrcode:
         specifier: ^1.5.4
@@ -3654,7 +3654,7 @@ snapshots:
       '@chainsafe/as-chacha20poly1305': 0.1.0
       '@chainsafe/as-sha256': 1.2.0
       '@libp2p/crypto': 5.1.7
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@libp2p/peer-id': 5.1.7
       '@noble/ciphers': 1.3.0
       '@noble/curves': 1.9.2
@@ -3671,7 +3671,7 @@ snapshots:
 
   '@chainsafe/libp2p-yamux@7.0.2':
     dependencies:
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@libp2p/utils': 6.7.0
       get-iterator: 2.0.1
       it-foreach: 2.1.4
@@ -4303,7 +4303,7 @@ snapshots:
 
   '@libp2p/interface-internal@2.3.17':
     dependencies:
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@libp2p/peer-collections': 6.0.33
       '@multiformats/multiaddr': 12.5.0
       progress-events: 1.0.1
@@ -4332,7 +4332,7 @@ snapshots:
   '@libp2p/keychain@5.2.7':
     dependencies:
       '@libp2p/crypto': 5.1.7
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@libp2p/utils': 6.7.0
       '@noble/hashes': 1.8.0
       asn1js: 3.0.6
@@ -4343,7 +4343,7 @@ snapshots:
 
   '@libp2p/logger@5.1.20':
     dependencies:
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@multiformats/multiaddr': 12.5.0
       interface-datastore: 8.3.2
       multiformats: 13.3.7
@@ -4351,7 +4351,7 @@ snapshots:
 
   '@libp2p/multistream-select@6.0.27':
     dependencies:
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       it-length-prefixed: 10.0.1
       it-length-prefixed-stream: 2.0.3
       it-stream-types: 2.0.2
@@ -4363,7 +4363,7 @@ snapshots:
 
   '@libp2p/peer-collections@6.0.33':
     dependencies:
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@libp2p/peer-id': 5.1.7
       '@libp2p/utils': 6.7.0
       multiformats: 13.3.7
@@ -4391,7 +4391,7 @@ snapshots:
   '@libp2p/peer-store@11.2.5':
     dependencies:
       '@libp2p/crypto': 5.1.7
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@libp2p/peer-collections': 6.0.33
       '@libp2p/peer-id': 5.1.7
       '@libp2p/peer-record': 8.0.33
@@ -4407,7 +4407,7 @@ snapshots:
 
   '@libp2p/tcp@10.1.16':
     dependencies:
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@libp2p/utils': 6.7.0
       '@multiformats/multiaddr': 12.5.0
       '@multiformats/multiaddr-matcher': 1.7.2
@@ -4424,7 +4424,7 @@ snapshots:
       '@chainsafe/is-ip': 2.1.0
       '@chainsafe/netmask': 2.0.0
       '@libp2p/crypto': 5.1.7
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@libp2p/logger': 5.1.20
       '@multiformats/multiaddr': 12.5.0
       '@sindresorhus/fnv1a': 3.1.0
@@ -4451,7 +4451,7 @@ snapshots:
       '@chainsafe/libp2p-noise': 16.1.3
       '@ipshipyard/node-datachannel': 0.26.6
       '@libp2p/crypto': 5.1.7
-      '@libp2p/interface': 2.10.4
+      '@libp2p/interface': 2.10.5
       '@libp2p/interface-internal': 2.3.17
       '@libp2p/keychain': 5.2.7
       '@libp2p/peer-id': 5.1.7
