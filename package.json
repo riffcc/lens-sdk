@@ -1,6 +1,6 @@
 {
   "name": "@riffcc/lens-sdk",
-  "version": "0.1.33-a10",
+  "version": "0.1.33-a11",
   "type": "module",
   "files": [
     "dist"
@@ -37,7 +37,7 @@
     "@libp2p/crypto": "5.1.7",
     "@libp2p/interface": "2.10.5",
     "@multiformats/multiaddr": "12.5.1",
-    "@peerbit/crypto": "^2.3.9",
+    "@peerbit/crypto": "2.3.9",
     "@peerbit/document": "9.11.6",
     "@peerbit/keychain": "1.0.29",
     "@peerbit/identity-access-controller": "5.0.93",
