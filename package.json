@@ -1,6 +1,6 @@
 {
   "name": "@riffcc/lens-sdk",
-  "version": "0.1.33-a9",
+  "version": "0.1.33-a10",
   "type": "module",
   "files": [
     "dist"
@@ -34,7 +34,7 @@
   "packageManager": "pnpm@10.6.3",
   "dependencies": {
     "@dao-xyz/borsh": "^5.2.3",
-    "@libp2p/crypto": "^5.1.7",
+    "@libp2p/crypto": "5.1.7",
     "@libp2p/interface": "2.10.5",
     "@multiformats/multiaddr": "12.5.1",
     "@peerbit/crypto": "^2.3.9",
