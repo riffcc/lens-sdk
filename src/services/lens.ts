@@ -276,6 +276,10 @@ export class LensService implements ILensService {
               // Reasonable upper bound (default is 300)
               maxConnections: 100,
             },
+            // Faster dead node detection: 5 seconds instead of default 10 seconds
+            // When a peer doesn't respond to SeekDelivery within this timeout,
+            // it triggers peer:unreachable event and removes the peer from routing tables
+            seekTimeout: 5000,
           }),
           blocks: (c) => new DirectBlock(c),
         },
