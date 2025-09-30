@@ -27,7 +27,6 @@ import { ContentCategory, FeaturedRelease, Release, Structure, Subscription } fr
 import type { AccountStatusResponse, AddInput, BaseResponse, EditInput, HashResponse, IdResponse, ILensService, LensServiceOptions } from './types';
 import { Logger } from '../common/logger';
 import type { SearchOptions } from '../common/types';
-import type { ProgramClient } from '@peerbit/program';
 import { publicSignKeyFromString } from '../common/utils';
 import type { Role } from '../programs/acl/rbac';
 
@@ -224,7 +223,7 @@ export class ElectronLensService implements ILensService {
 }
 
 export class LensService implements ILensService {
-  peerbit: ProgramClient | null = null;
+  peerbit: Peerbit | null = null;
   siteProgram: Site | null = null;
   private _federationManager: FederationManager | null = null;
   private _activeIdentity: Identity<Secp256k1PublicKey> | null = null;
@@ -252,7 +251,15 @@ export class LensService implements ILensService {
       );
     }
     this._logger.debug(`Initializing new Peerbit client in directory: ${directory || 'in-memory'}`);
-    this.peerbit = await Peerbit.create({ directory });
+
+    // In browser environments, enable circuit relay for NAT traversal
+    // Peerbit has a top-level 'relay' option that's simpler than configuring libp2p directly
+    const isBrowser = typeof window !== 'undefined';
+
+    this.peerbit = await Peerbit.create({
+      directory,
+      relay: isBrowser ? true : undefined // Enable relay for browsers (NAT traversal)
+    });
     this._extenarlyManaged = false;
   }
 
@@ -276,7 +283,7 @@ export class LensService implements ILensService {
   }
 
   private _ensureInitialized(): {
-    peerbit: ProgramClient;
+    peerbit: Peerbit;
   } {
     if (!this.peerbit) {
       throw new Error(
@@ -289,7 +296,7 @@ export class LensService implements ILensService {
   }
 
   private _ensureSiteOpened(): {
-    peerbit: ProgramClient;
+    peerbit: Peerbit;
     siteProgram: Site;
   } {
     const { peerbit } = this._ensureInitialized();
@@ -1157,6 +1164,74 @@ export class LensService implements ILensService {
       }
       this._logger.error('Failed to add admin:', error);
       return { success: false, error: error instanceof Error ? error.message : 'An unknown error occurred' };
+    }
+  }
+
+  async getSyncDetails(): Promise<{ stores: any[]; synced: boolean }> {
+    try {
+      const { siteProgram } = this._ensureSiteOpened();
+
+      // Get all stores and their sync status
+      const stores = [
+        { name: 'releases', log: siteProgram.releases },
+        { name: 'featuredReleases', log: siteProgram.featuredReleases },
+        { name: 'contentCategories', log: siteProgram.contentCategories },
+        { name: 'subscriptions', log: siteProgram.subscriptions },
+        { name: 'structures', log: siteProgram.structures },
+      ];
+
+      const storeDetails = await Promise.all(
+        stores.map(async ({ name, log }) => {
+          // Use isReplicating() - lightweight local check, doesn't trigger distributed shard queries
+          const replicating = await log.log.isReplicating();
+          // Use count() with approximate flag - more efficient than getSize()
+          const count = await log.count({ approximate: true });
+          return {
+            name,
+            count,
+            replicating,
+            countMatch: true,
+          };
+        })
+      );
+
+      // Ready = all stores are replicating AND content stores have data
+      // Content stores (releases, featuredReleases, contentCategories) must have count > 0
+      // Meta stores (subscriptions, structures) can have count >= 0
+      const contentStores = ['releases', 'featuredReleases', 'contentCategories'];
+      const synced = storeDetails.every(s => {
+        const isContentStore = contentStores.includes(s.name);
+        const hasContent = isContentStore ? s.count > 0 : s.count >= 0;
+        return s.replicating && hasContent;
+      });
+
+      return {
+        stores: storeDetails,
+        synced,
+      };
+    } catch (error) {
+      this._logger.error('Failed to get sync details:', error);
+      return {
+        stores: [],
+        synced: false,
+      };
+    }
+  }
+
+  getPeerCount(): number {
+    try {
+      if (!this.peerbit) {
+        return 0;
+      }
+      // Access libp2p via private _libp2p property
+      const libp2p = (this.peerbit as any)._libp2p;
+      if (!libp2p) {
+        return 0;
+      }
+      return libp2p.getPeers().length;
+    } catch (error) {
+      this._logger.error('Failed to get peer count:', error);
+      return 0;
     }
   }
 }

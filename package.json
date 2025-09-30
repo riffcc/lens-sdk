@@ -1,6 +1,6 @@
 {
   "name": "@riffcc/lens-sdk",
-  "version": "0.1.33-a12",
+  "version": "0.1.39",
   "type": "module",
   "files": [
     "dist"
@@ -65,7 +65,10 @@
     "peerbit": "4.1.40",
     "qrcode": "^1.5.4",
     "uint8arrays": "^5.1.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "react-native": "0.81.4",
+    "react": "19.1.1",
+    "@babel/core": "7.28.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",

@@ -11,7 +11,7 @@ import type {
 import type { ContentCategory, FeaturedRelease, Release, Structure, Subscription } from '../programs/site/schemas';
 import type { SearchOptions } from '../common/types';
 import type { Identity, PublicSignKey, Secp256k1PublicKey } from '@peerbit/crypto';
-import type { ProgramClient } from '@peerbit/program';
+import type { Peerbit } from 'peerbit';
 import type { Role } from '../programs/acl/rbac';
 
 export interface BaseResponse {
@@ -37,9 +37,9 @@ export type AddInput<T> = T;
 
 export type EditInput<T> = T & ImmutableProps;
 
-export type LensServiceOptions = { 
-  peerbit?: ProgramClient; 
-  debug?: boolean, 
+export type LensServiceOptions = {
+  peerbit?: Peerbit;
+  debug?: boolean,
   customPrefix?: string,
   identity?: Identity<Secp256k1PublicKey>
 };

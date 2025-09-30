@@ -6,7 +6,7 @@ import { AbortError, delay } from '@peerbit/time';
 import type { DataEvent } from '@peerbit/pubsub-interface';
 import type { FederatedStoreKey } from '../types';
 import type { Logger } from '../../../common/logger';
-import type { ProgramClient } from '@peerbit/program';
+import type { Peerbit } from 'peerbit';
 import type { IndexedSubscription, Subscription } from '../schemas/subscription';
 import type { Site } from '../program';
 
@@ -44,7 +44,7 @@ export class FederationManager {
     'blockedContent',
   ];
   constructor(
-    private peerbit: ProgramClient,
+    private peerbit: Peerbit,
     private siteProgram: Site,
     private logger: Logger,
   ) { }
