@@ -21,11 +21,14 @@ importers:
         specifier: 9.11.6
         version: 9.11.6(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
       '@peerbit/identity-access-controller':
-        specifier: ^5.0.93
+        specifier: 5.0.93
         version: 5.0.93(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
       '@peerbit/indexer-interface':
         specifier: ^2.0.10
         version: 2.0.10
+      '@peerbit/keychain':
+        specifier: 1.0.29
+        version: 1.0.29
       '@peerbit/log':
         specifier: ^4.0.63
         version: 4.0.63
@@ -48,7 +51,7 @@ importers:
         specifier: ^2.1.0
         version: 2.1.0
       '@peerbit/trusted-network':
-        specifier: ^4.1.110
+        specifier: 4.1.110
         version: 4.1.110(react-native@0.79.2(@babel/core@7.27.4)(react@19.1.0))
       ajv:
         specifier: ^8.17.1

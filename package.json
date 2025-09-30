@@ -1,6 +1,6 @@
 {
   "name": "@riffcc/lens-sdk",
-  "version": "0.1.33-a6",
+  "version": "0.1.33-a9",
   "type": "module",
   "files": [
     "dist"
@@ -35,9 +35,12 @@
   "dependencies": {
     "@dao-xyz/borsh": "^5.2.3",
     "@libp2p/crypto": "^5.1.7",
+    "@libp2p/interface": "2.10.5",
+    "@multiformats/multiaddr": "12.5.1",
     "@peerbit/crypto": "^2.3.9",
     "@peerbit/document": "9.11.6",
-    "@peerbit/identity-access-controller": "^5.0.93",
+    "@peerbit/keychain": "1.0.29",
+    "@peerbit/identity-access-controller": "5.0.93",
     "@peerbit/indexer-interface": "^2.0.10",
     "@peerbit/log": "^4.0.63",
     "@peerbit/program": "5.2.13",
@@ -46,7 +49,7 @@
     "@peerbit/shared-log": "11.2.8",
     "@peerbit/stream-interface": "^5.2.3",
     "@peerbit/time": "^2.1.0",
-    "@peerbit/trusted-network": "^4.1.110",
+    "@peerbit/trusted-network": "4.1.110",
     "ajv": "^8.17.1",
     "bip39": "^3.1.0",
     "ethers": "^6.15.0",
